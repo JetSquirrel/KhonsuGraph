@@ -12,7 +12,9 @@
 //!   needs neither `x` nor `y`;
 //! * a `graph` draws the nodes and relationships its query returns, on the
 //!   same canvas as the query tab's Graph view, and takes no `x` or `y`; an
-//!   optional `caption` names the node property shown under each node;
+//!   optional `caption` names the node property shown under each node, and
+//!   `group` a node property whose values gather nodes into outlined groups
+//!   that collapse into one node (a community id, a country, an owner);
 //! * a `pie` takes `x` (the slices) and `y` (their sizes), and no `series`;
 //! * a `map` takes `lat` and `lng` instead of `x` and `y` — either may be left
 //!   out when a column's name says what it is (`geo_lat`, `longitude`) — and
@@ -57,7 +59,7 @@ const MAP_ATTRS: &[&str] = &["lat", "lng", "color", "size", "size_scale", "toolt
 const CARD_ATTRS: &[&str] = &["value", "note", "tone"];
 
 /// The attributes only a `graph` takes.
-const GRAPH_ATTRS: &[&str] = &["caption"];
+const GRAPH_ATTRS: &[&str] = &["caption", "group"];
 
 /// What a `card`'s `tone` may say: the series accent, or a status.
 pub const TONES: &[&str] = &["accent", "good", "warning", "critical"];
@@ -178,6 +180,8 @@ pub struct Plot {
     /// The node property a `graph` shows under each node; `None` picks a
     /// name-like one.
     pub caption: Option<String>,
+    /// The node property a `graph` groups nodes by; `None` draws no groups.
+    pub group: Option<String>,
     /// Grid columns spanned as written; `Plot::width` applies the default.
     pub width: Option<u8>,
     /// Line and column of the block's kind keyword.
@@ -780,6 +784,7 @@ fn plot(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Option<Plot> {
     let mut tone = None;
     let mut text = None;
     let mut caption = None;
+    let mut group = None;
     let mut width = None;
     let mut seen: HashSet<&str> = HashSet::new();
     for attr in &block.attrs {
@@ -854,10 +859,11 @@ fn plot(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Option<Plot> {
             },
             "width" => width = grid_width(attr, diagnostics),
             "caption" => caption = column(attr, diagnostics),
+            "group" => group = column(attr, diagnostics),
             other => diagnostics.push(Diagnostic::at_attr(
                 attr,
                 format!(
-                    "A plot block holds type, query, x, y, series, title, width, for a map lat, lng, color, size, size_scale, tooltip, for a card value, note, tone, for a graph caption, and for a text panel text; unknown attribute: {other}"
+                    "A plot block holds type, query, x, y, series, title, width, for a map lat, lng, color, size, size_scale, tooltip, for a card value, note, tone, for a graph caption and group, and for a text panel text; unknown attribute: {other}"
                 ),
             )),
         }
@@ -975,6 +981,7 @@ fn plot(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Option<Plot> {
         tone,
         text,
         caption,
+        group,
         width,
         line: block.line,
         col: block.col,
@@ -1466,6 +1473,24 @@ plot "raw" {
   x     = timestamp
 }
 "#;
+
+    #[test]
+    fn a_graph_takes_a_caption_and_a_group_and_other_plots_do_not() {
+        let source = r#"
+query "people" { cypher = "MATCH (a:Person)-[r:KNOWS]->(b:Person) RETURN a, r, b" }
+plot "web" {
+  type    = "graph"
+  query   = query.people
+  caption = name
+  group   = community
+}
+"#;
+        let spec = validate_ok(source);
+        assert_eq!(spec.plots[0].caption.as_deref(), Some("name"));
+        assert_eq!(spec.plots[0].group.as_deref(), Some("community"));
+        let wrong = validate_err(&source.replace("\"graph\"", "\"table\""));
+        assert!(wrong.iter().any(|d| d.message.contains("group is for graph plots")), "{wrong:?}");
+    }
 
     #[test]
     fn a_good_spec_validates() {

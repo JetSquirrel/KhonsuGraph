@@ -275,6 +275,11 @@ static STRINGS: &[(&str, &str, &str)] = &[
     // ── graph canvas ────────────────────────────────────────────────────
     ("canvas.fit", "适配", "Fit"),
     ("canvas.relayout", "重新布局", "Re-layout"),
+    ("canvas.group_by", "分组：{0}", "Group: {0}"),
+    ("canvas.group", "分组", "Group"),
+    ("canvas.group_none", "不分组", "No groups"),
+    ("canvas.collapse_groups", "全部折叠", "Collapse all"),
+    ("canvas.expand_groups", "全部展开", "Expand all"),
     ("canvas.expand", "展开邻居", "Expand neighbors"),
     ("canvas.hint", "双击节点展开邻居，右侧查看属性", "Double-click a node to expand it; select one to see its properties"),
     ("canvas.truncated", "显示 {} / {} 个节点", "Showing {} of {} nodes"),

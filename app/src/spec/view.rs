@@ -902,6 +902,7 @@ impl Dashboard {
         let data = plot.graph.clone()?;
         let name = plot.name.clone();
         let caption = plot.caption.clone();
+        let group = plot.group.clone();
         if !self.graph_canvases.contains_key(&name) {
             let canvas = cx.new(|cx| GraphCanvas::new(window, cx));
             let picked = name.clone();
@@ -915,7 +916,7 @@ impl Dashboard {
         if shown.as_ref().is_none_or(|old| !Arc::ptr_eq(old, &data)) {
             *shown = Some(data.clone());
             canvas.update(cx, |canvas, cx| {
-                canvas.configure(caption, true, cx);
+                canvas.configure(caption, group, true, cx);
                 canvas.set_data((*data).clone(), window, cx);
             });
         }

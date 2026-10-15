@@ -275,6 +275,7 @@ pub fn check_source(path: &str, source: &str, graph: &mut Graph, summary: bool) 
             "series": p.series,
             "value": p.value,
             "caption": p.caption,
+            "group": p.group,
             "note": p.note.as_ref().map(|note| match note {
                 Note::Text(words) => json!({"text": words}),
                 Note::Column(column) => json!({"column": column}),

@@ -89,6 +89,7 @@ plot "companies" {
   query   = query.companies
   title   = "Companies of the picked officer"
   caption = name
+  group   = jurisdiction
   width   = 7
 }
 

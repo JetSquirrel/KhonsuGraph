@@ -77,9 +77,10 @@ pub struct PreparedPlot {
     /// A `text` panel's words under its title.
     pub text: Option<SharedString>,
     /// A `graph`'s nodes and relationships, and the node property it
-    /// captions them with.
+    /// captions and groups them by.
     pub graph: Option<Arc<khonsu_core::GraphData>>,
     pub caption: Option<String>,
+    pub group: Option<String>,
     /// Grid columns the plot spans, default applied.
     pub width: u8,
     /// Whether `x` is a date or time column: its bands are points in time,
@@ -211,6 +212,7 @@ pub(crate) fn prepare<R: std::borrow::Borrow<QueryResult>>(
         text: None,
         graph: None,
         caption: plot.caption.clone(),
+        group: plot.group.clone(),
         width: plot.width(),
         time_axis: false,
         x_values: None,
@@ -598,6 +600,7 @@ pub(crate) fn prepare<R: std::borrow::Borrow<QueryResult>>(
         text: None,
         graph: None,
         caption: None,
+        group: None,
         width: plot.width(),
         time_axis,
         x_values: None,
@@ -836,6 +839,7 @@ mod tests {
             tone: None,
             text: None,
             caption: None,
+            group: None,
             width: None,
             line: 1,
             col: 1,

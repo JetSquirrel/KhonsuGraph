@@ -6,11 +6,14 @@
 //! Drag the background to pan, scroll to zoom, drag a node to move it. Click
 //! a node or relationship to inspect it; double-click a node to add its
 //! neighbors around it. Expanding never moves nodes already on the canvas.
+//! Grouping by a node property outlines each value's nodes; double-click a
+//! collapsed group to open it again.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 
-use gpui_graph::{Edge, GraphData as Graph, LabelMode, NetworkGraph, NetworkGraphEvent, Node, Selection};
+use gpui_graph::{ColorBy, Edge, GraphData as Graph, LabelMode, NetworkGraph, NetworkGraphEvent, Node, Selection};
 use gpui_kit::component::button::Button;
+use gpui_kit::component::menu::{DropdownMenu, PopupMenuItem};
 use gpui_kit::component::notification::Notification;
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme, IconName, Sizable, StyledExt, WindowExt};
 use gpui_kit::prelude::FluentBuilder;
@@ -62,10 +65,52 @@ fn first_label(node: &GraphNode) -> &str {
     node.labels.first().map(String::as_str).unwrap_or("")
 }
 
-/// The component's node for `node`, colored like its label in the sidebar.
-fn to_node(node: &GraphNode, preferred: Option<&str>, cx: &App) -> Node {
+/// At most this many groups are offered; more is a name, not a grouping.
+const MAX_GROUPS: usize = 60;
+
+/// `node`'s value of `key` as a group id, when it is a plain value.
+fn group_value(node: &GraphNode, key: &str) -> Option<String> {
+    match node.properties.get(key)? {
+        Json::String(s) if !s.is_empty() => Some(s.clone()),
+        v @ (Json::Number(_) | Json::Bool(_)) => Some(v.to_string()),
+        _ => None,
+    }
+}
+
+/// Node properties worth grouping by: plain values that several nodes
+/// share, fewer distinct ones than nodes. Provenance is left out.
+fn group_keys<'a>(nodes: impl Iterator<Item = &'a GraphNode>) -> Vec<String> {
+    let mut seen: BTreeMap<&str, (usize, BTreeSet<String>)> = BTreeMap::new();
+    let mut total = 0;
+    for node in nodes {
+        total += 1;
+        for key in node.properties.keys().filter(|k| !k.starts_with("khonsu_")) {
+            if let Some(value) = group_value(node, key) {
+                let (count, values) = seen.entry(key).or_default();
+                *count += 1;
+                if values.len() <= MAX_GROUPS {
+                    values.insert(value);
+                }
+            }
+        }
+    }
+    seen.into_iter()
+        .filter(|(_, (count, values))| {
+            values.len() >= 2 && values.len() <= MAX_GROUPS && values.len() * 2 <= *count && *count * 2 >= total
+        })
+        .map(|(key, _)| key.to_string())
+        .collect()
+}
+
+/// The component's node for `node`, colored like its label in the sidebar,
+/// or by its group when grouping by `group` and it has a value for it.
+fn to_node(node: &GraphNode, preferred: Option<&str>, group: Option<&str>, cx: &App) -> Node {
     let label = first_label(node);
-    Node::new(node.id.to_string(), caption(node, preferred), label.to_string()).color(palette::label_color(label, cx))
+    let converted = Node::new(node.id.to_string(), caption(node, preferred), label.to_string());
+    match group.and_then(|key| group_value(node, key)) {
+        Some(value) => converted.group(value),
+        None => converted.color(palette::label_color(label, cx)),
+    }
 }
 
 fn to_edge(edge: &GraphEdge) -> Edge {
@@ -95,6 +140,8 @@ pub struct GraphCanvas {
     /// The node property shown as each node's caption, before the usual
     /// name-like ones: a dashboard `graph`'s `caption`.
     caption_key: Option<String>,
+    /// The node property nodes are grouped by, if any.
+    group_key: Option<String>,
     /// A dashboard panel shows no inspector: its width is the grid's.
     compact: bool,
     _subscriptions: Vec<Subscription>,
@@ -120,16 +167,49 @@ impl GraphCanvas {
             hidden: 0,
             expanding: false,
             caption_key: None,
+            group_key: None,
             compact: false,
             _subscriptions: vec![subscription],
         }
     }
 
-    /// For a dashboard panel: no inspector, and `caption` as the caption.
-    pub fn configure(&mut self, caption_key: Option<String>, compact: bool, cx: &mut Context<Self>) {
+    /// For a dashboard panel: no inspector, `caption` as the caption and
+    /// nodes grouped by `group`. Takes effect with the next `set_data`.
+    pub fn configure(&mut self, caption_key: Option<String>, group_key: Option<String>, compact: bool, cx: &mut Context<Self>) {
         self.caption_key = caption_key;
+        self.group_key = group_key;
         self.compact = compact;
         cx.notify();
+    }
+
+    /// Group the nodes on the canvas by `key`, or stop grouping. The layout
+    /// starts over, since group members are drawn together.
+    pub fn set_group_key(&mut self, key: Option<String>, cx: &mut Context<Self>) {
+        if self.group_key == key {
+            return;
+        }
+        self.group_key = key;
+        self.selected = None;
+        let nodes: Vec<Node> = self
+            .nodes
+            .values()
+            .map(|n| to_node(n, self.caption_key.as_deref(), self.group_key.as_deref(), cx))
+            .collect();
+        let edges: Vec<Edge> = self.edges.values().map(to_edge).collect();
+        let color_by = self.color_by();
+        self.graph.update(cx, |graph, cx| {
+            graph.set_color_by(color_by, cx);
+            graph.set_data(Graph::new(nodes, edges), cx);
+        });
+        cx.notify();
+    }
+
+    fn color_by(&self) -> ColorBy {
+        if self.group_key.is_some() {
+            ColorBy::Group
+        } else {
+            ColorBy::Category
+        }
     }
 
     /// Show a new result. Relationship endpoints the result left out are
@@ -163,8 +243,10 @@ impl GraphCanvas {
     fn load(&mut self, nodes: Vec<GraphNode>, edges: Vec<GraphEdge>, cx: &mut Context<Self>) {
         let data = self.admit(nodes, edges, cx);
         let mode = label_mode(self.nodes.len());
+        let color_by = self.color_by();
         self.graph.update(cx, |graph, cx| {
             graph.set_label_mode(mode, cx);
+            graph.set_color_by(color_by, cx);
             graph.set_data(data, cx);
         });
         cx.notify();
@@ -177,7 +259,7 @@ impl GraphCanvas {
         let mut fresh_nodes = Vec::new();
         for node in nodes {
             if !self.nodes.contains_key(&node.id) {
-                fresh_nodes.push(to_node(&node, self.caption_key.as_deref(), cx));
+                fresh_nodes.push(to_node(&node, self.caption_key.as_deref(), self.group_key.as_deref(), cx));
                 self.nodes.insert(node.id, node);
             }
         }
@@ -358,6 +440,10 @@ impl Render for GraphCanvas {
             *legend.entry(label.to_string()).or_default() += 1;
         }
 
+        let group_keys = group_keys(self.nodes.values());
+        let group_key = self.group_key.clone();
+        let this = cx.entity().downgrade();
+
         let note = if self.hidden > 0 {
             trf("canvas.truncated", &[&self.nodes.len().to_string(), &(self.nodes.len() + self.hidden).to_string()])
         } else {
@@ -397,7 +483,65 @@ impl Render for GraphCanvas {
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.graph.update(cx, |graph, cx| graph.relayout(cx));
                                     })),
-                            ),
+                            )
+                            .when(!group_keys.is_empty() || group_key.is_some(), |this_bar| {
+                                let label = match &group_key {
+                                    Some(key) => trf("canvas.group_by", &[key]),
+                                    None => tr("canvas.group").to_string(),
+                                };
+                                let current = group_key.clone();
+                                let keys = group_keys.clone();
+                                let menu_target = this.clone();
+                                this_bar.child(Button::new("canvas-group").xsmall().outline().label(label).dropdown_menu(
+                                    move |menu, _, _| {
+                                        let none_target = menu_target.clone();
+                                        let mut menu = menu.item(
+                                            PopupMenuItem::new(tr("canvas.group_none"))
+                                                .checked(current.is_none())
+                                                .on_click(move |_, _, cx| {
+                                                    none_target.update(cx, |canvas, cx| canvas.set_group_key(None, cx)).ok();
+                                                }),
+                                        );
+                                        if !keys.is_empty() {
+                                            menu = menu.separator();
+                                        }
+                                        for key in &keys {
+                                            let target = menu_target.clone();
+                                            let picked = key.clone();
+                                            menu = menu.item(
+                                                PopupMenuItem::new(key.clone())
+                                                    .checked(current.as_deref() == Some(key.as_str()))
+                                                    .on_click(move |_, _, cx| {
+                                                        let picked = picked.clone();
+                                                        target.update(cx, |canvas, cx| canvas.set_group_key(Some(picked), cx)).ok();
+                                                    }),
+                                            );
+                                        }
+                                        menu
+                                    },
+                                ))
+                            })
+                            .when(group_key.is_some(), |this_bar| {
+                                this_bar
+                                    .child(
+                                        Button::new("canvas-collapse")
+                                            .xsmall()
+                                            .outline()
+                                            .label(tr("canvas.collapse_groups"))
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.graph.update(cx, |graph, cx| graph.collapse_all_groups(cx));
+                                            })),
+                                    )
+                                    .child(
+                                        Button::new("canvas-expand-groups")
+                                            .xsmall()
+                                            .outline()
+                                            .label(tr("canvas.expand_groups"))
+                                            .on_click(cx.listener(|this, _, _, cx| {
+                                                this.graph.update(cx, |graph, cx| graph.expand_all_groups(cx));
+                                            })),
+                                    )
+                            }),
                     )
                     .when(!legend.is_empty(), |this| {
                         this.child(
@@ -444,8 +588,35 @@ impl Render for GraphCanvas {
 
 #[cfg(test)]
 mod tests {
-    use super::{edge_id, to_edge};
-    use khonsu_core::GraphEdge;
+    use super::{edge_id, group_keys, to_edge};
+    use khonsu_core::{GraphEdge, GraphNode};
+    use serde_json::json;
+
+    fn person(id: i64, name: &str, community: i64, city: &str) -> GraphNode {
+        GraphNode {
+            id,
+            labels: vec!["Person".into()],
+            properties: [
+                ("name".to_string(), json!(name)),
+                ("community".to_string(), json!(community)),
+                ("city".to_string(), json!(city)),
+                ("khonsu_source".to_string(), json!("people")),
+            ]
+            .into_iter()
+            .collect(),
+        }
+    }
+
+    #[test]
+    fn shared_plain_values_are_offered_for_grouping_and_names_are_not() {
+        let nodes = [
+            person(1, "Ada", 1, "London"),
+            person(2, "Bob", 1, "London"),
+            person(3, "Cy", 2, "Paris"),
+            person(4, "Di", 2, "Paris"),
+        ];
+        assert_eq!(group_keys(nodes.iter()), vec!["city".to_string(), "community".to_string()]);
+    }
 
     #[test]
     fn edge_round_trips_its_id() {
