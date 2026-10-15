@@ -177,7 +177,7 @@ impl Graph {
     }
 
     fn open_inner(path: &Path, mode: AccessMode, program: &str) -> Result<Self, OpenError> {
-        let path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        let path = normalize_path(path);
         let lock = match mode {
             AccessMode::ReadWrite => Some(WriterLock::acquire(&path, program).map_err(|err| match err {
                 LockError::Held(owner) => OpenError::Locked(owner),
@@ -191,7 +191,7 @@ impl Graph {
             read_only: mode == AccessMode::ReadOnly,
             ..DatabaseConfig::default()
         };
-        let db = Database::open_with_config(engine_path(&path), config).map_err(|err| open_failure(&path, err))?;
+        let db = Database::open_with_config(&path, config).map_err(|err| open_failure(&path, err))?;
         Ok(Self {
             db,
             path,
@@ -373,8 +373,14 @@ fn plan_result(plan: &str) -> QueryResult {
     }
 }
 
-/// HawDB resolves paths itself; hand it the plain form without `\\?\`.
-fn engine_path(path: &Path) -> PathBuf {
+/// The absolute, canonical form of a graph path, used everywhere a graph is
+/// identified (settings, sources, locks). On Windows the `\\?\` prefix that
+/// `canonicalize` adds is dropped; HawDB and users expect the plain form.
+pub fn normalize_path(path: &Path) -> PathBuf {
+    let path = path
+        .canonicalize()
+        .or_else(|_| std::path::absolute(path))
+        .unwrap_or_else(|_| path.to_path_buf());
     let text = path.to_string_lossy();
     match text.strip_prefix(r"\\?\") {
         Some(stripped) if !stripped.starts_with("UNC") => PathBuf::from(stripped),

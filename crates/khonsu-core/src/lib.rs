@@ -12,7 +12,7 @@ pub mod secrets;
 pub mod settings;
 pub mod util;
 
-pub use engine::{AccessMode, Graph, Language, OpenError, QueryError, QueryOptions};
+pub use engine::{normalize_path, AccessMode, Graph, Language, OpenError, QueryError, QueryOptions};
 pub use khonsu_plugin_protocol as protocol;
 pub use result::{GraphData, GraphEdge, GraphNode, QueryResult};
 pub use schema::GraphSchema;

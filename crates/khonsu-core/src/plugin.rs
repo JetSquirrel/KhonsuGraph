@@ -275,7 +275,8 @@ fn drain_stderr(child: &mut Child) -> Arc<Mutex<VecDeque<String>>> {
 }
 
 fn failure(plugin: &PluginInfo, message: String, stderr: &Mutex<VecDeque<String>>) -> PluginError {
-    let tail: Vec<String> = stderr.lock().unwrap().iter().cloned().collect();
+    // Plugins often print the same error to stderr; show it once.
+    let tail: Vec<String> = stderr.lock().unwrap().iter().filter(|line| line.trim() != message.trim()).cloned().collect();
     let message = if tail.is_empty() {
         message
     } else {

@@ -1,0 +1,77 @@
+# Service blast radius over the CSV demo in examples/csv.
+plot "intro" {
+  type  = "text"
+  title = "Blast radius"
+  text  = "Pick a service to see what depends on it and which alerts fired near it."
+}
+
+query "services" {
+  cypher = <<CYPHER
+    MATCH (s:Service)
+    RETURN s.name AS service, s.owner AS owner
+    ORDER BY service
+  CYPHER
+}
+
+query "dependents" {
+  cypher = <<CYPHER
+    MATCH (a:Service)-[r:DEPENDS_ON]->(s:Service)
+    WHERE $service
+    RETURN a, r, s
+  CYPHER
+}
+
+query "hosts_per_service" {
+  cypher = <<CYPHER
+    MATCH (h:Host)-[r:RUNS]->(s:Service)
+    RETURN s.name AS service, count(h) AS hosts
+  CYPHER
+}
+
+query "alerts" {
+  cypher = "MATCH (a:Alert)-[r:FIRED_ON]->(t) RETURN a.name AS alert, t.name AS target"
+}
+
+query "alert_count" {
+  cypher = "MATCH (a:Alert) RETURN count(a) AS alerts"
+}
+
+plot "open_alerts" {
+  type  = "card"
+  query = query.alert_count
+  title = "Open alerts"
+  tone  = "warning"
+}
+
+plot "services" {
+  type  = "table"
+  query = query.services
+  width = 4
+}
+
+plot "dependents" {
+  type    = "graph"
+  query   = query.dependents
+  caption = name
+  width   = 8
+}
+
+plot "hosts" {
+  type  = "bar"
+  query = query.hosts_per_service
+  x     = service
+  y     = hosts
+  width = 6
+}
+
+plot "alert_list" {
+  type  = "table"
+  query = query.alerts
+  width = 6
+}
+
+filter "service" {
+  plot   = plot.services
+  column = service
+  match  = "s.name"
+}

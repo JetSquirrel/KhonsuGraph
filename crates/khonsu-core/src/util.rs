@@ -37,3 +37,10 @@ mod tests {
         assert_eq!(super::format_unix_time(1_792_022_400), "2026-10-15 00:00:00 UTC");
     }
 }
+
+/// Unix seconds as RFC 3339 in UTC: `2026-10-15T08:30:00Z`.
+pub fn format_rfc3339(secs: u64) -> String {
+    let text = format_unix_time(secs);
+    // "YYYY-MM-DD HH:MM:SS UTC" -> "YYYY-MM-DDTHH:MM:SSZ"
+    format!("{}T{}Z", &text[..10], &text[11..19])
+}

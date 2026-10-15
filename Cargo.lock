@@ -4513,6 +4513,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "khonsu-core",
+ "khonsu-dash",
  "serde",
  "serde_json",
  "tempfile",
@@ -4530,6 +4531,16 @@ dependencies = [
  "serde_json",
  "tempfile",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "khonsu-dash"
+version = "0.1.0"
+dependencies = [
+ "khonsu-core",
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]
