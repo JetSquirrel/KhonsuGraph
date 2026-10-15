@@ -103,3 +103,33 @@ pub fn panel(cx: &App) -> Hsla {
         rgb(0xffffff).into()
     }
 }
+
+/// Node labels take palette slots in the order they are first seen, so two
+/// labels on one canvas never share a colour until the palette runs out. The
+/// schema registers its labels in sorted order when it loads, which keeps a
+/// label's colour the same in the sidebar and on the canvas.
+static LABEL_SLOTS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
+pub fn register_labels<'a>(labels: impl IntoIterator<Item = &'a str>) {
+    let mut sorted: Vec<&str> = labels.into_iter().collect();
+    sorted.sort();
+    for label in sorted {
+        label_slot(label);
+    }
+}
+
+fn label_slot(label: &str) -> usize {
+    let mut slots = LABEL_SLOTS.lock().unwrap_or_else(|e| e.into_inner());
+    match slots.iter().position(|l| l == label) {
+        Some(slot) => slot,
+        None => {
+            slots.push(label.to_string());
+            slots.len() - 1
+        }
+    }
+}
+
+/// The colour of nodes labeled `label`.
+pub fn label_color(label: &str, cx: &App) -> Hsla {
+    color(label_slot(label), cx)
+}

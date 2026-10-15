@@ -4,8 +4,10 @@
 mod app;
 mod assets;
 mod crash;
+mod db;
 mod i18n;
 mod prefs;
+mod state;
 mod ui;
 
 use gpui_kit::component::{ThemeMode, TitleBar};
@@ -22,7 +24,11 @@ fn main() {
     application.run(move |cx| {
         gpui_kit::init(cx);
         ui::init(cx);
-        ui::theme::install(ThemeMode::Light, cx);
+        let mode = match prefs::get("theme").ok().flatten().as_deref() {
+            Some("dark") => ThemeMode::Dark,
+            _ => ThemeMode::Light,
+        };
+        ui::theme::install(mode, cx);
         ui::scale::apply(cx);
 
         let window_bounds = Bounds::centered(None, size(px(1440.), px(900.)), cx);
