@@ -14,11 +14,11 @@ HawDB product.
 | `crates/khonsu-core` | HawDB access, writer lock, results, schema, plugin host, merge writer, settings |
 | `crates/khonsu-dash` | `.dash` dashboards: parse, validate, filters, `check`, comments, presence, the window link |
 | `crates/khonsu-cli` | `khonsu`, the windowless JSON CLI for agents and scripts |
-| `crates/khonsu-plugin-protocol` | The data-source plugin protocol (JSON lines over stdio) |
+| `crates/khonsu-plugin-protocol` | The data-source plugin protocol (JSON lines over stdio); see [docs/plugins.md](docs/plugins.md) to write a plugin in any language |
 | `plugins/csv` | The built-in CSV plugin |
 | `plugins/aws` | The official AWS plugin: VPCs, subnets, security groups, instances, load balancers and IAM roles, read through the `aws` CLI |
 | `skills/khonsugraph` | The agent skill: how to query, author dashboards and review them with a person |
-| `examples/` | Five user-story dashboards on public datasets, and the scripts that build their graphs |
+| `examples/` | Five user-story dashboards on public datasets, the scripts that build their graphs, an AWS exposure dashboard and a Python plugin |
 
 ## Build
 

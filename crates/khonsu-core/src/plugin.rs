@@ -39,10 +39,19 @@ impl PluginInfo {
         &self.manifest.id
     }
 
+    /// The entry executable: a file in the plugin directory, or, for a bare
+    /// command name such as `python3` or `node`, a program on `PATH`.
     pub fn executable(&self) -> PathBuf {
-        let mut exe = self.dir.join(&self.manifest.entry[0]);
+        let entry = &self.manifest.entry[0];
+        let mut exe = self.dir.join(entry);
         if cfg!(windows) && exe.extension().is_none() {
             exe.set_extension("exe");
+        }
+        let bare = !entry.contains(['/', '\\']);
+        if !exe.is_file() && bare {
+            if let Some(found) = on_path(entry) {
+                return found;
+            }
         }
         exe
     }
@@ -131,6 +140,28 @@ pub fn read_manifest(dir: &Path) -> Result<Manifest, PluginError> {
         });
     }
     Ok(manifest)
+}
+
+/// Looks a bare command name up on `PATH`, trying `PATHEXT` extensions on Windows.
+fn on_path(name: &str) -> Option<PathBuf> {
+    let exts: Vec<String> = if cfg!(windows) && Path::new(name).extension().is_none() {
+        std::env::var("PATHEXT")
+            .unwrap_or_else(|_| ".EXE;.CMD;.BAT".into())
+            .split(';')
+            .filter(|e| !e.is_empty())
+            .map(str::to_string)
+            .collect()
+    } else {
+        vec![String::new()]
+    };
+    // Windows' WindowsApps folder holds Store install stubs (python3.exe
+    // that only prints a hint), not the programs themselves.
+    let stub = |dir: &Path| dir.ends_with("Microsoft/WindowsApps");
+    std::env::split_paths(&std::env::var_os("PATH")?).filter(|dir| !stub(dir)).find_map(|dir| {
+        exts.iter()
+            .map(|ext| dir.join(format!("{name}{ext}")))
+            .find(|candidate| candidate.is_file())
+    })
 }
 
 fn find_builtin(id: &str) -> Option<PluginInfo> {
@@ -614,4 +645,39 @@ pub fn sync_source(
     };
     settings::upsert_source(updated)?;
     report
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn plugin_with_entry(entry: &str) -> PluginInfo {
+        PluginInfo {
+            manifest: Manifest {
+                id: "script".into(),
+                name: "Script".into(),
+                version: "0.1.0".into(),
+                protocol: 1,
+                entry: vec![entry.into(), "plugin.py".into()],
+                description: String::new(),
+                permissions: Default::default(),
+            },
+            dir: PathBuf::from("no-such-plugin-dir"),
+            builtin: false,
+        }
+    }
+
+    #[test]
+    fn a_bare_entry_missing_from_the_plugin_folder_runs_from_path() {
+        // cargo is on PATH wherever these tests run.
+        let exe = plugin_with_entry("cargo").executable();
+        assert!(exe.is_file(), "{}", exe.display());
+        assert!(!exe.starts_with("no-such-plugin-dir"));
+    }
+
+    #[test]
+    fn an_entry_with_a_folder_stays_inside_the_plugin_folder() {
+        let exe = plugin_with_entry("bin/cargo").executable();
+        assert!(exe.starts_with("no-such-plugin-dir"), "{}", exe.display());
+    }
 }
