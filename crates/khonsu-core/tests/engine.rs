@@ -97,10 +97,9 @@ fn writer_lock_and_read_only_access() {
         other => panic!("expected a lock error, got {other:?}"),
     }
     let message = Graph::open(dir.graph(), AccessMode::ReadWrite, "khonsu-cli").unwrap_err().to_string();
-    assert!(message.contains("KhonsuGraph") && message.contains("read-only"), "{message}");
+    assert!(message.contains("KhonsuGraph") && message.contains("one process"), "{message}");
+    assert!(matches!(Graph::open(dir.graph(), AccessMode::ReadOnly, "khonsu-cli"), Err(OpenError::Locked(_))));
 
-    // Reading next to a writer is a cross-process case, covered by the CLI tests:
-    // inside one process HawDB reports the branch as busy.
     drop(writer);
     let mut reader = Graph::open(dir.graph(), AccessMode::ReadOnly, "khonsu-cli").unwrap();
     assert_eq!(run(&mut reader, Language::Cypher, "MATCH (n) RETURN n").row_count, 1);

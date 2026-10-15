@@ -49,12 +49,12 @@ pub enum OpenError {
 fn locked_message(owner: &Option<LockOwner>) -> String {
     match owner {
         Some(owner) => format!(
-            "the graph is already open for writing by {} (pid {}) since {}; close it there, or open read-only",
+            "the graph is open in {} (pid {}) since {}. HawDB allows one process per graph directory, so close it there first",
             owner.program,
             owner.pid,
             crate::util::format_unix_time(owner.since)
         ),
-        None => "the graph is already open for writing by another process; close it there, or open read-only".into(),
+        None => "the graph is open in another process. HawDB allows one process per graph directory, so close it there first".into(),
     }
 }
 
@@ -91,6 +91,7 @@ impl From<HawDBError> for QueryError {
             HawDBError::ReadBudgetExceeded(_) => "read_budget",
             HawDBError::TransactionConflict { .. } => "conflict",
             HawDBError::CapabilityUnavailable { .. } => "capability",
+            HawDBError::BranchBusy { .. } => "busy",
             HawDBError::Storage(_) | HawDBError::StorageIntegrity(_) | HawDBError::FileDescriptors(_) => "storage",
             _ => "engine",
         };
@@ -182,6 +183,8 @@ impl Graph {
                 LockError::Held(owner) => OpenError::Locked(owner),
                 LockError::Io(err) => OpenError::Io(err),
             })?),
+            // HawDB leases the directory to one process, readers included.
+            AccessMode::ReadOnly if lock::is_locked(&path) => return Err(OpenError::Locked(lock::read_owner(&path))),
             AccessMode::ReadOnly => None,
         };
         let config = DatabaseConfig {

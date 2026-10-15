@@ -2,7 +2,7 @@
 resolver = "2"
 members = [
     "crates/khonsu-core",
-    # "crates/khonsu-cli",
+    "crates/khonsu-cli",
     "crates/khonsu-plugin-protocol",
     "plugins/csv",
 ]
