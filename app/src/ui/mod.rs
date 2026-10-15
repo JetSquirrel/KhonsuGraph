@@ -58,6 +58,7 @@ pub const WORKSPACE_KEY_CONTEXT: &str = "KhonsuGraph";
 pub const RUN_QUERY_KEYSTROKE: &str = "secondary-enter";
 
 pub fn init(cx: &mut App) {
+    gpui_graph::init(cx);
     cx.bind_keys([
         KeyBinding::new(RUN_QUERY_KEYSTROKE, RunQuery, Some(WORKSPACE_KEY_CONTEXT)),
         KeyBinding::new("secondary-e", ExplainQuery, Some(WORKSPACE_KEY_CONTEXT)),

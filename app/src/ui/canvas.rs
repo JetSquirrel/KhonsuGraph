@@ -1,15 +1,15 @@
-//! The graph canvas: nodes and relationships of a result, laid out by a small
-//! force simulation and drawn with GPUI. Edges are painted paths; nodes are
-//! positioned elements so their captions use ordinary text layout.
+//! The graph canvas: nodes and relationships of a result, drawn by
+//! [`gpui_graph::NetworkGraph`]. This view owns the HawDB side — converting
+//! results, fetching missing endpoints and neighbors, the inspector and the
+//! legend — and leaves layout, painting and interaction to the component.
 //!
 //! Drag the background to pan, scroll to zoom, drag a node to move it. Click
 //! a node or relationship to inspect it; double-click a node to add its
 //! neighbors around it. Expanding never moves nodes already on the canvas.
 
-use std::cell::Cell;
 use std::collections::{BTreeMap, HashMap};
-use std::rc::Rc;
 
+use gpui_graph::{Edge, GraphData as Graph, LabelMode, NetworkGraph, NetworkGraphEvent, Node, Selection};
 use gpui_kit::component::button::Button;
 use gpui_kit::component::notification::Notification;
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme, IconName, Sizable, StyledExt, WindowExt};
@@ -23,8 +23,12 @@ use crate::ui::palette;
 
 /// Above this many nodes the canvas shows the first ones and says so.
 pub const NODE_LIMIT: usize = 2000;
-const NODE_RADIUS: f32 = 13.0;
+/// Up to this many nodes every caption is drawn, whatever the zoom; above it
+/// captions appear once zoomed in, or around the hovered node.
+const ALWAYS_LABEL_LIMIT: usize = 300;
 const CAPTION_KEYS: &[&str] = &["name", "title", "label", "display_name", "id", "key", "khonsu_id"];
+/// Edge property carrying the HawDB relationship id, so a selected edge maps back.
+const EDGE_ID: &str = "khonsu_edge_id";
 
 fn caption(node: &GraphNode) -> String {
     for key in CAPTION_KEYS {
@@ -46,51 +50,63 @@ fn truncate(text: &str, max: usize) -> String {
     }
 }
 
+fn label_mode(nodes: usize) -> LabelMode {
+    if nodes <= ALWAYS_LABEL_LIMIT {
+        LabelMode::Always
+    } else {
+        LabelMode::Auto
+    }
+}
+
+fn first_label(node: &GraphNode) -> &str {
+    node.labels.first().map(String::as_str).unwrap_or("")
+}
+
+/// The component's node for `node`, colored like its label in the sidebar.
+fn to_node(node: &GraphNode, cx: &App) -> Node {
+    let label = first_label(node);
+    Node::new(node.id.to_string(), caption(node), label.to_string()).color(palette::label_color(label, cx))
+}
+
+fn to_edge(edge: &GraphEdge) -> Edge {
+    Edge::new(edge.source.to_string(), edge.target.to_string(), edge.rel_type.clone())
+        .property(EDGE_ID, edge.id.to_string())
+}
+
+fn edge_id(edge: &Edge) -> Option<i64> {
+    edge.properties.iter().find(|(k, _)| k.as_ref() == EDGE_ID)?.1.parse().ok()
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Selected {
     Node(i64),
     Edge(i64),
 }
 
-#[derive(Clone, Copy)]
-enum Drag {
-    Pan { start: Point<Pixels>, origin: Point<f32> },
-    Node { id: i64, last: Point<Pixels> },
-}
-
 pub struct GraphCanvas {
-    nodes: Vec<GraphNode>,
-    edges: Vec<GraphEdge>,
-    index: HashMap<i64, usize>,
-    positions: Vec<Point<f32>>,
-    /// Screen offset of the world origin, in pixels.
-    pan: Point<f32>,
-    zoom: f32,
+    graph: Entity<NetworkGraph>,
+    /// Everything on the canvas, by HawDB id, for the inspector.
+    nodes: HashMap<i64, GraphNode>,
+    edges: HashMap<i64, GraphEdge>,
     selected: Option<Selected>,
-    drag: Option<Drag>,
     /// Nodes the result held beyond [`NODE_LIMIT`].
     hidden: usize,
-    bounds: Rc<Cell<Option<Bounds<Pixels>>>>,
-    /// Set until the first paint knows the canvas size and can fit the graph.
-    needs_fit: bool,
     expanding: bool,
+    _subscriptions: Vec<Subscription>,
 }
 
 impl GraphCanvas {
-    pub fn new(_window: &mut Window, _cx: &mut Context<Self>) -> Self {
+    pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let graph = cx.new(|cx| NetworkGraph::new(cx).with_label_mode(LabelMode::Auto));
+        let subscription = cx.subscribe_in(&graph, window, Self::on_graph_event);
         Self {
-            nodes: Vec::new(),
-            edges: Vec::new(),
-            index: HashMap::new(),
-            positions: Vec::new(),
-            pan: point(0., 0.),
-            zoom: 1.0,
+            graph,
+            nodes: HashMap::new(),
+            edges: HashMap::new(),
             selected: None,
-            drag: None,
             hidden: 0,
-            bounds: Rc::new(Cell::new(None)),
-            needs_fit: true,
             expanding: false,
+            _subscriptions: vec![subscription],
         }
     }
 
@@ -99,130 +115,90 @@ impl GraphCanvas {
     pub fn set_data(&mut self, data: GraphData, window: &mut Window, cx: &mut Context<Self>) {
         self.nodes.clear();
         self.edges.clear();
-        self.index.clear();
-        self.positions.clear();
         self.selected = None;
         self.hidden = data.nodes.len().saturating_sub(NODE_LIMIT);
         let missing = data.dangling_endpoints();
         let mut nodes = data.nodes;
         nodes.truncate(NODE_LIMIT);
-        for node in nodes {
-            self.add_node(node, None);
-        }
         let edges = data.edges;
         if missing.is_empty() || missing.len() > 500 || self.hidden > 0 {
-            self.add_edges(edges);
-            self.relayout();
-            cx.notify();
+            self.load(nodes, edges, cx);
             return;
         }
         cx.spawn_in(window, async move |this, cx| {
             let extra = smol::unblock(move || crate::db::nodes_by_id(&missing)).await;
             this.update(cx, |this, cx| {
                 if let Ok(extra) = extra {
-                    for node in extra.nodes {
-                        this.add_node(node, None);
-                    }
+                    nodes.extend(extra.nodes);
                 }
-                this.add_edges(edges);
-                this.relayout();
-                cx.notify();
+                this.load(nodes, edges, cx);
             })
             .ok();
         })
         .detach();
     }
 
-    fn add_node(&mut self, node: GraphNode, at: Option<Point<f32>>) -> bool {
-        if self.index.contains_key(&node.id) {
-            return false;
-        }
-        let position = at.unwrap_or_else(|| {
-            // Seed on a spiral, deterministic so a result lays out the same way twice.
-            let i = self.nodes.len() as f32;
-            let angle = i * 2.399_963;
-            let radius = 30.0 * i.sqrt();
-            point(radius * angle.cos(), radius * angle.sin())
+    fn load(&mut self, nodes: Vec<GraphNode>, edges: Vec<GraphEdge>, cx: &mut Context<Self>) {
+        let data = self.admit(nodes, edges, cx);
+        let mode = label_mode(self.nodes.len());
+        self.graph.update(cx, |graph, cx| {
+            graph.set_label_mode(mode, cx);
+            graph.set_data(data, cx);
         });
-        if let Some(label) = node.labels.first() {
-            palette::register_labels([label.as_str()]);
-        }
-        self.index.insert(node.id, self.nodes.len());
-        self.nodes.push(node);
-        self.positions.push(position);
-        true
+        cx.notify();
     }
 
-    fn add_edges(&mut self, edges: Vec<GraphEdge>) {
-        let mut known: BTreeMap<i64, ()> = self.edges.iter().map(|e| (e.id, ())).collect();
-        for edge in edges {
-            if self.index.contains_key(&edge.source)
-                && self.index.contains_key(&edge.target)
-                && known.insert(edge.id, ()).is_none()
-            {
-                self.edges.push(edge);
+    /// Record the nodes and edges not on the canvas yet and convert them.
+    /// Edges whose endpoints are missing are dropped.
+    fn admit(&mut self, nodes: Vec<GraphNode>, edges: Vec<GraphEdge>, cx: &App) -> Graph {
+        palette::register_labels(nodes.iter().map(first_label).filter(|l| !l.is_empty()));
+        let mut fresh_nodes = Vec::new();
+        for node in nodes {
+            if !self.nodes.contains_key(&node.id) {
+                fresh_nodes.push(to_node(&node, cx));
+                self.nodes.insert(node.id, node);
             }
         }
-    }
-
-    /// Lay out every node again and fit the result in view.
-    fn relayout(&mut self) {
-        let fixed = vec![false; self.positions.len()];
-        let links: Vec<(usize, usize)> = self
-            .edges
-            .iter()
-            .filter_map(|e| Some((*self.index.get(&e.source)?, *self.index.get(&e.target)?)))
-            .collect();
-        let iterations = iterations_for(self.positions.len());
-        force_layout(&mut self.positions, &links, &fixed, iterations);
-        self.needs_fit = true;
-    }
-
-    fn fit(&mut self, bounds: Bounds<Pixels>) {
-        if self.positions.is_empty() {
-            return;
+        let mut fresh_edges = Vec::new();
+        for edge in edges {
+            if self.nodes.contains_key(&edge.source)
+                && self.nodes.contains_key(&edge.target)
+                && !self.edges.contains_key(&edge.id)
+            {
+                fresh_edges.push(to_edge(&edge));
+                self.edges.insert(edge.id, edge);
+            }
         }
-        let (mut min, mut max) = (point(f32::MAX, f32::MAX), point(f32::MIN, f32::MIN));
-        for p in &self.positions {
-            min = point(min.x.min(p.x), min.y.min(p.y));
-            max = point(max.x.max(p.x), max.y.max(p.y));
+        Graph::new(fresh_nodes, fresh_edges)
+    }
+
+    fn on_graph_event(
+        &mut self,
+        _: &Entity<NetworkGraph>,
+        event: &NetworkGraphEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match event {
+            NetworkGraphEvent::SelectionChanged(selection) => {
+                self.selected = match selection {
+                    Selection::Node(node) => node.id.parse().ok().map(Selected::Node),
+                    Selection::Edge(edge) => edge_id(edge).map(Selected::Edge),
+                    Selection::EdgeBundle(edges) => edges.first().and_then(edge_id).map(Selected::Edge),
+                    _ => None,
+                };
+                cx.notify();
+            }
+            NetworkGraphEvent::NodeActivated(node) => {
+                if let Ok(id) = node.id.parse() {
+                    self.expand(id, window, cx);
+                }
+            }
+            _ => {}
         }
-        let width = f32::from(bounds.size.width).max(1.0);
-        let height = f32::from(bounds.size.height).max(1.0);
-        let margin = 60.0;
-        let span_x = (max.x - min.x).max(1.0);
-        let span_y = (max.y - min.y).max(1.0);
-        self.zoom = ((width - 2.0 * margin) / span_x).min((height - 2.0 * margin) / span_y).clamp(0.1, 1.6);
-        let center = point((min.x + max.x) / 2.0, (min.y + max.y) / 2.0);
-        self.pan = point(width / 2.0 - center.x * self.zoom, height / 2.0 - center.y * self.zoom);
     }
 
-    fn to_screen(&self, p: Point<f32>) -> Point<f32> {
-        point(p.x * self.zoom + self.pan.x, p.y * self.zoom + self.pan.y)
-    }
-
-    fn local(&self, position: Point<Pixels>) -> Point<f32> {
-        let origin = self.bounds.get().map(|b| b.origin).unwrap_or_default();
-        point(f32::from(position.x - origin.x), f32::from(position.y - origin.y))
-    }
-
-    fn node_at(&self, screen: Point<f32>) -> Option<i64> {
-        let radius = NODE_RADIUS * self.zoom.max(0.6) + 2.0;
-        self.positions.iter().enumerate().rev().find_map(|(ix, p)| {
-            let s = self.to_screen(*p);
-            ((s.x - screen.x).powi(2) + (s.y - screen.y).powi(2) <= radius * radius).then(|| self.nodes[ix].id)
-        })
-    }
-
-    fn edge_at(&self, screen: Point<f32>) -> Option<i64> {
-        self.edges.iter().find_map(|edge| {
-            let a = self.to_screen(self.positions[self.index[&edge.source]]);
-            let b = self.to_screen(self.positions[self.index[&edge.target]]);
-            (distance_to_segment(screen, a, b) < 5.0).then_some(edge.id)
-        })
-    }
-
-    /// Add `id`'s neighbors on a ring around it.
+    /// Add `id`'s neighbors around it.
     fn expand(&mut self, id: i64, window: &mut Window, cx: &mut Context<Self>) {
         if self.expanding {
             return;
@@ -235,22 +211,20 @@ impl GraphCanvas {
                 this.expanding = false;
                 match result {
                     Ok(data) => {
-                        let fresh: Vec<GraphNode> =
-                            data.nodes.into_iter().filter(|n| !this.index.contains_key(&n.id)).collect();
-                        if this.nodes.len() + fresh.len() > NODE_LIMIT {
+                        let fresh = data.nodes.iter().filter(|n| !this.nodes.contains_key(&n.id)).count();
+                        if this.nodes.len() + fresh > NODE_LIMIT {
                             window.push_notification(
                                 Notification::warning(trf("canvas.limit", &[&NODE_LIMIT.to_string()])),
                                 cx,
                             );
                         } else {
-                            let center = this.index.get(&id).map(|&ix| this.positions[ix]).unwrap_or_default();
-                            let ring = 90.0 + fresh.len() as f32 * 7.0;
-                            let count = fresh.len().max(1) as f32;
-                            for (i, node) in fresh.into_iter().enumerate() {
-                                let angle = std::f32::consts::TAU * i as f32 / count;
-                                this.add_node(node, Some(point(center.x + ring * angle.cos(), center.y + ring * angle.sin())));
-                            }
-                            this.add_edges(data.edges);
+                            let data = this.admit(data.nodes, data.edges, cx);
+                            let anchor = id.to_string();
+                            let mode = label_mode(this.nodes.len());
+                            this.graph.update(cx, |graph, cx| {
+                                graph.set_label_mode(mode, cx);
+                                graph.merge(data, Some(&anchor), cx);
+                            });
                         }
                     }
                     Err(e) => window.push_notification(Notification::error(e.message), cx),
@@ -262,81 +236,21 @@ impl GraphCanvas {
         .detach();
     }
 
-    fn on_mouse_down(&mut self, event: &MouseDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        let at = self.local(event.position);
-        if let Some(id) = self.node_at(at) {
-            self.selected = Some(Selected::Node(id));
-            if event.click_count >= 2 {
-                self.expand(id, window, cx);
-            } else {
-                self.drag = Some(Drag::Node { id, last: event.position });
-            }
-        } else if let Some(id) = self.edge_at(at) {
-            self.selected = Some(Selected::Edge(id));
-        } else {
-            self.selected = None;
-            self.drag = Some(Drag::Pan {
-                start: event.position,
-                origin: self.pan,
-            });
-        }
-        cx.notify();
-    }
-
-    fn on_mouse_move(&mut self, event: &MouseMoveEvent, _: &mut Window, cx: &mut Context<Self>) {
-        let Some(drag) = self.drag else {
-            return;
-        };
-        if event.pressed_button != Some(MouseButton::Left) {
-            self.drag = None;
-            return;
-        }
-        match drag {
-            Drag::Pan { start, origin } => {
-                self.pan = point(
-                    origin.x + f32::from(event.position.x - start.x),
-                    origin.y + f32::from(event.position.y - start.y),
-                );
-            }
-            Drag::Node { id, last } => {
-                if let Some(&ix) = self.index.get(&id) {
-                    let p = &mut self.positions[ix];
-                    p.x += f32::from(event.position.x - last.x) / self.zoom;
-                    p.y += f32::from(event.position.y - last.y) / self.zoom;
-                }
-                self.drag = Some(Drag::Node { id, last: event.position });
-            }
-        }
-        cx.notify();
-    }
-
-    fn on_scroll(&mut self, event: &ScrollWheelEvent, _: &mut Window, cx: &mut Context<Self>) {
-        let delta = f32::from(event.delta.pixel_delta(px(16.)).y);
-        let at = self.local(event.position);
-        let factor = (1.0 + delta / 400.0).clamp(0.5, 2.0);
-        let zoom = (self.zoom * factor).clamp(0.05, 4.0);
-        // Keep the point under the pointer still.
-        let world = point((at.x - self.pan.x) / self.zoom, (at.y - self.pan.y) / self.zoom);
-        self.zoom = zoom;
-        self.pan = point(at.x - world.x * zoom, at.y - world.y * zoom);
-        cx.notify();
-    }
-
     fn render_inspector(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
         let selected = self.selected?;
         let (title, color, subtitle, properties) = match selected {
             Selected::Node(id) => {
-                let node = &self.nodes[*self.index.get(&id)?];
+                let node = self.nodes.get(&id)?;
                 let label = node.labels.join(":");
                 (
                     format!("{label} #{id}"),
-                    Some(palette::label_color(node.labels.first().map(String::as_str).unwrap_or(""), cx)),
+                    Some(palette::label_color(first_label(node), cx)),
                     None,
                     &node.properties,
                 )
             }
             Selected::Edge(id) => {
-                let edge = self.edges.iter().find(|e| e.id == id)?;
+                let edge = self.edges.get(&id)?;
                 (
                     format!("→ {} #{id}", edge.rel_type),
                     None,
@@ -383,18 +297,23 @@ impl GraphCanvas {
                                 .child(crate::ui::results::cell_text(value)),
                         )
                 }))
-                .when(matches!(selected, Selected::Node(_)), |this| {
-                    let Selected::Node(id) = selected else { unreachable!() };
-                    this.child(
-                        Button::new("expand-node")
-                            .small()
-                            .outline()
-                            .icon(IconName::Plus)
-                            .label(tr("canvas.expand"))
-                            .loading(self.expanding)
-                            .on_click(cx.listener(move |this, _, window, cx| this.expand(id, window, cx))),
-                    )
-                })
+                .when_some(
+                    match selected {
+                        Selected::Node(id) => Some(id),
+                        Selected::Edge(_) => None,
+                    },
+                    |this, id| {
+                        this.child(
+                            Button::new("expand-node")
+                                .small()
+                                .outline()
+                                .icon(IconName::Plus)
+                                .label(tr("canvas.expand"))
+                                .loading(self.expanding)
+                                .on_click(cx.listener(move |this, _, window, cx| this.expand(id, window, cx))),
+                        )
+                    },
+                )
                 .into_any_element(),
         )
     }
@@ -402,122 +321,15 @@ impl GraphCanvas {
 
 impl Render for GraphCanvas {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        if self.needs_fit {
-            if let Some(bounds) = self.bounds.get() {
-                self.fit(bounds);
-                self.needs_fit = false;
-            } else {
-                cx.notify();
-            }
-        }
         let theme = cx.theme();
-        let edge_color = theme.muted_foreground.opacity(0.7);
-        let selected_color = theme.primary;
-        let text_color = theme.foreground;
         let halo = theme.background;
         let muted = theme.muted_foreground;
         let border = theme.border;
 
-        let zoom = self.zoom;
-        let radius = NODE_RADIUS * zoom.clamp(0.6, 1.6);
-        let show_captions = zoom > 0.45 || self.nodes.len() < 60;
-        let show_edge_labels = zoom > 0.7 && self.edges.len() <= 300;
-
-        let screen: Vec<Point<f32>> = self.positions.iter().map(|p| self.to_screen(*p)).collect();
-        let segments: Vec<(Point<f32>, Point<f32>, bool)> = self
-            .edges
-            .iter()
-            .map(|e| {
-                (
-                    screen[self.index[&e.source]],
-                    screen[self.index[&e.target]],
-                    self.selected == Some(Selected::Edge(e.id)),
-                )
-            })
-            .collect();
-        let bounds_cell = self.bounds.clone();
-        let edges_canvas = canvas(
-            move |bounds, _, _| bounds_cell.set(Some(bounds)),
-            move |bounds, _, window, _| {
-                let origin = bounds.origin;
-                for (a, b, selected) in &segments {
-                    let color = if *selected { selected_color } else { edge_color };
-                    paint_edge(window, origin, *a, *b, radius, *selected, color);
-                }
-            },
-        )
-        .absolute()
-        .size_full();
-
-        let labels: Vec<AnyElement> = if show_edge_labels {
-            self.edges
-                .iter()
-                .map(|e| {
-                    let (a, b) = (screen[self.index[&e.source]], screen[self.index[&e.target]]);
-                    div()
-                        .absolute()
-                        .left(px((a.x + b.x) / 2.0 - 40.0))
-                        .top(px((a.y + b.y) / 2.0 - 8.0))
-                        .w(px(80.0))
-                        .flex()
-                        .justify_center()
-                        .child(
-                            div()
-                                .px_1()
-                                .rounded_sm()
-                                .bg(halo.opacity(0.85))
-                                .text_size(px(9.0))
-                                .text_color(muted)
-                                .child(e.rel_type.clone()),
-                        )
-                        .into_any_element()
-                })
-                .collect()
-        } else {
-            Vec::new()
-        };
-
-        let nodes: Vec<AnyElement> = self
-            .nodes
-            .iter()
-            .zip(&screen)
-            .map(|(node, s)| {
-                let color = palette::label_color(node.labels.first().map(String::as_str).unwrap_or(""), cx);
-                let selected = self.selected == Some(Selected::Node(node.id));
-                v_flex()
-                    .absolute()
-                    .left(px(s.x - 70.0))
-                    .top(px(s.y - radius))
-                    .w(px(140.0))
-                    .items_center()
-                    .child(
-                        div()
-                            .size(px(radius * 2.0))
-                            .rounded_full()
-                            .bg(color)
-                            .border_2()
-                            .border_color(if selected { selected_color } else { halo }),
-                    )
-                    .when(show_captions, |this| {
-                        this.child(
-                            div()
-                                .mt_0p5()
-                                .px_1()
-                                .rounded_sm()
-                                .bg(halo.opacity(0.8))
-                                .text_size(px(11.0))
-                                .text_color(text_color)
-                                .whitespace_nowrap()
-                                .child(caption(node)),
-                        )
-                    })
-                    .into_any_element()
-            })
-            .collect();
-
-        let mut legend: Vec<String> = self.nodes.iter().filter_map(|n| n.labels.first().cloned()).collect();
-        legend.sort();
-        legend.dedup();
+        let mut legend: BTreeMap<String, usize> = BTreeMap::new();
+        for label in self.nodes.values().map(first_label).filter(|l| !l.is_empty()) {
+            *legend.entry(label.to_string()).or_default() += 1;
+        }
 
         let note = if self.hidden > 0 {
             trf("canvas.truncated", &[&self.nodes.len().to_string(), &(self.nodes.len() + self.hidden).to_string()])
@@ -534,14 +346,7 @@ impl Render for GraphCanvas {
                     .flex_1()
                     .h_full()
                     .overflow_hidden()
-                    .bg(theme.secondary.opacity(0.35))
-                    .on_mouse_down(MouseButton::Left, cx.listener(Self::on_mouse_down))
-                    .on_mouse_move(cx.listener(Self::on_mouse_move))
-                    .on_mouse_up(MouseButton::Left, cx.listener(|this, _, _, _| this.drag = None))
-                    .on_scroll_wheel(cx.listener(Self::on_scroll))
-                    .child(edges_canvas)
-                    .children(labels)
-                    .children(nodes)
+                    .child(self.graph.clone())
                     .child(
                         h_flex()
                             .absolute()
@@ -554,10 +359,7 @@ impl Render for GraphCanvas {
                                     .outline()
                                     .label(tr("canvas.fit"))
                                     .on_click(cx.listener(|this, _, _, cx| {
-                                        if let Some(bounds) = this.bounds.get() {
-                                            this.fit(bounds);
-                                        }
-                                        cx.notify();
+                                        this.graph.update(cx, |graph, cx| graph.fit_view(cx));
                                     })),
                             )
                             .child(
@@ -566,8 +368,7 @@ impl Render for GraphCanvas {
                                     .outline()
                                     .label(tr("canvas.relayout"))
                                     .on_click(cx.listener(|this, _, _, cx| {
-                                        this.relayout();
-                                        cx.notify();
+                                        this.graph.update(cx, |graph, cx| graph.relayout(cx));
                                     })),
                             ),
                     )
@@ -584,12 +385,13 @@ impl Render for GraphCanvas {
                                 .border_color(border)
                                 .bg(halo)
                                 .text_xs()
-                                .children(legend.into_iter().map(|label| {
+                                .children(legend.into_iter().map(|(label, count)| {
                                     h_flex()
                                         .gap_1p5()
                                         .items_center()
                                         .child(div().size_2p5().rounded_full().bg(palette::label_color(&label, cx)))
-                                        .child(label)
+                                        .child(div().flex_1().child(label))
+                                        .child(div().pl_3().text_color(muted).child(count.to_string()))
                                 })),
                         )
                     })
@@ -613,140 +415,23 @@ impl Render for GraphCanvas {
     }
 }
 
-fn paint_edge(
-    window: &mut Window,
-    origin: Point<Pixels>,
-    a: Point<f32>,
-    b: Point<f32>,
-    radius: f32,
-    selected: bool,
-    color: Hsla,
-) {
-    let (dx, dy) = (b.x - a.x, b.y - a.y);
-    let length = (dx * dx + dy * dy).sqrt();
-    if length < radius * 2.0 {
-        return;
-    }
-    let (ux, uy) = (dx / length, dy / length);
-    let start = point(a.x + ux * radius, a.y + uy * radius);
-    let tip = point(b.x - ux * radius, b.y - uy * radius);
-    let at = |p: Point<f32>| point(origin.x + px(p.x), origin.y + px(p.y));
-
-    let mut line = PathBuilder::stroke(px(if selected { 2.4 } else { 1.3 }));
-    line.move_to(at(start));
-    line.line_to(at(tip));
-    if let Ok(path) = line.build() {
-        window.paint_path(path, color);
-    }
-    let size = 7.0;
-    let base = point(tip.x - ux * size, tip.y - uy * size);
-    let left = point(base.x - uy * size * 0.5, base.y + ux * size * 0.5);
-    let right = point(base.x + uy * size * 0.5, base.y - ux * size * 0.5);
-    let mut arrow = PathBuilder::fill();
-    arrow.move_to(at(tip));
-    arrow.line_to(at(left));
-    arrow.line_to(at(right));
-    arrow.close();
-    if let Ok(path) = arrow.build() {
-        window.paint_path(path, color);
-    }
-}
-
-fn distance_to_segment(p: Point<f32>, a: Point<f32>, b: Point<f32>) -> f32 {
-    let (dx, dy) = (b.x - a.x, b.y - a.y);
-    let length2 = dx * dx + dy * dy;
-    if length2 == 0.0 {
-        return ((p.x - a.x).powi(2) + (p.y - a.y).powi(2)).sqrt();
-    }
-    let t = (((p.x - a.x) * dx + (p.y - a.y) * dy) / length2).clamp(0.0, 1.0);
-    let (cx, cy) = (a.x + t * dx, a.y + t * dy);
-    ((p.x - cx).powi(2) + (p.y - cy).powi(2)).sqrt()
-}
-
-fn iterations_for(count: usize) -> usize {
-    match count {
-        0..=200 => 300,
-        201..=600 => 120,
-        _ => 40,
-    }
-}
-
-/// Fruchterman–Reingold. Deterministic for a given seed layout; nodes marked
-/// `fixed` attract and repel others but do not move.
-pub fn force_layout(positions: &mut [Point<f32>], links: &[(usize, usize)], fixed: &[bool], iterations: usize) {
-    let n = positions.len();
-    if n < 2 {
-        return;
-    }
-    let k = 80.0_f32;
-    let mut temperature = 10.0 * (n as f32).sqrt();
-    let cooling = temperature / iterations.max(1) as f32;
-    let mut displacement = vec![point(0.0_f32, 0.0_f32); n];
-    for _ in 0..iterations {
-        displacement.iter_mut().for_each(|d| *d = point(0.0, 0.0));
-        for i in 0..n {
-            for j in (i + 1)..n {
-                let (dx, dy) = (positions[i].x - positions[j].x, positions[i].y - positions[j].y);
-                let d2 = (dx * dx + dy * dy).max(0.01);
-                let force = k * k / d2;
-                displacement[i].x += dx * force;
-                displacement[i].y += dy * force;
-                displacement[j].x -= dx * force;
-                displacement[j].y -= dy * force;
-            }
-        }
-        for &(a, b) in links {
-            if a == b {
-                continue;
-            }
-            let (dx, dy) = (positions[a].x - positions[b].x, positions[a].y - positions[b].y);
-            let d = (dx * dx + dy * dy).sqrt().max(0.01);
-            let force = d / k;
-            displacement[a].x -= dx * force;
-            displacement[a].y -= dy * force;
-            displacement[b].x += dx * force;
-            displacement[b].y += dy * force;
-        }
-        for i in 0..n {
-            if fixed[i] {
-                continue;
-            }
-            // A weak pull to the middle keeps disconnected parts nearby.
-            displacement[i].x -= positions[i].x * 0.02;
-            displacement[i].y -= positions[i].y * 0.02;
-            let d = displacement[i];
-            let length = (d.x * d.x + d.y * d.y).sqrt().max(0.01);
-            let step = length.min(temperature);
-            positions[i].x += d.x / length * step;
-            positions[i].y += d.y / length * step;
-        }
-        temperature = (temperature - cooling).max(0.5);
-    }
-}
-
 #[cfg(test)]
 mod tests {
-    use super::{distance_to_segment, force_layout};
-    use gpui_kit::point;
+    use super::{edge_id, to_edge};
+    use khonsu_core::GraphEdge;
 
     #[test]
-    fn layout_separates_nodes_and_keeps_links_short() {
-        let mut positions: Vec<_> = (0..6).map(|i| point(i as f32, 0.0)).collect();
-        let links = [(0, 1), (1, 2), (3, 4), (4, 5)];
-        force_layout(&mut positions, &links, &[false; 6], 300);
-        let dist = |a: usize, b: usize| ((positions[a].x - positions[b].x).powi(2) + (positions[a].y - positions[b].y).powi(2)).sqrt();
-        for i in 0..6 {
-            for j in (i + 1)..6 {
-                assert!(dist(i, j) > 20.0, "{i} and {j} overlap: {positions:?}");
-                assert!(positions[i].x.is_finite() && positions[i].y.is_finite());
-            }
-        }
-        assert!(dist(0, 1) < dist(0, 5) * 1.5);
-    }
-
-    #[test]
-    fn segment_distance() {
-        assert_eq!(distance_to_segment(point(0.0, 5.0), point(-10.0, 0.0), point(10.0, 0.0)), 5.0);
-        assert_eq!(distance_to_segment(point(13.0, 4.0), point(-10.0, 0.0), point(10.0, 0.0)), 5.0);
+    fn edge_round_trips_its_id() {
+        let edge = GraphEdge {
+            id: 42,
+            source: 1,
+            target: 2,
+            rel_type: "KNOWS".into(),
+            properties: Default::default(),
+        };
+        let converted = to_edge(&edge);
+        assert_eq!(converted.source.as_ref(), "1");
+        assert_eq!(converted.target.as_ref(), "2");
+        assert_eq!(edge_id(&converted), Some(42));
     }
 }

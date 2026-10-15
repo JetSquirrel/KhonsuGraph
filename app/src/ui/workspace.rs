@@ -20,7 +20,7 @@ use crate::state::{AppState, GraphChanged, QueryStats};
 use crate::ui::results::ResultsPanel;
 use crate::ui::{ExplainQuery, RunQuery, RUN_QUERY_KEYSTROKE, WORKSPACE_KEY_CONTEXT};
 
-const RESULTS_PANEL_DEFAULT: f32 = 380.;
+const RESULTS_PANEL_DEFAULT: f32 = 540.;
 /// Statements that may change labels, types or tables: the sidebar reloads
 /// after them.
 const WRITE_WORDS: &[&str] = &["CREATE", "MERGE", "DELETE", "SET", "INSERT", "DROP", "ALTER", "UPDATE", "REMOVE"];
