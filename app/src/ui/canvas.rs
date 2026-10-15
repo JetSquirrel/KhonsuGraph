@@ -30,9 +30,9 @@ const CAPTION_KEYS: &[&str] = &["name", "title", "label", "display_name", "id", 
 /// Edge property carrying the HawDB relationship id, so a selected edge maps back.
 const EDGE_ID: &str = "khonsu_edge_id";
 
-fn caption(node: &GraphNode) -> String {
-    for key in CAPTION_KEYS {
-        match node.properties.get(*key) {
+fn caption(node: &GraphNode, preferred: Option<&str>) -> String {
+    for key in preferred.into_iter().chain(CAPTION_KEYS.iter().copied()) {
+        match node.properties.get(key) {
             Some(Json::String(s)) => return truncate(s, 26),
             Some(v @ (Json::Number(_) | Json::Bool(_))) => return v.to_string(),
             _ => {}
@@ -63,9 +63,9 @@ fn first_label(node: &GraphNode) -> &str {
 }
 
 /// The component's node for `node`, colored like its label in the sidebar.
-fn to_node(node: &GraphNode, cx: &App) -> Node {
+fn to_node(node: &GraphNode, preferred: Option<&str>, cx: &App) -> Node {
     let label = first_label(node);
-    Node::new(node.id.to_string(), caption(node), label.to_string()).color(palette::label_color(label, cx))
+    Node::new(node.id.to_string(), caption(node, preferred), label.to_string()).color(palette::label_color(label, cx))
 }
 
 fn to_edge(edge: &GraphEdge) -> Edge {
@@ -92,8 +92,21 @@ pub struct GraphCanvas {
     /// Nodes the result held beyond [`NODE_LIMIT`].
     hidden: usize,
     expanding: bool,
+    /// The node property shown as each node's caption, before the usual
+    /// name-like ones: a dashboard `graph`'s `caption`.
+    caption_key: Option<String>,
+    /// A dashboard panel shows no inspector: its width is the grid's.
+    compact: bool,
     _subscriptions: Vec<Subscription>,
 }
+
+/// What a canvas tells its host: a node was selected, for a dashboard filter
+/// to pick its property.
+pub enum CanvasEvent {
+    NodeSelected(GraphNode),
+}
+
+impl EventEmitter<CanvasEvent> for GraphCanvas {}
 
 impl GraphCanvas {
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
@@ -106,8 +119,17 @@ impl GraphCanvas {
             selected: None,
             hidden: 0,
             expanding: false,
+            caption_key: None,
+            compact: false,
             _subscriptions: vec![subscription],
         }
+    }
+
+    /// For a dashboard panel: no inspector, and `caption` as the caption.
+    pub fn configure(&mut self, caption_key: Option<String>, compact: bool, cx: &mut Context<Self>) {
+        self.caption_key = caption_key;
+        self.compact = compact;
+        cx.notify();
     }
 
     /// Show a new result. Relationship endpoints the result left out are
@@ -155,7 +177,7 @@ impl GraphCanvas {
         let mut fresh_nodes = Vec::new();
         for node in nodes {
             if !self.nodes.contains_key(&node.id) {
-                fresh_nodes.push(to_node(&node, cx));
+                fresh_nodes.push(to_node(&node, self.caption_key.as_deref(), cx));
                 self.nodes.insert(node.id, node);
             }
         }
@@ -187,6 +209,11 @@ impl GraphCanvas {
                     Selection::EdgeBundle(edges) => edges.first().and_then(edge_id).map(Selected::Edge),
                     _ => None,
                 };
+                if let Some(Selected::Node(id)) = self.selected {
+                    if let Some(node) = self.nodes.get(&id) {
+                        cx.emit(CanvasEvent::NodeSelected(node.clone()));
+                    }
+                }
                 cx.notify();
             }
             NetworkGraphEvent::NodeActivated(node) => {
@@ -411,7 +438,7 @@ impl Render for GraphCanvas {
                             .child(note),
                     ),
             )
-            .children(self.render_inspector(cx))
+            .when(!self.compact, |this| this.children(self.render_inspector(cx)))
     }
 }
 

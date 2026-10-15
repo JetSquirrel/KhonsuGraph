@@ -15,10 +15,17 @@ use khonsu_core::settings::{self, HistoryEntry};
 use khonsu_core::{util, Language};
 use serde::{Deserialize, Serialize};
 
-use crate::i18n::tr;
+use std::path::PathBuf;
+
+use gpui_kit::assets::IconName as AssetIcon;
+use gpui_kit::component::notification::Notification;
+use gpui_kit::component::{Disableable, WindowExt};
+
+use crate::i18n::{tr, trf};
+use crate::spec::view::{Dashboard, DashboardEvent};
 use crate::state::{AppState, GraphChanged, QueryStats};
 use crate::ui::results::ResultsPanel;
-use crate::ui::{ExplainQuery, RunQuery, RUN_QUERY_KEYSTROKE, WORKSPACE_KEY_CONTEXT};
+use crate::ui::{ExplainQuery, RunQuery, SaveSpec, RUN_QUERY_KEYSTROKE, WORKSPACE_KEY_CONTEXT};
 
 const RESULTS_PANEL_DEFAULT: f32 = 540.;
 /// Statements that may change labels, types or tables: the sidebar reloads
@@ -32,16 +39,63 @@ pub struct QueryTab {
     pub results: Entity<ResultsPanel>,
 }
 
-/// Tabs as remembered between launches, per graph.
+/// A `.dash` spec, open as a tab, as in DuckLocal.
+pub struct DashboardTab {
+    pub id: u64,
+    pub title: SharedString,
+    pub path: PathBuf,
+    pub host: Entity<Dashboard>,
+    /// What the dashboard asks of the workspace; dropped with the tab.
+    _events: Subscription,
+}
+
+pub enum WorkspaceTab {
+    Query(QueryTab),
+    Dashboard(DashboardTab),
+}
+
+impl WorkspaceTab {
+    pub fn id(&self) -> u64 {
+        match self {
+            WorkspaceTab::Query(tab) => tab.id,
+            WorkspaceTab::Dashboard(tab) => tab.id,
+        }
+    }
+
+    pub fn as_query(&self) -> Option<&QueryTab> {
+        match self {
+            WorkspaceTab::Query(tab) => Some(tab),
+            WorkspaceTab::Dashboard(_) => None,
+        }
+    }
+
+    pub fn as_dashboard(&self) -> Option<&DashboardTab> {
+        match self {
+            WorkspaceTab::Dashboard(tab) => Some(tab),
+            WorkspaceTab::Query(_) => None,
+        }
+    }
+}
+
+/// Tabs as remembered between launches, per graph: a query's text, or the
+/// path of a dashboard spec.
 #[derive(Serialize, Deserialize)]
 struct SavedTab {
+    #[serde(default = "cypher")]
     language: Language,
+    #[serde(default)]
     text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    dashboard: Option<PathBuf>,
+}
+
+fn cypher() -> Language {
+    Language::Cypher
 }
 
 pub struct Workspace {
     state: Entity<AppState>,
-    tabs: Vec<QueryTab>,
+    tabs: Vec<WorkspaceTab>,
     active: usize,
     next_tab_id: u64,
     running: bool,
@@ -124,13 +178,26 @@ impl Workspace {
             .flatten()
             .and_then(|json| serde_json::from_str(&json).ok())
             .unwrap_or_default();
-        if saved.is_empty() {
-            let tab = self.new_tab(Language::Cypher, default_text(Language::Cypher), window, cx);
-            self.tabs.push(tab);
-        }
+        let mut problems = Vec::new();
         for saved in saved {
-            let tab = self.new_tab(saved.language, &saved.text, window, cx);
-            self.tabs.push(tab);
+            match saved.dashboard {
+                Some(path) if path.is_file() => self.push_dashboard(path, window, cx),
+                Some(path) => problems.push(path.display().to_string()),
+                None => {
+                    let tab = self.new_tab(saved.language, &saved.text, window, cx);
+                    self.tabs.push(WorkspaceTab::Query(tab));
+                }
+            }
+        }
+        if !self.tabs.iter().any(|t| t.as_query().is_some()) {
+            let tab = self.new_tab(Language::Cypher, default_text(Language::Cypher), window, cx);
+            self.tabs.insert(0, WorkspaceTab::Query(tab));
+        }
+        self.active = 0;
+        // A remembered dashboard that is gone is named rather than dropped
+        // silently.
+        for path in problems {
+            window.push_notification(trf("dashboard.restore.gone_path", &[&path]), cx);
         }
         self.focus_active_editor(window, cx);
         cx.notify();
@@ -143,9 +210,17 @@ impl Workspace {
         let saved: Vec<SavedTab> = self
             .tabs
             .iter()
-            .map(|t| SavedTab {
-                language: t.language,
-                text: t.editor.read(cx).value().to_string(),
+            .map(|t| match t {
+                WorkspaceTab::Query(t) => SavedTab {
+                    language: t.language,
+                    text: t.editor.read(cx).value().to_string(),
+                    dashboard: None,
+                },
+                WorkspaceTab::Dashboard(t) => SavedTab {
+                    language: Language::Cypher,
+                    text: String::new(),
+                    dashboard: Some(t.path.clone()),
+                },
             })
             .collect();
         if let Ok(json) = serde_json::to_string(&saved) {
@@ -158,11 +233,139 @@ impl Workspace {
             return;
         }
         let tab = self.new_tab(language, text.unwrap_or(""), window, cx);
-        self.tabs.push(tab);
+        self.tabs.push(WorkspaceTab::Query(tab));
         self.active = self.tabs.len() - 1;
         self.remember_tabs(cx);
         self.focus_active_editor(window, cx);
         cx.notify();
+    }
+
+    fn push_dashboard(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        let id = self.next_tab_id;
+        self.next_tab_id += 1;
+        let title = crate::spec::tabs::title_for(&path);
+        let host = cx.new(|cx| Dashboard::new(id, path.clone(), cx));
+        let events = cx.subscribe_in(&host, window, |this, _, event, window, cx| match event {
+            DashboardEvent::OpenSql { sql, title: _ } => {
+                // A dashboard query opened for editing: Cypher unless it
+                // reads like SQL.
+                let language = if sql.trim_start().to_ascii_uppercase().starts_with("SELECT") {
+                    Language::Sql
+                } else {
+                    Language::Cypher
+                };
+                this.add_tab(language, Some(sql), window, cx);
+            }
+        });
+        self.tabs.push(WorkspaceTab::Dashboard(DashboardTab {
+            id,
+            title: title.into(),
+            path,
+            host,
+            _events: events,
+        }));
+    }
+
+    /// Open a `.dash` spec as a tab, or bring its tab forward when one is
+    /// open already.
+    pub fn open_dashboard(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        if self.state.read(cx).graph.is_none() {
+            window.push_notification(Notification::error(tr("dashboard.needs_graph")), cx);
+            return;
+        }
+        let path = std::path::absolute(&path).unwrap_or(path);
+        if let Some(ix) = self
+            .tabs
+            .iter()
+            .position(|tab| tab.as_dashboard().is_some_and(|d| same_file(&d.path, &path)))
+        {
+            self.activate_tab(ix, window, cx);
+            return;
+        }
+        self.push_dashboard(path, window, cx);
+        self.active = self.tabs.len() - 1;
+        self.remember_tabs(cx);
+        cx.notify();
+    }
+
+    pub fn pick_dashboard_file(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let rx = cx.prompt_for_paths(PathPromptOptions {
+            files: true,
+            directories: false,
+            multiple: false,
+            prompt: Some(tr("dashboard.picker.prompt").into()),
+        });
+        cx.spawn_in(window, async move |this, cx| {
+            let Ok(Ok(Some(paths))) = rx.await else {
+                return;
+            };
+            let Some(path) = paths.into_iter().next() else {
+                return;
+            };
+            this.update_in(cx, |this, window, cx| {
+                if crate::spec::tabs::is_spec(&path) {
+                    this.open_dashboard(path, window, cx);
+                } else {
+                    window.push_notification(trf("dashboard.picker.not_a_spec", &[&path.to_string_lossy()]), cx);
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// An agent's presence on a spec reaches every tab showing it.
+    pub fn apply_presence(&mut self, update: &crate::spec::presence::Update, cx: &mut Context<Self>) {
+        let path = PathBuf::from(&update.path);
+        for tab in &self.tabs {
+            if let WorkspaceTab::Dashboard(tab) = tab {
+                if same_file(&tab.path, &path) {
+                    tab.host.update(cx, |dashboard, cx| dashboard.apply_presence(update, cx));
+                }
+            }
+        }
+        cx.notify();
+    }
+
+    fn save_active_dashboard(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(host) = self.tabs.get(self.active).and_then(WorkspaceTab::as_dashboard).map(|t| t.host.clone()) else {
+            return;
+        };
+        if let Err(error) = host.update(cx, |dashboard, cx| dashboard.save(cx)) {
+            window.push_notification(Notification::error(error), cx);
+        }
+    }
+
+    /// What the window shows, for `khonsu open --state`: each tab's query and
+    /// result summary, or its dashboard's.
+    pub fn snapshot(&self, only: Option<&std::path::Path>, active_only: bool, cx: &App) -> serde_json::Value {
+        let tabs: Vec<serde_json::Value> = self
+            .tabs
+            .iter()
+            .enumerate()
+            .filter(|(ix, _)| !active_only || *ix == self.active)
+            .filter(|(_, tab)| match (only, tab) {
+                (Some(path), WorkspaceTab::Dashboard(d)) => same_file(&d.path, path),
+                (Some(_), WorkspaceTab::Query(_)) => false,
+                (None, _) => true,
+            })
+            .map(|(ix, tab)| match tab {
+                WorkspaceTab::Query(t) => serde_json::json!({
+                    "kind": "query",
+                    "active": ix == self.active,
+                    "language": t.language,
+                    "text": t.editor.read(cx).value().to_string(),
+                    "result": t.results.read(cx).summary(),
+                }),
+                WorkspaceTab::Dashboard(t) => serde_json::json!({
+                    "kind": "dashboard",
+                    "active": ix == self.active,
+                    "path": t.path.display().to_string(),
+                    "dashboard": t.host.read(cx).summary(),
+                }),
+            })
+            .collect();
+        serde_json::json!({ "tabs": tabs })
     }
 
     /// Put `text` in the active tab when it is empty and of the same
@@ -171,6 +374,7 @@ impl Workspace {
         let reuse = self
             .tabs
             .get(self.active)
+            .and_then(WorkspaceTab::as_query)
             .filter(|t| t.language == language && t.editor.read(cx).value().trim().is_empty())
             .map(|t| t.editor.clone());
         match reuse {
@@ -185,10 +389,13 @@ impl Workspace {
     }
 
     pub fn close_tab(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
-        if self.tabs.len() <= 1 {
+        // The last query tab stays: a dashboard alone has nowhere to send a query.
+        let queries = self.tabs.iter().filter(|t| t.as_query().is_some()).count();
+        let closing_query = self.tabs.iter().any(|t| t.id() == id && t.as_query().is_some());
+        if self.tabs.len() <= 1 || (closing_query && queries <= 1) {
             return;
         }
-        if let Some(ix) = self.tabs.iter().position(|t| t.id == id) {
+        if let Some(ix) = self.tabs.iter().position(|t| t.id() == id) {
             self.tabs.remove(ix);
             if self.active >= self.tabs.len() || self.active > ix {
                 self.active = self.active.saturating_sub(1).min(self.tabs.len() - 1);
@@ -200,7 +407,7 @@ impl Workspace {
     }
 
     pub fn close_active_tab(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(id) = self.tabs.get(self.active).map(|t| t.id) {
+        if let Some(id) = self.tabs.get(self.active).map(WorkspaceTab::id) {
             self.close_tab(id, window, cx);
         }
     }
@@ -224,7 +431,7 @@ impl Workspace {
     }
 
     pub fn focus_active_editor(&self, window: &mut Window, cx: &mut App) {
-        if let Some(tab) = self.tabs.get(self.active) {
+        if let Some(tab) = self.tabs.get(self.active).and_then(WorkspaceTab::as_query) {
             tab.editor.update(cx, |editor, cx| editor.focus(window, cx));
         }
     }
@@ -233,7 +440,7 @@ impl Workspace {
         if self.running {
             return;
         }
-        let Some(tab) = self.tabs.get(self.active) else {
+        let Some(tab) = self.tabs.get(self.active).and_then(WorkspaceTab::as_query) else {
             return;
         };
         let text = selected_or_all(&tab.editor, cx);
@@ -306,7 +513,7 @@ impl Workspace {
         if self.running {
             return;
         }
-        let Some(tab) = self.tabs.get(self.active) else {
+        let Some(tab) = self.tabs.get(self.active).and_then(WorkspaceTab::as_query) else {
             return;
         };
         let text = selected_or_all(&tab.editor, cx);
@@ -339,13 +546,25 @@ impl Workspace {
             .selected_index(self.active)
             .on_click(cx.listener(|this, ix: &usize, window, cx| this.activate_tab(*ix, window, cx)))
             .children(self.tabs.iter().map(|tab| {
-                let id = tab.id;
-                let first_line = tab.editor.read(cx).value().lines().next().unwrap_or("").trim().to_string();
-                let title = if first_line.is_empty() {
-                    tr("workspace.untitled").to_string()
-                } else {
-                    let short: String = first_line.chars().take(28).collect();
-                    short
+                let id = tab.id();
+                let (badge, title, marked) = match tab {
+                    WorkspaceTab::Query(tab) => {
+                        let first_line = tab.editor.read(cx).value().lines().next().unwrap_or("").trim().to_string();
+                        let title = if first_line.is_empty() {
+                            tr("workspace.untitled").to_string()
+                        } else {
+                            first_line.chars().take(28).collect()
+                        };
+                        let badge = match tab.language {
+                            Language::Cypher => "CYPHER",
+                            Language::Sql => "SQL",
+                        };
+                        (badge, title, false)
+                    }
+                    WorkspaceTab::Dashboard(tab) => {
+                        let host = tab.host.read(cx);
+                        ("DASH", tab.title.to_string(), host.is_dirty(cx) || host.has_presence())
+                    }
                 };
                 Tab::new()
                     .child(
@@ -357,12 +576,10 @@ impl Workspace {
                                     .text_xs()
                                     .font_weight(FontWeight::BOLD)
                                     .text_color(cx.theme().primary)
-                                    .child(match tab.language {
-                                        Language::Cypher => "CYPHER",
-                                        Language::Sql => "SQL",
-                                    }),
+                                    .child(badge),
                             )
-                            .child(title),
+                            .child(title)
+                            .when(marked, |this| this.child(div().size_1p5().rounded_full().bg(cx.theme().warning))),
                     )
                     .when(closable, |this| {
                         this.suffix(
@@ -385,6 +602,7 @@ impl Workspace {
                     .dropdown_menu(move |menu, _, _| {
                         let cypher = view.clone();
                         let sql = view.clone();
+                        let dashboard = view.clone();
                         menu.item(PopupMenuItem::new(tr("workspace.new_cypher")).on_click(move |_, window, cx| {
                             if let Some(view) = cypher.upgrade() {
                                 view.update(cx, |this, cx| this.add_tab(Language::Cypher, None, window, cx));
@@ -395,8 +613,70 @@ impl Workspace {
                                 view.update(cx, |this, cx| this.add_tab(Language::Sql, None, window, cx));
                             }
                         }))
+                        .separator()
+                        .item(PopupMenuItem::new(tr("workspace.open_dashboard")).on_click(move |_, window, cx| {
+                            if let Some(view) = dashboard.upgrade() {
+                                view.update(cx, |this, cx| this.pick_dashboard_file(window, cx));
+                            }
+                        }))
                     })
             })
+    }
+
+    /// After DuckLocal's: the spec's path, save, source and reload.
+    fn render_dashboard_toolbar(&mut self, path: &std::path::Path, host: Entity<Dashboard>, cx: &mut Context<Self>) -> impl IntoElement {
+        let (running, showing_source, dirty) = {
+            let dashboard = host.read(cx);
+            (dashboard.is_running(), dashboard.is_showing_source(), dashboard.is_dirty(cx))
+        };
+        let (source_host, reload_host) = (host.clone(), host.clone());
+        h_flex()
+            .w_full()
+            .px_3()
+            .py_2()
+            .gap_2()
+            .items_center()
+            .border_b_1()
+            .border_color(cx.theme().border)
+            .child(Icon::new(AssetIcon::ChartNoAxesColumn).small().text_color(cx.theme().muted_foreground))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .truncate()
+                    .text_sm()
+                    .text_color(cx.theme().muted_foreground)
+                    .child(path.display().to_string()),
+            )
+            .child(
+                Button::new("dashboard-save")
+                    .outline()
+                    .small()
+                    .icon(AssetIcon::Save)
+                    .label(tr("dashboard.save"))
+                    .tooltip_with_action(tr("dashboard.save.tooltip"), &SaveSpec, Some(WORKSPACE_KEY_CONTEXT))
+                    .disabled(!dirty)
+                    .on_click(cx.listener(|this, _, window, cx| this.save_active_dashboard(window, cx))),
+            )
+            .child(
+                Button::new("dashboard-source")
+                    .outline()
+                    .small()
+                    .icon(if showing_source { AssetIcon::ChartNoAxesColumn } else { AssetIcon::Code })
+                    .label(if showing_source { tr("dashboard.source.back") } else { tr("dashboard.source.show") })
+                    .tooltip(tr("dashboard.source.tooltip"))
+                    .on_click(move |_, _, cx| source_host.update(cx, |dashboard, cx| dashboard.toggle_source(cx))),
+            )
+            .child(
+                Button::new("dashboard-reload")
+                    .outline()
+                    .small()
+                    .icon(IconName::Redo)
+                    .label(tr("dashboard.reload"))
+                    .loading(running)
+                    .tooltip(tr("dashboard.reload.tooltip"))
+                    .on_click(move |_, _, cx| reload_host.update(cx, |dashboard, cx| dashboard.reload(cx))),
+            )
     }
 
     fn render_toolbar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -592,9 +872,16 @@ fn remove_secondary_enter_newline(editor: &Entity<EditorState>, window: &mut Win
 impl Render for Workspace {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let has_graph = self.state.read(cx).graph.is_some();
-        let tab = self.tabs.get(self.active);
-        let editor = tab.map(|t| t.editor.clone());
-        let results = tab.map(|t| t.results.clone());
+        let dashboard = self
+            .tabs
+            .get(self.active)
+            .and_then(WorkspaceTab::as_dashboard)
+            .map(|t| (t.path.clone(), t.host.clone()));
+        let query = self
+            .tabs
+            .get(self.active)
+            .and_then(WorkspaceTab::as_query)
+            .map(|t| (t.editor.clone(), t.results.clone()));
         v_flex()
             .id("workspace")
             .size_full()
@@ -602,23 +889,39 @@ impl Render for Workspace {
             .key_context(WORKSPACE_KEY_CONTEXT)
             .on_action(cx.listener(|this, _: &RunQuery, window, cx| this.run_active(window, cx)))
             .on_action(cx.listener(|this, _: &ExplainQuery, window, cx| this.explain_active(window, cx)))
+            .on_action(cx.listener(|this, _: &SaveSpec, window, cx| this.save_active_dashboard(window, cx)))
             .when(!has_graph, |this| this.child(self.render_welcome(cx)))
             .when(has_graph, |this| {
-                this.child(self.render_tab_bar(cx)).child(self.render_toolbar(cx)).child(
-                    div().flex_1().min_h_0().child(
-                        v_resizable("editor-results")
-                            .child(resizable_panel().child(div().size_full().when_some(editor, |this, editor| {
-                                this.child(Editor::new(&editor).h(relative(1.)).bordered(false))
-                            })))
-                            .child(
-                                resizable_panel()
-                                    .size(px(RESULTS_PANEL_DEFAULT))
-                                    .size_range(px(160.)..px(2000.))
-                                    .children(results),
-                            ),
+                let this = this.child(self.render_tab_bar(cx));
+                match (dashboard, query) {
+                    (Some((path, host)), _) => this
+                        .child(self.render_dashboard_toolbar(&path, host.clone(), cx))
+                        .child(div().flex_1().min_h_0().child(host)),
+                    (None, Some((editor, results))) => this.child(self.render_toolbar(cx)).child(
+                        div().flex_1().min_h_0().child(
+                            v_resizable("editor-results")
+                                .child(resizable_panel().child(
+                                    div().size_full().child(Editor::new(&editor).h(relative(1.)).bordered(false)),
+                                ))
+                                .child(
+                                    resizable_panel()
+                                        .size(px(RESULTS_PANEL_DEFAULT))
+                                        .size_range(px(160.)..px(2000.))
+                                        .child(results),
+                                ),
+                        ),
                     ),
-                )
+                    (None, None) => this,
+                }
             })
+    }
+}
+
+/// Two paths name one file, however they were written.
+fn same_file(a: &std::path::Path, b: &std::path::Path) -> bool {
+    match (a.canonicalize(), b.canonicalize()) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
     }
 }
 

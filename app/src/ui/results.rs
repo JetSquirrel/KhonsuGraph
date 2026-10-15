@@ -286,6 +286,26 @@ impl ResultsPanel {
         cx.notify();
     }
 
+    /// What the tab shows, for `khonsu open --state`: columns, counts and the
+    /// first 20 rows, the plan, or the error — as DuckLocal reports a tab.
+    pub fn summary(&self) -> serde_json::Value {
+        use serde_json::json;
+        match &self.content {
+            Content::Empty => json!({"status": "empty"}),
+            Content::Running => json!({"status": "running"}),
+            Content::Plan(plan) => json!({"status": "plan", "plan": plan.to_string()}),
+            Content::Error(error) => json!({"status": "error", "error": error}),
+            Content::Rows(result) => json!({
+                "status": "rows",
+                "columns": result.columns,
+                "row_count": result.row_count,
+                "truncated": result.truncated,
+                "rows": result.rows.iter().take(20).collect::<Vec<_>>(),
+                "graph": result.graph.as_ref().map(|g| json!({"nodes": g.nodes.len(), "relationships": g.edges.len()})),
+            }),
+        }
+    }
+
     pub fn set_error(&mut self, error: QueryError, cx: &mut Context<Self>) {
         self.content = Content::Error(error);
         cx.notify();

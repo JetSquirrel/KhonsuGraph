@@ -5,8 +5,12 @@ mod app;
 mod assets;
 mod crash;
 mod db;
+mod history;
 mod i18n;
 mod prefs;
+mod query;
+mod remote;
+mod spec;
 mod state;
 mod ui;
 

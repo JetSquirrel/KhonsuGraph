@@ -7,6 +7,9 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use khonsu_core::settings::Settings;
 use khonsu_core::Language;
+use khonsu_dash::remote::Message;
+use serde_json::json;
+use std::path::PathBuf;
 
 use crate::state::{self, AppState};
 use crate::ui::sidebar::Sidebar;
@@ -14,7 +17,8 @@ use crate::ui::status_bar::StatusBarView;
 use crate::ui::title_bar::TitleBarView;
 use crate::ui::workspace::Workspace;
 use crate::ui::{
-    ActivateTab, AddSource, CloseTab, NewGraph, NewQuery, NewSqlQuery, NextTab, OpenGraph, PreviousTab, ToggleSidebar,
+    ActivateTab, AddSource, CloseTab, NewGraph, NewQuery, NewSqlQuery, NextTab, OpenDashboard, OpenGraph, PreviousTab,
+    ToggleSidebar,
 };
 
 pub struct KhonsuApp {
@@ -23,6 +27,8 @@ pub struct KhonsuApp {
     sidebar: Entity<Sidebar>,
     workspace: Entity<Workspace>,
     status_bar: Entity<StatusBarView>,
+    /// Where `khonsu` commands reach this window; removed with it.
+    _remote: Option<khonsu_dash::remote::ServeGuard>,
 }
 
 impl KhonsuApp {
@@ -40,12 +46,85 @@ impl KhonsuApp {
             crate::ui::open_graph_at(state.clone(), path, false, false, window, cx);
         }
 
+        // `khonsu open`, `presence` and `--state` reach the views from here:
+        // drained on a slow poll, as DuckLocal's window does.
+        cx.spawn_in(window, async move |this, cx| loop {
+            smol::Timer::after(std::time::Duration::from_millis(200)).await;
+            let pending = crate::remote::take_pending();
+            if pending.is_empty() {
+                continue;
+            }
+            if this
+                .update_in(cx, |this, window, cx| {
+                    for (message, answer) in pending {
+                        let reply = this.answer(message, window, cx);
+                        let _ = answer.send(reply);
+                    }
+                })
+                .is_err()
+            {
+                break;
+            }
+        })
+        .detach();
+
         Self {
             state,
             title_bar,
             sidebar,
             workspace,
             status_bar,
+            _remote: crate::remote::serve(),
+        }
+    }
+
+    /// A message from a `khonsu` command that the views answer.
+    fn answer(&mut self, message: Message, window: &mut Window, cx: &mut Context<Self>) -> serde_json::Value {
+        match message {
+            Message::Presence(update) => {
+                self.workspace.update(cx, |ws, cx| ws.apply_presence(&update, cx));
+                json!({})
+            }
+            Message::State(request) => {
+                let state = self.state.read(cx);
+                let graph = state.graph.clone();
+                let only = request.path.as_ref().map(PathBuf::from);
+                let mut snapshot = self.workspace.read(cx).snapshot(only.as_deref(), request.active, cx);
+                snapshot["graph"] = json!(graph.as_ref().map(|g| g.path.display().to_string()));
+                snapshot["read_only"] = json!(graph.as_ref().is_some_and(|g| g.read_only));
+                if only.is_some() && snapshot["tabs"].as_array().is_some_and(|t| t.is_empty()) {
+                    return json!({"error": {"kind": "not_open", "message": "no tab shows that file"}});
+                }
+                snapshot
+            }
+            Message::Open(request) => {
+                window.activate_window();
+                let mut opened = Vec::new();
+                for path in request.paths.iter().map(PathBuf::from) {
+                    if khonsu_core::engine::is_graph_dir(&path) {
+                        crate::ui::open_graph_at(self.state.clone(), path.clone(), false, false, window, cx);
+                        opened.push(json!({"graph": path.display().to_string()}));
+                    } else if crate::spec::tabs::is_spec(&path) {
+                        self.workspace.update(cx, |ws, cx| ws.open_dashboard(path.clone(), window, cx));
+                        opened.push(json!({"dashboard": path.display().to_string()}));
+                    } else {
+                        return json!({"error": {"kind": "not_openable", "message": format!("{} is neither a graph nor a .dash file", path.display())}});
+                    }
+                }
+                if let Some(text) = request.text {
+                    let language = request.language.unwrap_or(Language::Cypher);
+                    let run = request.run;
+                    self.workspace.update(cx, |ws, cx| {
+                        ws.add_tab(language, Some(&text), window, cx);
+                        if run {
+                            ws.run_active(window, cx);
+                        }
+                    });
+                    opened.push(json!({"query": true, "run": run}));
+                }
+                json!({"delivered": true, "opened": opened})
+            }
+            Message::Query(_) | Message::Check(_) => json!({"error": {"kind": "internal", "message": "answered by the listener"}}),
         }
     }
 }
@@ -81,6 +160,9 @@ impl Render for KhonsuApp {
             }))
             .on_action(cx.listener(|this, _: &OpenGraph, window, cx| {
                 crate::ui::pick_graph(this.state.clone(), false, window, cx);
+            }))
+            .on_action(cx.listener(|this, _: &OpenDashboard, window, cx| {
+                this.workspace.update(cx, |ws, cx| ws.pick_dashboard_file(window, cx));
             }))
             .on_action(cx.listener(|this, _: &NewGraph, window, cx| {
                 crate::ui::pick_graph(this.state.clone(), true, window, cx);
