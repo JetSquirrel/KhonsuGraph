@@ -10,12 +10,12 @@
 //! | `khonsu_synced_at`  | sync start, Unix seconds                |
 //!
 //! Nodes are upserted with `MERGE` on `khonsu_id`. HawDB 0.8 cannot `SET`
-//! relationship properties after creation, so a relationship is refreshed by
-//! deleting the previous one with the same `khonsu_id` and creating it again.
+//! relationship properties after creation, so a changed relationship is
+//! deleted and created again; an unchanged one is left alone.
 //! Relationship patterns need labeled endpoints in HawDB, so the writer tracks
 //! the label of every node it has seen.
 
-use crate::engine::{Graph, QueryError};
+use crate::engine::{Graph, NodeUpsert, QueryError, RelationshipCreate};
 use crate::result::json_to_value;
 use crate::schema::quote_ident;
 use hawdb::Value;
@@ -50,7 +50,27 @@ pub struct MergeStats {
     pub skipped_edges: u64,
     pub stale_nodes_removed: u64,
     pub stale_edges_removed: u64,
+    /// Relationships already in the graph as the source reports them; left alone.
+    #[serde(default)]
+    pub unchanged_edges: u64,
     pub warnings: Vec<String>,
+}
+
+/// One of the source's relationships as the graph holds it.
+struct ExistingEdge {
+    pattern: EdgePattern,
+    source: String,
+    target: String,
+    properties: BTreeMap<String, Value>,
+}
+
+/// A record's properties as they are stored: identifier keys, nested
+/// values as JSON text.
+fn user_properties(properties: &serde_json::Map<String, Json>) -> BTreeMap<String, Value> {
+    properties
+        .iter()
+        .filter_map(|(key, value)| Some((property_key(key)?, property_value(value))))
+        .collect()
 }
 
 pub struct Merger<'g> {
@@ -65,6 +85,8 @@ pub struct Merger<'g> {
     seen_nodes: BTreeSet<String>,
     seen_edges: BTreeSet<String>,
     patterns: BTreeSet<EdgePattern>,
+    /// This source's nodes in the graph: stable ID to internal ID and label.
+    node_index: Option<HashMap<String, (i64, String)>>,
     stats: MergeStats,
 }
 
@@ -82,6 +104,7 @@ impl<'g> Merger<'g> {
             seen_nodes: BTreeSet::new(),
             seen_edges: BTreeSet::new(),
             patterns: BTreeSet::new(),
+            node_index: None,
             stats: MergeStats::default(),
         }
     }
@@ -107,7 +130,14 @@ impl<'g> Merger<'g> {
 
     /// Writes everything pending. With `remove_stale`, nodes and relationships
     /// of this source not seen in this sync are deleted (a full sync).
-    pub fn finish(mut self, remove_stale: bool, known_patterns: &[EdgePattern]) -> Result<(MergeStats, Vec<EdgePattern>), QueryError> {
+    ///
+    /// Relationships are compared with the source's relationships already in
+    /// the graph, read once: a new one is created, an unchanged one is left
+    /// alone, and a changed one is deleted and created again (HawDB 0.8
+    /// cannot `SET` a relationship property). Deletes go in batches by
+    /// pattern, `WHERE r.khonsu_id IN [...]`: matching one relationship at a
+    /// time scans its type, which made a sync quadratic in its edges.
+    pub fn finish(mut self, remove_stale: bool, _known_patterns: &[EdgePattern]) -> Result<(MergeStats, Vec<EdgePattern>), QueryError> {
         self.flush_nodes()?;
         let edges = std::mem::take(&mut self.pending_edges);
         // Keep the last occurrence of a repeated edge ID, like nodes.
@@ -115,7 +145,14 @@ impl<'g> Merger<'g> {
         for edge in edges {
             last.insert(edge.id.clone(), edge);
         }
-        let mut batch = Vec::new();
+        let existing = if last.is_empty() && !remove_stale {
+            HashMap::new()
+        } else {
+            self.existing_edges()?
+        };
+        let mut deletes: BTreeMap<EdgePattern, Vec<String>> = BTreeMap::new();
+        let mut creates: Vec<(EdgeRecord, EdgePattern)> = Vec::new();
+        let mut kept: BTreeSet<String> = BTreeSet::new();
         for edge in last.into_values() {
             let (Some(source_label), Some(target_label)) = (self.label_of(&edge.source)?, self.label_of(&edge.target)?) else {
                 self.stats.skipped_edges += 1;
@@ -132,51 +169,169 @@ impl<'g> Merger<'g> {
                 rel_type: edge.rel_type.clone(),
                 target_label,
             };
-            batch.extend(self.edge_statements(&edge, &pattern));
-            self.patterns.insert(pattern);
-            self.stats.edges_written += 1;
-            if batch.len() >= BATCH_SIZE {
-                self.graph.write_batch(&batch)?;
-                batch.clear();
+            let kid = self.scoped(&edge.id);
+            kept.insert(kid.clone());
+            self.patterns.insert(pattern.clone());
+            match existing.get(&kid) {
+                Some(old)
+                    if old.pattern == pattern
+                        && old.source == self.scoped(&edge.source)
+                        && old.target == self.scoped(&edge.target)
+                        && old.properties == user_properties(&edge.properties) =>
+                {
+                    self.stats.unchanged_edges += 1;
+                }
+                Some(old) => {
+                    deletes.entry(old.pattern.clone()).or_default().push(kid);
+                    creates.push((edge, pattern));
+                }
+                None => creates.push((edge, pattern)),
             }
         }
-        if !batch.is_empty() {
-            self.graph.write_batch(&batch)?;
-        }
         if remove_stale {
-            self.remove_stale(known_patterns)?;
+            for (kid, old) in &existing {
+                if !kept.contains(kid) {
+                    deletes.entry(old.pattern.clone()).or_default().push(kid.clone());
+                    self.stats.stale_edges_removed += 1;
+                }
+            }
+        }
+        for (pattern, kids) in deletes {
+            for chunk in kids.chunks(500) {
+                let list = Value::List(chunk.iter().map(|k| Value::String(k.clone())).collect());
+                self.graph.write_batch(&[(
+                    format!(
+                        "MATCH (a:{})-[r:{}]->(b:{}) WHERE r.{ID_PROPERTY} IN $ids DELETE r",
+                        quote_ident(&pattern.source_label),
+                        quote_ident(&pattern.rel_type),
+                        quote_ident(&pattern.target_label)
+                    ),
+                    BTreeMap::from([("ids".to_string(), list)]),
+                )])?;
+            }
+        }
+        let mut batch = Vec::with_capacity(creates.len());
+        for (edge, pattern) in &creates {
+            if let Some(create) = self.relationship_create(edge, pattern)? {
+                batch.push(create);
+                self.stats.edges_written += 1;
+            }
+        }
+        self.graph.create_relationships(batch)?;
+        if remove_stale {
+            self.remove_stale_nodes()?;
         }
         let patterns = self.patterns.into_iter().collect();
         Ok((self.stats, patterns))
+    }
+
+    /// This source's relationships in the graph, by `khonsu_id`.
+    fn existing_edges(&mut self) -> Result<HashMap<String, ExistingEdge>, QueryError> {
+        let rows = self.graph.raw_cypher(
+            &format!("MATCH (a)-[r]->(b) WHERE r.{SOURCE_PROPERTY} = $source RETURN a, r, b"),
+            &BTreeMap::from([("source".to_string(), Value::String(self.source.clone()))]),
+        )?;
+        let mut found = HashMap::new();
+        for row in rows {
+            let maps: Vec<&BTreeMap<String, Value>> = row
+                .iter()
+                .filter_map(|v| match v {
+                    Value::Map(map) => Some(map),
+                    _ => None,
+                })
+                .collect();
+            let Some(rel) = maps.iter().find(|m| m.contains_key("source_id") && m.contains_key("type")) else {
+                continue;
+            };
+            let node = |key: &str| maps.iter().find(|m| m.contains_key("labels") && m.get("_id") == rel.get(key));
+            let (Some(a), Some(b)) = (node("source_id"), node("target_id")) else {
+                continue;
+            };
+            let first_label = |m: &BTreeMap<String, Value>| match m.get("labels") {
+                Some(Value::List(labels)) => match labels.first() {
+                    Some(Value::String(l)) => l.clone(),
+                    _ => String::new(),
+                },
+                _ => String::new(),
+            };
+            let text = |m: &BTreeMap<String, Value>, key: &str| match m.get(key) {
+                Some(Value::String(s)) => s.clone(),
+                _ => String::new(),
+            };
+            let kid = text(rel, ID_PROPERTY);
+            let properties = rel
+                .iter()
+                .filter(|(k, _)| !matches!(k.as_str(), "_id" | "type" | "source_id" | "target_id") && !k.starts_with("khonsu_"))
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect();
+            found.insert(
+                kid,
+                ExistingEdge {
+                    pattern: EdgePattern {
+                        source_label: first_label(a),
+                        rel_type: text(rel, "type"),
+                        target_label: first_label(b),
+                    },
+                    source: text(a, ID_PROPERTY),
+                    target: text(b, ID_PROPERTY),
+                    properties,
+                },
+            );
+        }
+        Ok(found)
     }
 
     fn scoped(&self, id: &str) -> String {
         format!("{}/{}", self.source, id)
     }
 
+    /// The internal ID and label of every node this source has in the graph,
+    /// by stable ID, read once after the nodes are written: relationships are
+    /// then created between internal IDs.
+    fn node_index(&mut self) -> Result<(), QueryError> {
+        if self.node_index.is_some() {
+            return Ok(());
+        }
+        let rows = self.graph.raw_cypher(
+            &format!("MATCH (n {{{SOURCE_PROPERTY}: $source}}) RETURN n"),
+            &BTreeMap::from([("source".to_string(), Value::String(self.source.clone()))]),
+        )?;
+        let mut index = HashMap::with_capacity(rows.len());
+        for row in rows {
+            let Some(Value::Map(node)) = row.into_iter().next() else {
+                continue;
+            };
+            let (Some(Value::String(kid)), Some(Value::Int(id))) = (node.get(ID_PROPERTY), node.get("_id")) else {
+                continue;
+            };
+            let label = match node.get("labels") {
+                Some(Value::List(labels)) => match labels.first() {
+                    Some(Value::String(label)) => label.clone(),
+                    _ => continue,
+                },
+                _ => continue,
+            };
+            index.insert(kid.clone(), (*id, label));
+        }
+        self.node_index = Some(index);
+        Ok(())
+    }
+
+    /// The label of a node of this source, by record ID.
     fn label_of(&mut self, id: &str) -> Result<Option<String>, QueryError> {
         if let Some(label) = self.labels.get(id) {
             return Ok(Some(label.clone()));
         }
         // An endpoint written by an earlier (e.g. incremental) sync.
-        let rows = self.graph.raw_cypher(
-            &format!("MATCH (n) WHERE n.{ID_PROPERTY} = $id RETURN n"),
-            &BTreeMap::from([("id".to_string(), Value::String(self.scoped(id)))]),
-        )?;
-        let label = rows.first().and_then(|row| match row.first() {
-            Some(Value::Map(map)) => match map.get("labels") {
-                Some(Value::List(labels)) => match labels.first() {
-                    Some(Value::String(label)) => Some(label.clone()),
-                    _ => None,
-                },
-                _ => None,
-            },
-            _ => None,
-        });
-        if let Some(label) = &label {
-            self.labels.insert(id.to_string(), label.clone());
-        }
-        Ok(label)
+        self.node_index()?;
+        let scoped = self.scoped(id);
+        Ok(self.node_index.as_ref().and_then(|index| index.get(&scoped)).map(|(_, label)| label.clone()))
+    }
+
+    fn node_id(&mut self, id: &str) -> Result<Option<i64>, QueryError> {
+        self.node_index()?;
+        let scoped = self.scoped(id);
+        Ok(self.node_index.as_ref().and_then(|index| index.get(&scoped)).map(|(id, _)| *id))
     }
 
     fn flush_nodes(&mut self) -> Result<(), QueryError> {
@@ -184,13 +339,17 @@ impl<'g> Merger<'g> {
             return Ok(());
         }
         let nodes = std::mem::take(&mut self.pending_nodes);
-        let mut statements = Vec::with_capacity(nodes.len() + 4);
+        let mut indexes = Vec::new();
         for label in nodes.iter().map(|n| n.label.clone()).collect::<BTreeSet<_>>() {
             if self.indexed_labels.insert(label.clone()) {
-                // Ignored when it exists; makes MERGE on khonsu_id an index lookup.
-                statements.push((format!("CREATE INDEX ON :{}({ID_PROPERTY})", quote_ident(&label)), BTreeMap::new()));
+                // Ignored when it exists; makes the merge on khonsu_id a lookup.
+                indexes.push((format!("CREATE INDEX ON :{}({ID_PROPERTY})", quote_ident(&label)), BTreeMap::new()));
             }
         }
+        if !indexes.is_empty() {
+            self.graph.write_batch(&indexes)?;
+        }
+        let mut upserts = Vec::with_capacity(nodes.len());
         for node in &nodes {
             if let Some(previous) = self.labels.insert(node.id.clone(), node.label.clone()) {
                 if previous != node.label && self.stats.warnings.len() < 20 {
@@ -199,93 +358,51 @@ impl<'g> Merger<'g> {
                         .push(format!("node {} changed label {previous} -> {}", node.id, node.label));
                 }
             }
-            let mut params = self.provenance(&node.id);
-            let mut sets = provenance_sets("n");
-            for (i, (key, value)) in node.properties.iter().enumerate() {
-                let Some(key) = property_key(key) else { continue };
-                let name = format!("p{i}");
-                sets.push(format!("n.{key} = ${name}"));
-                params.insert(name, property_value(value));
-            }
-            statements.push((
-                format!(
-                    "MERGE (n:{} {{{ID_PROPERTY}: $kid}}) SET {}",
-                    quote_ident(&node.label),
-                    sets.join(", ")
-                ),
-                params,
-            ));
+            let mut set = user_properties(&node.properties);
+            set.insert(SOURCE_PROPERTY.into(), Value::String(self.source.clone()));
+            set.insert(PLUGIN_PROPERTY.into(), Value::String(self.plugin.clone()));
+            set.insert(SYNCED_AT_PROPERTY.into(), Value::Int(self.synced_at));
+            upserts.push(NodeUpsert {
+                label: node.label.clone(),
+                key: (ID_PROPERTY.into(), Value::String(self.scoped(&node.id))),
+                set,
+            });
         }
-        self.graph.write_batch(&statements)?;
+        self.graph.merge_nodes(upserts)?;
+        // New nodes have IDs the index does not know yet.
+        self.node_index = None;
         self.stats.nodes_written += nodes.len() as u64;
         Ok(())
     }
 
-    fn edge_statements(&self, edge: &EdgeRecord, pattern: &EdgePattern) -> Vec<(String, BTreeMap<String, Value>)> {
-        let source = quote_ident(&pattern.source_label);
-        let target = quote_ident(&pattern.target_label);
-        let rel_type = quote_ident(&pattern.rel_type);
-        let mut params = self.provenance(&edge.id);
-        params.insert("a".into(), Value::String(self.scoped(&edge.source)));
-        params.insert("b".into(), Value::String(self.scoped(&edge.target)));
-        let delete = (
-            format!(
-                "MATCH (a:{source})-[r:{rel_type}]->(b:{target}) WHERE a.{ID_PROPERTY} = $a AND b.{ID_PROPERTY} = $b AND r.{ID_PROPERTY} = $kid DELETE r"
-            ),
-            params.clone(),
-        );
-        let mut assignments = vec![
-            format!("{ID_PROPERTY}: $kid"),
-            format!("{SOURCE_PROPERTY}: $source"),
-            format!("{PLUGIN_PROPERTY}: $plugin"),
-            format!("{SYNCED_AT_PROPERTY}: $synced_at"),
-        ];
-        for (i, (key, value)) in edge.properties.iter().enumerate() {
-            let Some(key) = property_key(key) else { continue };
-            let name = format!("p{i}");
-            assignments.push(format!("{key}: ${name}"));
-            params.insert(name, property_value(value));
-        }
-        let create = (
-            format!(
-                "MATCH (a:{source} {{{ID_PROPERTY}: $a}}) MATCH (b:{target} {{{ID_PROPERTY}: $b}}) CREATE (a)-[r:{rel_type} {{{}}}]->(b)",
-                assignments.join(", ")
-            ),
-            params,
-        );
-        vec![delete, create]
+    fn relationship_create(&mut self, edge: &EdgeRecord, pattern: &EdgePattern) -> Result<Option<RelationshipCreate>, QueryError> {
+        let (Some(source), Some(target)) = (self.node_id(&edge.source)?, self.node_id(&edge.target)?) else {
+            return Ok(None);
+        };
+        let mut properties = user_properties(&edge.properties);
+        properties.insert(ID_PROPERTY.into(), Value::String(self.scoped(&edge.id)));
+        properties.insert(SOURCE_PROPERTY.into(), Value::String(self.source.clone()));
+        properties.insert(PLUGIN_PROPERTY.into(), Value::String(self.plugin.clone()));
+        properties.insert(SYNCED_AT_PROPERTY.into(), Value::Int(self.synced_at));
+        Ok(Some(RelationshipCreate {
+            source_label: pattern.source_label.clone(),
+            source,
+            rel_type: pattern.rel_type.clone(),
+            target_label: pattern.target_label.clone(),
+            target,
+            properties,
+        }))
     }
 
-    fn provenance(&self, id: &str) -> BTreeMap<String, Value> {
-        BTreeMap::from([
-            ("kid".to_string(), Value::String(self.scoped(id))),
-            ("source".to_string(), Value::String(self.source.clone())),
-            ("plugin".to_string(), Value::String(self.plugin.clone())),
-            ("synced_at".to_string(), Value::Int(self.synced_at)),
-        ])
-    }
-
-    fn remove_stale(&mut self, known_patterns: &[EdgePattern]) -> Result<(), QueryError> {
+    /// Nodes of this source a full sync did not see. Their relationships go
+    /// with them (`DETACH DELETE`).
+    fn remove_stale_nodes(&mut self) -> Result<(), QueryError> {
         let params = BTreeMap::from([
             ("source".to_string(), Value::String(self.source.clone())),
             ("synced_at".to_string(), Value::Int(self.synced_at)),
         ]);
-        let patterns: BTreeSet<EdgePattern> = known_patterns.iter().cloned().chain(self.patterns.iter().cloned()).collect();
         // DELETE inside a transaction returns no rows in HawDB 0.8, so stale
-        // elements are counted with the same pattern before they are deleted.
-        for pattern in patterns {
-            let matched = format!(
-                "MATCH (a:{})-[r:{} {{{SOURCE_PROPERTY}: $source}}]->(b:{}) WHERE r.{SYNCED_AT_PROPERTY} < $synced_at",
-                quote_ident(&pattern.source_label),
-                quote_ident(&pattern.rel_type),
-                quote_ident(&pattern.target_label)
-            );
-            let stale = self.count(&format!("{matched} RETURN count(r) AS c"), &params)?;
-            if stale > 0 {
-                self.graph.write_batch(&[(format!("{matched} DELETE r"), params.clone())])?;
-                self.stats.stale_edges_removed += stale;
-            }
-        }
+        // nodes are counted with the same pattern before they are deleted.
         let matched = format!("MATCH (n {{{SOURCE_PROPERTY}: $source}}) WHERE n.{SYNCED_AT_PROPERTY} < $synced_at");
         let stale = self.count(&format!("{matched} RETURN count(n) AS c"), &params)?;
         if stale > 0 {
@@ -302,14 +419,6 @@ impl<'g> Merger<'g> {
             _ => 0,
         })
     }
-}
-
-fn provenance_sets(var: &str) -> Vec<String> {
-    vec![
-        format!("{var}.{SOURCE_PROPERTY} = $source"),
-        format!("{var}.{PLUGIN_PROPERTY} = $plugin"),
-        format!("{var}.{SYNCED_AT_PROPERTY} = $synced_at"),
-    ]
 }
 
 /// HawDB 0.8 accepts only plain identifiers as property names in `SET`.

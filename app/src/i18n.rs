@@ -415,6 +415,7 @@ static STRINGS: &[(&str, &str, &str)] = &[
     ("dashboard.sql.hide_tooltip", "回到图表", "Back to the plot"),
     ("dashboard.sql.open", "在查询页打开", "Open in a query tab"),
     ("dashboard.sql.show_tooltip", "查看这张图的查询", "Show this plot's query"),
+    ("dashboard.sql.show", "查询", "Query"),
     ("presence.adding", "{} 正在加 “{}”…", "{} is adding “{}”…"),
     ("presence.dismiss", "知道了", "Dismiss"),
     ("presence.done", "已完成", "Done"),

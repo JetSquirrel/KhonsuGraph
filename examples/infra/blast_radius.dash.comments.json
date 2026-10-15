@@ -1,0 +1,17 @@
+{
+  "threads": [
+    {
+      "id": "c1",
+      "plot": "hosts",
+      "resolved": false,
+      "comments": [
+        {
+          "author": "agent",
+          "name": "Claude",
+          "text": "Sort the bars by host count?",
+          "at": "2026-10-15T18:10:09Z"
+        }
+      ]
+    }
+  ]
+}
