@@ -4,7 +4,7 @@ members = [
     "crates/khonsu-core",
     # "crates/khonsu-cli",
     "crates/khonsu-plugin-protocol",
-    # "plugins/csv",
+    "plugins/csv",
 ]
 
 [workspace.package]

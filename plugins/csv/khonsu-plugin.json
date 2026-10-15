@@ -1,0 +1,9 @@
+{
+  "id": "csv",
+  "name": "CSV",
+  "version": "0.1.0",
+  "protocol": 1,
+  "entry": ["khonsu-plugin-csv"],
+  "description": "Node and edge tables from local CSV files",
+  "permissions": { "read_files": true }
+}
