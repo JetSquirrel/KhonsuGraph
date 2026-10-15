@@ -1,0 +1,4 @@
+[env]
+# Integration tests create graphs here. HawDB 0.8 cannot create a graph under
+# the Windows temp directory (it flushes ancestor directories up to C:\).
+KHONSU_TEST_DIR = { value = "scratch/tests", relative = true }
