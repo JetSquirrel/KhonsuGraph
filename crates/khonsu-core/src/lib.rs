@@ -16,3 +16,6 @@ pub use engine::{AccessMode, Graph, Language, OpenError, QueryError, QueryOption
 pub use khonsu_plugin_protocol as protocol;
 pub use result::{GraphData, GraphEdge, GraphNode, QueryResult};
 pub use schema::GraphSchema;
+
+/// The HawDB release this build links, for crash reports and About.
+pub const HAWDB_VERSION: &str = "0.8.0";

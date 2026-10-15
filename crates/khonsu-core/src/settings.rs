@@ -58,6 +58,9 @@ pub struct Settings {
     /// `en` or `zh`.
     #[serde(default)]
     pub locale: Option<String>,
+    /// Other preferences of the desktop app (interface size, panel state, ...).
+    #[serde(default)]
+    pub values: std::collections::BTreeMap<String, String>,
 }
 
 impl Settings {
@@ -67,6 +70,18 @@ impl Settings {
 
     pub fn save(&self) -> io::Result<()> {
         save("settings.json", self)
+    }
+
+    /// A stored preference, read fresh from disk.
+    pub fn get_value(key: &str) -> Option<String> {
+        Self::load().values.get(key).cloned()
+    }
+
+    /// Stores one preference (a blocking read-modify-write of settings.json).
+    pub fn set_value(key: &str, value: &str) -> io::Result<()> {
+        let mut settings = Self::load();
+        settings.values.insert(key.to_string(), value.to_string());
+        settings.save()
     }
 
     pub fn note_opened(&mut self, path: &Path) {
