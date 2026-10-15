@@ -6,6 +6,7 @@ members = [
     "crates/khonsu-plugin-protocol",
     "crates/khonsu-dash",
     "plugins/csv",
+    "plugins/aws",
     "app",
 ]
 

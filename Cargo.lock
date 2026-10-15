@@ -4544,6 +4544,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "khonsu-plugin-aws"
+version = "0.1.0"
+dependencies = [
+ "khonsu-plugin-protocol",
+ "serde_json",
+]
+
+[[package]]
 name = "khonsu-plugin-csv"
 version = "0.1.0"
 dependencies = [

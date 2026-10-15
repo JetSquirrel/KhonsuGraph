@@ -1,0 +1,1 @@
+{"TargetGroups": [{"TargetGroupArn": "arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/def", "TargetGroupName": "web", "Protocol": "HTTP", "Port": 8080, "VpcId": "vpc-shop", "LoadBalancerArns": ["arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc"]}]}

@@ -16,13 +16,14 @@ HawDB product.
 | `crates/khonsu-cli` | `khonsu`, the windowless JSON CLI for agents and scripts |
 | `crates/khonsu-plugin-protocol` | The data-source plugin protocol (JSON lines over stdio) |
 | `plugins/csv` | The built-in CSV plugin |
+| `plugins/aws` | The official AWS plugin: VPCs, subnets, security groups, instances, load balancers and IAM roles, read through the `aws` CLI |
 | `skills/khonsugraph` | The agent skill: how to query, author dashboards and review them with a person |
 | `examples/` | Five user-story dashboards on public datasets, and the scripts that build their graphs |
 
 ## Build
 
 ```sh
-cargo build --workspace            # app, CLI and CSV plugin
+cargo build --workspace            # app, CLI, CSV and AWS plugins
 cargo test --workspace
 ```
 

@@ -13,6 +13,19 @@ comes from public datasets, downloaded and converted by `datasets/`:
 
 `infra/blast_radius.dash` runs on the small CSV demo in `csv/`.
 
+`aws/exposure.dash` shows what the internet can reach in an AWS account. Try
+it on the saved responses that ship with the AWS plugin:
+
+```sh
+khonsu init graphs/aws
+khonsu source add --db graphs/aws --plugin aws --name "shop account"   -c "fixture_dir=\"$PWD/plugins/aws/tests/fixture\"" -c 'regions=["us-east-1"]'
+khonsu plugin sync --source shop-account
+khonsu check examples/aws/exposure.dash --db graphs/aws
+```
+
+For a real account, drop `fixture_dir` and set `profile` to a read-only
+profile; the plugin only calls `describe`, `list` and `get` operations.
+
 ## Build a story graph
 
 ```sh

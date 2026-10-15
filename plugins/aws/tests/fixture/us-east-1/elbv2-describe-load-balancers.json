@@ -1,0 +1,1 @@
+{"LoadBalancers": [{"LoadBalancerArn": "arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc", "DNSName": "shop-123.us-east-1.elb.amazonaws.com", "LoadBalancerName": "shop", "Scheme": "internet-facing", "VpcId": "vpc-shop", "Type": "application", "SecurityGroups": ["sg-web"]}]}

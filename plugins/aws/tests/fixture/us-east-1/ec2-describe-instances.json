@@ -1,0 +1,4 @@
+{"Reservations": [{"Instances": [
+ {"InstanceId": "i-web1", "InstanceType": "t3.small", "State": {"Name": "running"}, "SubnetId": "subnet-public", "PrivateIpAddress": "10.0.1.10", "PublicIpAddress": "198.51.100.10", "ImageId": "ami-web", "LaunchTime": "2026-09-01T08:00:00+00:00", "SecurityGroups": [{"GroupId": "sg-web", "GroupName": "web"}], "IamInstanceProfile": {"Arn": "arn:aws:iam::123456789012:instance-profile/web-app"}, "Tags": [{"Key": "Name", "Value": "web-1"}]},
+ {"InstanceId": "i-db1", "InstanceType": "r6g.large", "State": {"Name": "running"}, "SubnetId": "subnet-private", "PrivateIpAddress": "10.0.2.20", "ImageId": "ami-db", "LaunchTime": "2026-09-01T08:00:00+00:00", "SecurityGroups": [{"GroupId": "sg-db", "GroupName": "db"}], "IamInstanceProfile": {"Arn": "arn:aws:iam::123456789012:instance-profile/db-backup"}, "Tags": [{"Key": "Name", "Value": "db-1"}]}
+]}]}

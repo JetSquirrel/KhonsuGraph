@@ -53,6 +53,8 @@ khonsu source remove lab
 
 The CSV plugin also takes `nodes` and `edges` as JSON lists of tables: `-c 'nodes=[{"path":"assets.csv","label_column":"kind","id_column":"id"}]' -c 'edges=[{"path":"links.csv","type_column":"type","source_column":"source","target_column":"target","id_column":"id"}]'`. Other columns become properties; numbers and true/false are typed (`-c infer_types=false` keeps text). A sync report: `{source, mode, received_nodes, received_edges, merge: {nodes_written, edges_written, unchanged_edges, duplicate_nodes, duplicate_edges, skipped_edges, stale_nodes_removed, stale_edges_removed, warnings}, elapsed_ms}`. Every synced element carries `khonsu_id`, `khonsu_source`, `khonsu_plugin` and `khonsu_synced_at`.
 
+The AWS plugin reads an account through the `aws` CLI with read-only calls: `-c profile=readonly -c 'regions=["us-east-1","eu-west-1"]'` (or keys stored as secrets: `access_key_id`, `secret_access_key`, `session_token`). Labels: Account, Region, Vpc, Subnet, SecurityGroup, Cidr, Instance, InternetGateway, LoadBalancer, TargetGroup, Role. Relationships: `(Cidr)-[:ALLOWS {protocol, ports}]->(SecurityGroup)`, `(SecurityGroup)-[:ALLOWS]->(SecurityGroup)`, `(Instance)-[:PROTECTED_BY]->(SecurityGroup)`, `(Instance)-[:IN_SUBNET]->(Subnet)-[:IN_VPC]->(Vpc)-[:IN_REGION]->(Region)`, `(Instance)-[:ASSUMES]->(Role)`, `(Cidr)-[:ROUTES_TO]->(LoadBalancer)-[:FORWARDS_TO]->(TargetGroup)-[:ROUTES_TO {health}]->(Instance)`, `(Account)-[:OWNS]->(...)`. The internet is the Cidr node with `cidr = '0.0.0.0/0'`. Ask the person before syncing a real account; `-c fixture_dir=...` reads saved `aws --output json` responses instead.
+
 ## Dashboards and the window
 
 ```bash
