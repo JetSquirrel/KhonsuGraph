@@ -168,10 +168,11 @@ fn show_plugin_picker(
     });
 }
 
-/// Install a plugin from a folder holding `khonsu-plugin.json`.
+/// Install a plugin from a folder holding `khonsu-plugin.json`, or a `.zip`
+/// of one (macOS's picker offers both; Windows' picks folders).
 pub fn install_from_folder(window: &mut Window, cx: &mut App) {
     let rx = cx.prompt_for_paths(PathPromptOptions {
-        files: false,
+        files: true,
         directories: true,
         multiple: false,
         prompt: Some(tr("plugins.install").into()),

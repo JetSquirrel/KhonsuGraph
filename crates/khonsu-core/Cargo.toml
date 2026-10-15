@@ -13,6 +13,7 @@ thiserror.workspace = true
 dirs.workspace = true
 khonsu-plugin-protocol.workspace = true
 keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
 tempfile.workspace = true

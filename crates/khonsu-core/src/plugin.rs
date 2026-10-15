@@ -236,9 +236,12 @@ pub fn find(id: &str) -> Result<PluginInfo, PluginError> {
         .ok_or_else(|| PluginError::NotFound(id.to_string()))
 }
 
-/// Installs a plugin from a local directory by copying it into the user
-/// plugin directory. Returns the installed plugin.
+/// Installs a plugin from a local directory, or a `.zip` of one, by copying
+/// it into the user plugin directory. Returns the installed plugin.
 pub fn install(from: &Path) -> Result<PluginInfo, PluginError> {
+    if from.is_file() {
+        return install_archive(from);
+    }
     let manifest = read_manifest(from)?;
     if BUILTIN_PLUGINS.contains(&manifest.id.as_str()) {
         return Err(PluginError::Other(format!("{} is a built-in plugin ID", manifest.id)));
@@ -271,6 +274,56 @@ pub fn uninstall(id: &str) -> Result<(), PluginError> {
     }
     fs::remove_dir_all(dir)?;
     Ok(())
+}
+
+/// Unpacks a `.zip` holding a plugin folder (the manifest at its top, or in
+/// its one top-level folder) and installs that folder.
+fn install_archive(archive: &Path) -> Result<PluginInfo, PluginError> {
+    let invalid = |message: String| PluginError::Invalid {
+        path: archive.to_path_buf(),
+        message,
+    };
+    let mut zip = zip::ZipArchive::new(fs::File::open(archive)?).map_err(|e| invalid(format!("not a zip archive: {e}")))?;
+    let staging = settings::plugins_dir().join(format!(".unpack-{}", std::process::id()));
+    if staging.exists() {
+        fs::remove_dir_all(&staging)?;
+    }
+    fs::create_dir_all(&staging)?;
+    let result = (|| {
+        for i in 0..zip.len() {
+            let mut entry = zip.by_index(i).map_err(|e| invalid(e.to_string()))?;
+            // Entries that would land outside the folder (`../`, absolute) are refused.
+            let Some(name) = entry.enclosed_name() else {
+                return Err(invalid(format!("unsafe path in archive: {}", entry.name())));
+            };
+            let target = staging.join(name);
+            if entry.is_dir() {
+                fs::create_dir_all(&target)?;
+                continue;
+            }
+            if let Some(parent) = target.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            std::io::copy(&mut entry, &mut fs::File::create(&target)?)?;
+            #[cfg(unix)]
+            if let Some(mode) = entry.unix_mode() {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(&target, fs::Permissions::from_mode(mode & 0o755))?;
+            }
+        }
+        let root = if staging.join(MANIFEST_FILE).is_file() {
+            staging.clone()
+        } else {
+            let folders: Vec<PathBuf> = fs::read_dir(&staging)?.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
+            match folders.as_slice() {
+                [only] if only.join(MANIFEST_FILE).is_file() => only.clone(),
+                _ => return Err(invalid(format!("no {MANIFEST_FILE} at the top of the archive or in its one folder"))),
+            }
+        };
+        install(&root)
+    })();
+    let _ = fs::remove_dir_all(&staging);
+    result
 }
 
 fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {

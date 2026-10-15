@@ -107,13 +107,14 @@ enum PluginCommand {
     List,
     /// A plugin's configuration fields, permissions and output types.
     Describe { id: String },
-    /// Install a plugin from a local directory containing khonsu-plugin.json.
+    /// Install a plugin from a local directory or .zip containing khonsu-plugin.json.
     Install {
         dir: PathBuf,
         /// Approve the permissions the plugin declares (required to sync with it).
         #[arg(long)]
         yes: bool,
     },
+    /// Remove an installed plugin.
     Uninstall { id: String },
     /// Sync a configured source into its graph (or preview with --dry-run).
     Sync {

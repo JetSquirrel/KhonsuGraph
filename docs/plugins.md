@@ -164,7 +164,9 @@ khonsu query --db graphs/files --cypher \
 ```
 
 `install` copies the folder into KhonsuGraph's plugin directory, so edit the
-source and install again to update. `khonsu plugin list` shows what is
+source and install again to update. It also takes a `.zip` with the manifest
+at its top or inside its one folder, which is how to hand a plugin to someone
+else. `khonsu plugin list` shows what is
 installed and whether it is approved; `khonsu plugin uninstall folders` removes
 it.
 
