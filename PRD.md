@@ -31,6 +31,18 @@ V1 的主要用户是需要在本地探索关系数据的工程师，次要用�
 
 **不针对的用户**：需要多人同时写入、远程访问的服务端图数据库场景。HawDB 是单进程嵌入式引擎，没有独立服务端。
 
+### 用户故事
+
+每个故事都在 `examples/` 里有一个基于公开数据集的 `.dash` 仪表盘（数据获取与转换见 `examples/datasets`）。
+
+| 用户 | 故事 | 示例数据 |
+| --- | --- | --- |
+| 网络安全工程师 | 从繁杂的主机日志中挖出完整的攻击链路和攻击面，阻止入侵 | MITRE ATT&CK + OTRF Sysmon 攻击录像 |
+| SRE | 找出服务之间的依赖和故障的爆炸半径，借助 AI 运行 khonsu 命令高效应对故障 | Google Online Boutique 服务依赖 |
+| 刑侦专家 | 分析人员与公司之间的关系，推进案件调查 | ICIJ Offshore Leaks |
+| 财务审计专家 | 分析交易与信任网络中的异常账户，发现经济犯罪 | SNAP Bitcoin OTC |
+| 租房的普通用户 | 让 AI 把地铁、公交和房源存进 KhonsuGraph，协作找到位置和价格合适的房子 | OpenStreetMap 港铁 + Inside Airbnb 香港 |
+
 ## V1 范围
 
 V1 只做"打开图库、查询、看图、用插件接入数据、命令行查询"这几件事，其余一律后置。
@@ -44,11 +56,11 @@ V1 只做"打开图库、查询、看图、用插件接入数据、命令行查�
 - 插件系统和两个官方插件：CSV（内置）与 AWS（资源拓扑）；第三方可按同一接口开发
 - 无窗口 JSON CLI，面向 agent
 - 查询历史、EXPLAIN、深浅色主题、中英文界面（沿用 DuckLocal）
+- `.dash` 仪表盘（沿用 DuckLocal 的 DSL，查询换成 Cypher 或 SQL，新增 `graph` 面板；保留 AI 协作：`khonsu check`、评论线程、在场标记、`khonsu open`）
 
 **V1 不做**
 
 - S3 / httpfs 和 Excel 数据源（HawDB 不是文件查询引擎）
-- `.dash` 仪表盘
 - 多人协作、远程连接、服务端部署
 - 向量检索和全文检索的专门界面（引擎支持，界面放 V2）
 - 浏览器版（官网 playground 已覆盖试用需求）
@@ -168,7 +180,8 @@ UI 外壳可以沿用，引擎层和数据入口要重写，图画布改用独�
 | 无窗口 JSON CLI | 改造 | 子命令改成 Cypher / SQL，沿用 JSON 输出与截断标记 |
 | 图画布 | 引入 gpui-graph | 布局、绘制和交互由 [gpui-graph](https://crates.io/crates/gpui-graph) 提供；应用只负责结果转换、补全端点、展开邻居、属性面板和图例 |
 | 数据源插件系统 | 新做 | DuckLocal 没有对应能力，见"数据源插件"一节 |
-| S3 / httpfs、Excel、`.dash` 仪表盘 | 删除 | V1 不带 |
+| S3 / httpfs、Excel | 删除 | V1 不带 |
+| `.dash` 仪表盘与 AI 协作 | 沿用，改造 | 查询改为 `cypher` 或 `sql` 属性，去掉 `source` 块，新增 `graph` 面板；筛选器在 Cypher 中比较 `match` 表达式；窗口占用图库时 CLI 的查询和检查经由窗口执行 |
 | 官网（Docs、Blog、中英文、FAQ） | 沿用结构，重写文案 | 见品牌与素材一节 |
 
 **授权**：DuckLocal 和 HawDB 都是 Apache-2.0，保留 LICENSE 与版权声明即可；新仓库不要保留 DuckLocal 的品牌素材。

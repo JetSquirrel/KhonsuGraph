@@ -1,0 +1,126 @@
+# User story 3: an investigator maps who stands behind a set of companies.
+#
+# Graph: a case file from the ICIJ Offshore Leaks database — Panama Papers
+# companies registered through Hong Kong, incorporated 2012–2015, with their
+# officers and intermediaries. Data © ICIJ, ODbL. Build it with
+# examples/datasets (story "investigation").
+
+plot "intro" {
+  type  = "text"
+  title = "Offshore network"
+  text  = <<TEXT
+    People who sit on many companies, and the intermediaries who set them up, are where an investigation starts.
+    Pick an officer to see their companies and who else sits on them.
+  TEXT
+}
+
+query "entities" {
+  cypher = "MATCH (e:Entity) RETURN count(e) AS entities"
+}
+
+query "officers" {
+  cypher = "MATCH (o:Officer) RETURN count(o) AS officers"
+}
+
+query "busiest" {
+  cypher = <<CYPHER
+    MATCH (o:Officer)-[r:OFFICER_OF]->(e:Entity)
+    RETURN o.name AS officer, count(e) AS companies
+    ORDER BY companies DESC
+    LIMIT 40
+  CYPHER
+}
+
+query "companies" {
+  cypher = <<CYPHER
+    MATCH (o:Officer)-[r:OFFICER_OF]->(e:Entity)
+    WHERE $officer
+    RETURN o, r, e
+    LIMIT 200
+  CYPHER
+}
+
+query "intermediaries" {
+  cypher = <<CYPHER
+    MATCH (i:Intermediary)-[r:INTERMEDIARY_OF]->(e:Entity)
+    RETURN i.name AS intermediary, count(e) AS companies
+    ORDER BY companies DESC
+    LIMIT 12
+  CYPHER
+}
+
+query "jurisdictions" {
+  cypher = <<CYPHER
+    MATCH (e:Entity)
+    RETURN e.jurisdiction AS jurisdiction, count(e) AS companies
+    ORDER BY companies DESC
+  CYPHER
+}
+
+query "status" {
+  cypher = <<CYPHER
+    MATCH (e:Entity)
+    RETURN e.status AS status, count(e) AS companies
+    ORDER BY companies DESC
+  CYPHER
+}
+
+plot "entities" {
+  type  = "card"
+  query = query.entities
+  title = "Companies in the case file"
+}
+
+plot "officers" {
+  type  = "card"
+  query = query.officers
+  title = "Officers"
+}
+
+plot "busiest" {
+  type  = "table"
+  query = query.busiest
+  title = "Officers on the most companies"
+  width = 5
+}
+
+plot "companies" {
+  type    = "graph"
+  query   = query.companies
+  title   = "Companies of the picked officer"
+  caption = name
+  width   = 7
+}
+
+plot "intermediaries" {
+  type  = "bar"
+  query = query.intermediaries
+  x     = intermediary
+  y     = companies
+  title = "Busiest intermediaries"
+  width = 6
+}
+
+plot "jurisdictions" {
+  type  = "pie"
+  query = query.jurisdictions
+  x     = jurisdiction
+  y     = companies
+  title = "Jurisdictions"
+  width = 3
+}
+
+plot "status" {
+  type  = "pie"
+  query = query.status
+  x     = status
+  y     = companies
+  title = "Status"
+  width = 3
+}
+
+filter "officer" {
+  plot   = plot.busiest
+  column = officer
+  match  = "o.name"
+}

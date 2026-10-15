@@ -1,0 +1,170 @@
+# User story 1: a security engineer digs the attack chain out of noisy logs.
+#
+# Graph: MITRE ATT&CK (groups, software, techniques, tactics, mitigations)
+# plus two OTRF Sysmon recordings (Empire Mimikatz, Covenant PS remoting),
+# with process-create and lsass-access events linked to the techniques they
+# indicate. Build it with examples/datasets (story "security").
+
+plot "intro" {
+  type  = "text"
+  title = "From host logs to an attack chain"
+  text  = <<TEXT
+    Pick a technique the logs indicate to see which known groups use it and how to mitigate it.
+    Pick a process on the process tree to see what it spawned and connected to.
+  TEXT
+}
+
+query "processes" {
+  cypher = "MATCH (p:Process) RETURN count(p) AS processes"
+}
+
+query "indicated" {
+  cypher = "MATCH (p:Process)-[i:INDICATES]->(t:Technique) RETURN count(DISTINCT t) AS techniques"
+}
+
+query "lsass" {
+  cypher = "MATCH (a:Process)-[r:ACCESSED]->(b:Process) RETURN count(r) AS accesses"
+}
+
+query "hits" {
+  cypher = <<CYPHER
+    MATCH (p:Process)-[i:INDICATES]->(t:Technique)
+    RETURN t.external_id AS technique, t.name AS name, p.name AS process, p.recording AS recording, i.rule AS rule
+    ORDER BY technique
+  CYPHER
+}
+
+query "tree" {
+  cypher = <<CYPHER
+    MATCH (a:Process)-[r:SPAWNED]->(b:Process)
+    RETURN a, r, b
+  CYPHER
+}
+
+query "credential_access" {
+  cypher = <<CYPHER
+    MATCH (a:Process)-[r:ACCESSED]->(b:Process)
+    RETURN a, r, b
+  CYPHER
+}
+
+query "groups" {
+  cypher = <<CYPHER
+    MATCH (g:Group)-[r:USES]->(t:Technique)
+    WHERE $technique
+    RETURN g, r, t
+    LIMIT 150
+  CYPHER
+}
+
+query "mitigations" {
+  cypher = <<CYPHER
+    MATCH (m:Mitigation)-[r:MITIGATES]->(t:Technique)
+    WHERE $technique
+    RETURN m.name AS mitigation, t.external_id AS technique
+    ORDER BY mitigation
+    LIMIT 40
+  CYPHER
+}
+
+query "connections" {
+  cypher = <<CYPHER
+    MATCH (p:Process)-[r:CONNECTED_TO]->(ip:IP)
+    WHERE $process
+    RETURN p, r, ip
+  CYPHER
+}
+
+query "by_tactic" {
+  cypher = <<CYPHER
+    MATCH (t:Technique)-[r:IN_TACTIC]->(x:Tactic)
+    RETURN x.name AS tactic, count(t) AS techniques
+    ORDER BY techniques DESC
+  CYPHER
+}
+
+plot "processes" {
+  type  = "card"
+  query = query.processes
+  title = "Processes in the logs"
+}
+
+plot "indicated" {
+  type  = "card"
+  query = query.indicated
+  title = "ATT&CK techniques indicated"
+  tone  = "warning"
+}
+
+plot "lsass" {
+  type  = "card"
+  query = query.lsass
+  title = "Handles opened on lsass.exe"
+  tone  = "critical"
+}
+
+plot "hits" {
+  type  = "table"
+  query = query.hits
+  title = "What the logs indicate"
+  width = 5
+}
+
+plot "tree" {
+  type    = "graph"
+  query   = query.tree
+  title   = "Process tree"
+  caption = name
+  width   = 7
+}
+
+plot "groups" {
+  type    = "graph"
+  query   = query.groups
+  title   = "Known groups using the technique"
+  caption = name
+  width   = 7
+}
+
+plot "mitigations" {
+  type  = "table"
+  query = query.mitigations
+  title = "Mitigations"
+  width = 5
+}
+
+plot "credential_access" {
+  type    = "graph"
+  query   = query.credential_access
+  title   = "Who opened lsass.exe"
+  caption = name
+  width   = 6
+}
+
+plot "connections" {
+  type    = "graph"
+  query   = query.connections
+  title   = "Network connections of the picked process"
+  caption = name
+  width   = 6
+}
+
+plot "by_tactic" {
+  type  = "bar"
+  query = query.by_tactic
+  x     = tactic
+  y     = techniques
+  title = "ATT&CK techniques per tactic"
+}
+
+filter "technique" {
+  plot   = plot.hits
+  column = technique
+  match  = "t.external_id"
+}
+
+filter "process" {
+  plot   = plot.tree
+  column = name
+  match  = "p.name"
+}
