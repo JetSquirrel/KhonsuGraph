@@ -32,6 +32,21 @@ The app expects gpui-graph checked out beside this repository
 (it flushes every parent directory up to the drive root); tests use
 `scratch/tests`, set in `.cargo/config.toml`.
 
+## Release builds
+
+| Script | Makes |
+| --- | --- |
+| `scripts/bundle.sh` | An unsigned `KhonsuGraph.app` to try on a Mac |
+| `scripts/package-macos.sh` | The signed, notarized `.dmg` (Developer ID and an App Store Connect key required) |
+| `scripts/package-windows.ps1` | A zip of the Windows build (not code-signed) |
+
+Every package holds the app, the `khonsu` CLI and the official plugins under
+`plugins/<id>/` beside them, which is where both look for built-in plugins.
+On a Mac, put the CLI on your `PATH` with
+`ln -s /Applications/KhonsuGraph.app/Contents/MacOS/khonsu /usr/local/bin/khonsu`.
+Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds both and
+publishes a GitHub release.
+
 ## HawDB 0.8 notes
 
 What KhonsuGraph works around, found while building it:
