@@ -1,0 +1,11 @@
+{"SecurityGroups": [
+ {"GroupId": "sg-web", "GroupName": "web", "Description": "web tier", "VpcId": "vpc-shop",
+  "IpPermissions": [
+   {"IpProtocol": "tcp", "FromPort": 443, "ToPort": 443, "IpRanges": [{"CidrIp": "0.0.0.0/0"}], "Ipv6Ranges": [], "UserIdGroupPairs": []},
+   {"IpProtocol": "tcp", "FromPort": 22, "ToPort": 22, "IpRanges": [{"CidrIp": "203.0.113.0/24", "Description": "office"}], "Ipv6Ranges": [], "UserIdGroupPairs": []}
+  ]},
+ {"GroupId": "sg-db", "GroupName": "db", "Description": "database", "VpcId": "vpc-shop",
+  "IpPermissions": [
+   {"IpProtocol": "tcp", "FromPort": 5432, "ToPort": 5432, "IpRanges": [], "Ipv6Ranges": [], "UserIdGroupPairs": [{"GroupId": "sg-web"}]}
+  ]}
+]}

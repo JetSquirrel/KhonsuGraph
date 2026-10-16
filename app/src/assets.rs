@@ -8,9 +8,21 @@ use std::borrow::Cow;
 use gpui_kit::assets::{icon_assets, Assets};
 use gpui_kit::{AssetSource, Result, SharedString};
 
-icon_assets!(ExtraIcons, [Save, ListTree, Download, CircleStop, DatabasePlus, Waypoints, Network, Plug]);
+icon_assets!(
+    ExtraIcons,
+    [Save, ListTree, Download, CircleStop, DatabasePlus, ChartNoAxesColumn, ChartPie, Code, MessageSquare, UserRound]
+);
 
-const BRAND: &[(&str, &[u8])] = &[("brand/logo.png", include_bytes!("../assets/logo-128.png"))];
+/// The brand mark, and the agents' marks drawn as their avatars (see
+/// `ui::agent_avatar`), served at `agents/<name>.svg` as in DuckLocal.
+const BRAND: &[(&str, &[u8])] = &[
+    ("brand/logo.png", include_bytes!("../assets/logo-128.png")),
+    ("agents/claude.svg", include_bytes!("../assets/agents/claude.svg")),
+    ("agents/openai.svg", include_bytes!("../assets/agents/openai.svg")),
+    ("agents/deepseek.svg", include_bytes!("../assets/agents/deepseek.svg")),
+    ("agents/gemini.svg", include_bytes!("../assets/agents/gemini.svg")),
+    ("agents/cursor.svg", include_bytes!("../assets/agents/cursor.svg")),
+];
 
 pub struct AppAssets;
 

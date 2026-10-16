@@ -1,0 +1,4 @@
+{"InstanceProfiles": [
+ {"InstanceProfileName": "web-app", "Arn": "arn:aws:iam::123456789012:instance-profile/web-app", "Roles": [{"RoleName": "web-app", "Arn": "arn:aws:iam::123456789012:role/web-app"}]},
+ {"InstanceProfileName": "db-backup", "Arn": "arn:aws:iam::123456789012:instance-profile/db-backup", "Roles": [{"RoleName": "db-backup", "Arn": "arn:aws:iam::123456789012:role/db-backup"}]}
+]}

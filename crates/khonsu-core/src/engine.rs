@@ -5,6 +5,7 @@
 use crate::lock::{self, LockError, LockOwner, WriterLock};
 use crate::result::{json_params, value_to_json, GraphCollector, GraphData, QueryResult};
 use crate::schema::{self, GraphSchema};
+use hawdb::store::{GraphMutation, KernelWriteBatch, MatchedRelationshipCreate, NodeSetAssignment, NodeSetValue, PropertyFilter};
 use hawdb::{Database, DatabaseConfig, HawDBError, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value as Json};
@@ -12,6 +13,27 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
+
+/// Mutations per kernel write batch, well under HawDB's 100,000 limit.
+const KERNEL_BATCH: usize = 1000;
+
+/// A node to upsert: its label, the key it is matched on, and the properties
+/// to set whether it was created or found.
+pub(crate) struct NodeUpsert {
+    pub label: String,
+    pub key: (String, Value),
+    pub set: BTreeMap<String, Value>,
+}
+
+/// A relationship to create between two nodes known by internal ID.
+pub(crate) struct RelationshipCreate {
+    pub source_label: String,
+    pub source: i64,
+    pub rel_type: String,
+    pub target_label: String,
+    pub target: i64,
+    pub properties: BTreeMap<String, Value>,
+}
 
 /// A file every HawDB project directory contains once created.
 const HAWDB_MANIFEST: &str = "manifest.hawdb";
@@ -177,7 +199,7 @@ impl Graph {
     }
 
     fn open_inner(path: &Path, mode: AccessMode, program: &str) -> Result<Self, OpenError> {
-        let path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        let path = normalize_path(path);
         let lock = match mode {
             AccessMode::ReadWrite => Some(WriterLock::acquire(&path, program).map_err(|err| match err {
                 LockError::Held(owner) => OpenError::Locked(owner),
@@ -191,7 +213,7 @@ impl Graph {
             read_only: mode == AccessMode::ReadOnly,
             ..DatabaseConfig::default()
         };
-        let db = Database::open_with_config(engine_path(&path), config).map_err(|err| open_failure(&path, err))?;
+        let db = Database::open_with_config(&path, config).map_err(|err| open_failure(&path, err))?;
         Ok(Self {
             db,
             path,
@@ -329,6 +351,69 @@ impl Graph {
             .collect())
     }
 
+    /// Upserts nodes by one key property, in kernel write batches: no Cypher
+    /// to parse or plan per node. Every property in `set` is written on create
+    /// and on match alike.
+    pub(crate) fn merge_nodes(&mut self, nodes: Vec<NodeUpsert>) -> Result<(), QueryError> {
+        self.ensure_writable()?;
+        for chunk in nodes.chunks(KERNEL_BATCH) {
+            let graph = chunk
+                .iter()
+                .map(|node| GraphMutation::MergeNode {
+                    label: node.label.clone(),
+                    match_properties: BTreeMap::from([(node.key.0.clone(), node.key.1.clone())]),
+                    on_create_properties: BTreeMap::new(),
+                    on_match_assignments: Vec::new(),
+                    post_merge_assignments: node
+                        .set
+                        .iter()
+                        .map(|(property, value)| NodeSetAssignment {
+                            property: property.clone(),
+                            value: NodeSetValue::Value(value.clone()),
+                        })
+                        .collect(),
+                })
+                .collect();
+            self.db.commit_kernel_write_batch(KernelWriteBatch {
+                graph,
+                ..KernelWriteBatch::default()
+            })?;
+        }
+        Ok(())
+    }
+
+    /// Creates relationships between nodes given by internal ID.
+    pub(crate) fn create_relationships(&mut self, relationships: Vec<RelationshipCreate>) -> Result<(), QueryError> {
+        self.ensure_writable()?;
+        for chunk in relationships.chunks(KERNEL_BATCH) {
+            let graph = chunk
+                .iter()
+                .map(|rel| {
+                    GraphMutation::CreateRelationshipsBetweenMatches(MatchedRelationshipCreate {
+                        source_label: rel.source_label.clone(),
+                        source_filter: Some(PropertyFilter::IdEq { value: Value::Int(rel.source) }),
+                        rel_type: rel.rel_type.clone(),
+                        rel_properties: rel.properties.clone(),
+                        target_label: rel.target_label.clone(),
+                        target_filter: Some(PropertyFilter::IdEq { value: Value::Int(rel.target) }),
+                    })
+                })
+                .collect();
+            self.db.commit_kernel_write_batch(KernelWriteBatch {
+                graph,
+                ..KernelWriteBatch::default()
+            })?;
+        }
+        Ok(())
+    }
+
+    fn ensure_writable(&self) -> Result<(), QueryError> {
+        if self.mode == AccessMode::ReadOnly {
+            return Err(QueryError::new("read_only", "the graph is open read-only"));
+        }
+        Ok(())
+    }
+
     /// Runs `statements` in one transaction; nothing is written if one fails.
     pub(crate) fn write_batch(&mut self, statements: &[(String, BTreeMap<String, Value>)]) -> Result<Vec<Vec<Vec<Value>>>, QueryError> {
         if self.mode == AccessMode::ReadOnly {
@@ -373,8 +458,14 @@ fn plan_result(plan: &str) -> QueryResult {
     }
 }
 
-/// HawDB resolves paths itself; hand it the plain form without `\\?\`.
-fn engine_path(path: &Path) -> PathBuf {
+/// The absolute, canonical form of a graph path, used everywhere a graph is
+/// identified (settings, sources, locks). On Windows the `\\?\` prefix that
+/// `canonicalize` adds is dropped; HawDB and users expect the plain form.
+pub fn normalize_path(path: &Path) -> PathBuf {
+    let path = path
+        .canonicalize()
+        .or_else(|_| std::path::absolute(path))
+        .unwrap_or_else(|_| path.to_path_buf());
     let text = path.to_string_lossy();
     match text.strip_prefix(r"\\?\") {
         Some(stripped) if !stripped.starts_with("UNC") => PathBuf::from(stripped),

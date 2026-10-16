@@ -39,10 +39,19 @@ impl PluginInfo {
         &self.manifest.id
     }
 
+    /// The entry executable: a file in the plugin directory, or, for a bare
+    /// command name such as `python3` or `node`, a program on `PATH`.
     pub fn executable(&self) -> PathBuf {
-        let mut exe = self.dir.join(&self.manifest.entry[0]);
+        let entry = &self.manifest.entry[0];
+        let mut exe = self.dir.join(entry);
         if cfg!(windows) && exe.extension().is_none() {
             exe.set_extension("exe");
+        }
+        let bare = !entry.contains(['/', '\\']);
+        if !exe.is_file() && bare {
+            if let Some(found) = on_path(entry) {
+                return found;
+            }
         }
         exe
     }
@@ -133,6 +142,28 @@ pub fn read_manifest(dir: &Path) -> Result<Manifest, PluginError> {
     Ok(manifest)
 }
 
+/// Looks a bare command name up on `PATH`, trying `PATHEXT` extensions on Windows.
+fn on_path(name: &str) -> Option<PathBuf> {
+    let exts: Vec<String> = if cfg!(windows) && Path::new(name).extension().is_none() {
+        std::env::var("PATHEXT")
+            .unwrap_or_else(|_| ".EXE;.CMD;.BAT".into())
+            .split(';')
+            .filter(|e| !e.is_empty())
+            .map(str::to_string)
+            .collect()
+    } else {
+        vec![String::new()]
+    };
+    // Windows' WindowsApps folder holds Store install stubs (python3.exe
+    // that only prints a hint), not the programs themselves.
+    let stub = |dir: &Path| dir.ends_with("Microsoft/WindowsApps");
+    std::env::split_paths(&std::env::var_os("PATH")?).filter(|dir| !stub(dir)).find_map(|dir| {
+        exts.iter()
+            .map(|ext| dir.join(format!("{name}{ext}")))
+            .find(|candidate| candidate.is_file())
+    })
+}
+
 fn find_builtin(id: &str) -> Option<PluginInfo> {
     for base in builtin_dirs() {
         let dir = base.join("plugins").join(id);
@@ -205,9 +236,12 @@ pub fn find(id: &str) -> Result<PluginInfo, PluginError> {
         .ok_or_else(|| PluginError::NotFound(id.to_string()))
 }
 
-/// Installs a plugin from a local directory by copying it into the user
-/// plugin directory. Returns the installed plugin.
+/// Installs a plugin from a local directory, or a `.zip` of one, by copying
+/// it into the user plugin directory. Returns the installed plugin.
 pub fn install(from: &Path) -> Result<PluginInfo, PluginError> {
+    if from.is_file() {
+        return install_archive(from);
+    }
     let manifest = read_manifest(from)?;
     if BUILTIN_PLUGINS.contains(&manifest.id.as_str()) {
         return Err(PluginError::Other(format!("{} is a built-in plugin ID", manifest.id)));
@@ -240,6 +274,56 @@ pub fn uninstall(id: &str) -> Result<(), PluginError> {
     }
     fs::remove_dir_all(dir)?;
     Ok(())
+}
+
+/// Unpacks a `.zip` holding a plugin folder (the manifest at its top, or in
+/// its one top-level folder) and installs that folder.
+fn install_archive(archive: &Path) -> Result<PluginInfo, PluginError> {
+    let invalid = |message: String| PluginError::Invalid {
+        path: archive.to_path_buf(),
+        message,
+    };
+    let mut zip = zip::ZipArchive::new(fs::File::open(archive)?).map_err(|e| invalid(format!("not a zip archive: {e}")))?;
+    let staging = settings::plugins_dir().join(format!(".unpack-{}", std::process::id()));
+    if staging.exists() {
+        fs::remove_dir_all(&staging)?;
+    }
+    fs::create_dir_all(&staging)?;
+    let result = (|| {
+        for i in 0..zip.len() {
+            let mut entry = zip.by_index(i).map_err(|e| invalid(e.to_string()))?;
+            // Entries that would land outside the folder (`../`, absolute) are refused.
+            let Some(name) = entry.enclosed_name() else {
+                return Err(invalid(format!("unsafe path in archive: {}", entry.name())));
+            };
+            let target = staging.join(name);
+            if entry.is_dir() {
+                fs::create_dir_all(&target)?;
+                continue;
+            }
+            if let Some(parent) = target.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            std::io::copy(&mut entry, &mut fs::File::create(&target)?)?;
+            #[cfg(unix)]
+            if let Some(mode) = entry.unix_mode() {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(&target, fs::Permissions::from_mode(mode & 0o755))?;
+            }
+        }
+        let root = if staging.join(MANIFEST_FILE).is_file() {
+            staging.clone()
+        } else {
+            let folders: Vec<PathBuf> = fs::read_dir(&staging)?.flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
+            match folders.as_slice() {
+                [only] if only.join(MANIFEST_FILE).is_file() => only.clone(),
+                _ => return Err(invalid(format!("no {MANIFEST_FILE} at the top of the archive or in its one folder"))),
+            }
+        };
+        install(&root)
+    })();
+    let _ = fs::remove_dir_all(&staging);
+    result
 }
 
 fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
@@ -275,7 +359,8 @@ fn drain_stderr(child: &mut Child) -> Arc<Mutex<VecDeque<String>>> {
 }
 
 fn failure(plugin: &PluginInfo, message: String, stderr: &Mutex<VecDeque<String>>) -> PluginError {
-    let tail: Vec<String> = stderr.lock().unwrap().iter().cloned().collect();
+    // Plugins often print the same error to stderr; show it once.
+    let tail: Vec<String> = stderr.lock().unwrap().iter().filter(|line| line.trim() != message.trim()).cloned().collect();
     let message = if tail.is_empty() {
         message
     } else {
@@ -613,4 +698,39 @@ pub fn sync_source(
     };
     settings::upsert_source(updated)?;
     report
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn plugin_with_entry(entry: &str) -> PluginInfo {
+        PluginInfo {
+            manifest: Manifest {
+                id: "script".into(),
+                name: "Script".into(),
+                version: "0.1.0".into(),
+                protocol: 1,
+                entry: vec![entry.into(), "plugin.py".into()],
+                description: String::new(),
+                permissions: Default::default(),
+            },
+            dir: PathBuf::from("no-such-plugin-dir"),
+            builtin: false,
+        }
+    }
+
+    #[test]
+    fn a_bare_entry_missing_from_the_plugin_folder_runs_from_path() {
+        // cargo is on PATH wherever these tests run.
+        let exe = plugin_with_entry("cargo").executable();
+        assert!(exe.is_file(), "{}", exe.display());
+        assert!(!exe.starts_with("no-such-plugin-dir"));
+    }
+
+    #[test]
+    fn an_entry_with_a_folder_stays_inside_the_plugin_folder() {
+        let exe = plugin_with_entry("bin/cargo").executable();
+        assert!(exe.starts_with("no-such-plugin-dir"), "{}", exe.display());
+    }
 }

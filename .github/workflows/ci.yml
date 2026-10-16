@@ -1,0 +1,47 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    # macOS is where the app ships; Windows catches path mistakes (drive
+    # letters, `\`) and HawDB's Windows quirks.
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # The canvas comes from gpui-graph, a path dependency checked out
+      # beside this repository (app/Cargo.toml).
+      - name: Check out gpui-graph
+        shell: bash
+        run: git clone --depth 1 https://github.com/JetSquirrel/gpui-graph ../gpui-graph
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Configure Windows CI debug information
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          "CARGO_PROFILE_DEV_DEBUG=0" >> $env:GITHUB_ENV
+          "CARGO_PROFILE_TEST_DEBUG=0" >> $env:GITHUB_ENV
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: true
+
+      - name: Run tests
+        run: cargo test --locked --workspace

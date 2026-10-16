@@ -1,0 +1,1 @@
+{"InternetGateways": [{"InternetGatewayId": "igw-shop", "Attachments": [{"State": "available", "VpcId": "vpc-shop"}], "Tags": []}]}

@@ -83,8 +83,14 @@ fn describe() -> Describe {
                 FieldKind::Json,
                 r#"[{"path", "rel_type" | "type_column", "source_column", "target_column", "id_column"}]"#,
             ),
-            field("delimiter", "Delimiter", FieldKind::String, "Single character, default ','"),
-            field("infer_types", "Infer types", FieldKind::Bool, "Store numbers and true/false as typed values (default on)"),
+            ConfigField {
+                default: Some(Value::String(",".into())),
+                ..field("delimiter", "Delimiter", FieldKind::String, "One character; \\t for tab")
+            },
+            ConfigField {
+                default: Some(Value::Bool(true)),
+                ..field("infer_types", "Infer types", FieldKind::Bool, "Store numbers and true/false as typed values")
+            },
         ],
         permissions: Permissions {
             read_files: true,

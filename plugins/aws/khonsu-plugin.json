@@ -1,0 +1,13 @@
+{
+  "id": "aws",
+  "name": "AWS",
+  "version": "0.1.0",
+  "protocol": 1,
+  "entry": ["khonsu-plugin-aws"],
+  "description": "VPCs, subnets, security groups, EC2 instances, load balancers and IAM roles, and how they connect",
+  "permissions": {
+    "network": ["*.amazonaws.com"],
+    "commands": ["aws"],
+    "notes": ["Read-only: ec2:Describe*, elasticloadbalancing:Describe*, iam:List*, sts:GetCallerIdentity"]
+  }
+}

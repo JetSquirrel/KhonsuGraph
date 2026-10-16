@@ -17,6 +17,14 @@ smol = "2"
 directories = "6"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+khonsu-dash.workspace = true
+# The dashboard source editor speaks LSP types, as in DuckLocal.
+lsp-types = "0.97"
+# Map tiles, opt-in like DuckLocal's base map.
+ureq = { version = "3", default-features = false, features = ["rustls"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+unicode-width = "0.2"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 
 [build-dependencies]
 embed-resource = "3.0.11"

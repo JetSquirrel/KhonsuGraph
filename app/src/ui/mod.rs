@@ -1,6 +1,10 @@
 //! UI layer: title bar, sidebar, workspace, results, graph canvas, status bar.
 
+pub mod agent_avatar;
 pub mod canvas;
+pub mod chart;
+pub mod geo;
+pub mod grid;
 pub mod palette;
 pub mod results;
 pub mod scale;
@@ -8,6 +12,7 @@ pub mod sidebar;
 pub mod sources;
 pub mod status_bar;
 pub mod theme;
+pub mod tiles;
 pub mod title_bar;
 pub mod workspace;
 
@@ -27,6 +32,8 @@ gpui_kit::actions!(
     [
         RunQuery,
         ExplainQuery,
+        SaveSpec,
+        OpenDashboard,
         ZoomIn,
         ZoomOut,
         ZoomReset,
@@ -62,6 +69,7 @@ pub fn init(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new(RUN_QUERY_KEYSTROKE, RunQuery, Some(WORKSPACE_KEY_CONTEXT)),
         KeyBinding::new("secondary-e", ExplainQuery, Some(WORKSPACE_KEY_CONTEXT)),
+        KeyBinding::new("secondary-s", SaveSpec, Some(WORKSPACE_KEY_CONTEXT)),
         KeyBinding::new("secondary-=", ZoomIn, None),
         KeyBinding::new("secondary-+", ZoomIn, None),
         KeyBinding::new("secondary--", ZoomOut, None),
@@ -118,6 +126,7 @@ pub fn set_menus(cx: &mut App) {
                 MenuItem::action(tr("title_bar.open_graph"), OpenGraph),
                 MenuItem::action(tr("title_bar.new_graph"), NewGraph),
                 MenuItem::action(tr("sources.add"), AddSource),
+                MenuItem::action(tr("workspace.open_dashboard"), OpenDashboard),
                 MenuItem::Separator,
                 MenuItem::action(tr("workspace.new_cypher"), NewQuery),
                 MenuItem::action(tr("workspace.new_sql"), NewSqlQuery),

@@ -4,7 +4,9 @@ members = [
     "crates/khonsu-core",
     "crates/khonsu-cli",
     "crates/khonsu-plugin-protocol",
+    "crates/khonsu-dash",
     "plugins/csv",
+    "plugins/aws",
     "app",
 ]
 
@@ -28,6 +30,7 @@ dirs = "6"
 tempfile = "3"
 khonsu-core = { path = "crates/khonsu-core" }
 khonsu-plugin-protocol = { path = "crates/khonsu-plugin-protocol" }
+khonsu-dash = { path = "crates/khonsu-dash" }
 
 [profile.dev.package."*"]
 opt-level = 1

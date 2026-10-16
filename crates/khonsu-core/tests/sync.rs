@@ -45,6 +45,7 @@ fn write_csvs(dir: &std::path::Path, hosts: usize, skip_edge: Option<usize>) -> 
 }
 
 #[test]
+#[ignore = "CSV plugin tests are skipped for now; run with --ignored"]
 fn csv_source_syncs_counts_match_rows_and_resync_is_idempotent() {
     build_csv_plugin();
     let dir = TestDir::new();

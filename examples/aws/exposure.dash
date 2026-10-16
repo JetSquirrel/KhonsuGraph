@@ -1,0 +1,85 @@
+# What the internet can reach in an AWS account, from the official AWS plugin.
+# Build the graph from the saved responses in plugins/aws/tests/fixture, or
+# from a real account with a read-only profile (see examples/README.md).
+plot "intro" {
+  type  = "text"
+  title = "Internet exposure"
+  text  = "Security groups that let an address range in, the instances behind them, and the roles those instances can use. Pick a security group to narrow the graph."
+}
+
+query "open_groups" {
+  cypher = <<CYPHER
+    MATCH (c:Cidr)-[a:ALLOWS]->(g:SecurityGroup)
+    RETURN g.name AS group, c.cidr AS source, a.protocol AS protocol, a.ports AS ports
+    ORDER BY group, ports
+  CYPHER
+}
+
+query "internet_rules" {
+  cypher = <<CYPHER
+    MATCH (c:Cidr {cidr: '0.0.0.0/0'})-[a:ALLOWS]->(g:SecurityGroup)
+    RETURN count(a) AS rules
+  CYPHER
+}
+
+query "exposure" {
+  cypher = <<CYPHER
+    MATCH (c:Cidr)-[a:ALLOWS]->(g:SecurityGroup)<-[p:PROTECTED_BY]-(i:Instance)
+    WHERE $group
+    RETURN c, a, g, p, i
+  CYPHER
+}
+
+query "roles" {
+  cypher = <<CYPHER
+    MATCH (i:Instance)-[:ASSUMES]->(r:Role)
+    RETURN i.name AS instance, i.state AS state, r.name AS role
+    ORDER BY instance
+  CYPHER
+}
+
+query "lateral" {
+  cypher = <<CYPHER
+    MATCH (from:SecurityGroup)-[a:ALLOWS]->(to:SecurityGroup)
+    RETURN from, a, to
+  CYPHER
+}
+
+plot "internet_rules" {
+  type  = "card"
+  query = query.internet_rules
+  title = "Rules open to 0.0.0.0/0"
+  tone  = "warning"
+}
+
+plot "open_groups" {
+  type  = "table"
+  query = query.open_groups
+  width = 5
+}
+
+plot "exposure" {
+  type    = "graph"
+  query   = query.exposure
+  caption = name
+  width   = 7
+}
+
+plot "roles" {
+  type  = "table"
+  query = query.roles
+  width = 6
+}
+
+plot "lateral" {
+  type    = "graph"
+  query   = query.lateral
+  caption = name
+  width   = 6
+}
+
+filter "group" {
+  plot   = plot.open_groups
+  column = group
+  match  = "g.name"
+}

@@ -1,0 +1,121 @@
+# User story 4: an auditor looks for accounts others warn about, and for
+# who vouched for them.
+#
+# Graph: the SNAP Bitcoin OTC trust network — who rated whom, from -10 (fraud
+# warning) to +10. An account is `flagged` when it has at least five negative
+# ratings and they are most of its ratings. Build it with examples/datasets
+# (story "audit").
+
+plot "intro" {
+  type  = "text"
+  title = "Trust network"
+  text  = <<TEXT
+    Pick a flagged account to see who warned about it and whom it trusted:
+    accounts that trust each other around a flagged one are where collusion shows.
+  TEXT
+}
+
+query "accounts" {
+  cypher = "MATCH (a:Account) RETURN count(a) AS accounts"
+}
+
+query "flagged_count" {
+  cypher = "MATCH (a:Account) WHERE a.flagged = true RETURN count(a) AS flagged"
+}
+
+query "warnings" {
+  cypher = "MATCH (a:Account)-[r:DISTRUSTS]->(b:Account) RETURN count(r) AS warnings"
+}
+
+query "flagged" {
+  cypher = <<CYPHER
+    MATCH (a:Account)
+    WHERE a.flagged = true
+    RETURN a.name AS account, a.negative_received AS warnings, a.ratings_received AS ratings, a.first_seen AS first_seen
+    ORDER BY warnings DESC
+    LIMIT 60
+  CYPHER
+}
+
+query "warned_by" {
+  cypher = <<CYPHER
+    MATCH (x:Account)-[r:DISTRUSTS]->(a:Account)
+    WHERE $account
+    RETURN x, r, a
+    LIMIT 200
+  CYPHER
+}
+
+query "trusted" {
+  cypher = <<CYPHER
+    MATCH (a:Account)-[r:TRUSTS]->(y:Account)
+    WHERE $account
+    RETURN a, r, y
+    LIMIT 200
+  CYPHER
+}
+
+query "monthly" {
+  cypher = <<CYPHER
+    MATCH (a:Account)-[r:DISTRUSTS]->(b:Account)
+    RETURN left(r.at, 7) AS month, count(r) AS warnings
+    ORDER BY month
+  CYPHER
+}
+
+plot "accounts" {
+  type  = "card"
+  query = query.accounts
+  title = "Accounts"
+}
+
+plot "flagged_count" {
+  type  = "card"
+  query = query.flagged_count
+  title = "Flagged accounts"
+  tone  = "critical"
+}
+
+plot "warnings" {
+  type  = "card"
+  query = query.warnings
+  title = "Negative ratings"
+  tone  = "warning"
+}
+
+plot "flagged" {
+  type  = "table"
+  query = query.flagged
+  title = "Flagged accounts"
+  width = 4
+}
+
+plot "warned_by" {
+  type    = "graph"
+  query   = query.warned_by
+  title   = "Who warned about it"
+  caption = name
+  width   = 4
+}
+
+plot "trusted" {
+  type    = "graph"
+  query   = query.trusted
+  title   = "Whom it trusted"
+  caption = name
+  width   = 4
+}
+
+plot "monthly" {
+  type  = "line"
+  query = query.monthly
+  x     = month
+  y     = warnings
+  title = "Negative ratings per month"
+}
+
+filter "account" {
+  plot   = plot.flagged
+  column = account
+  match  = "a.name"
+}

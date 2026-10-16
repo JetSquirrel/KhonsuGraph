@@ -1,0 +1,9 @@
+{
+  "id": "folders",
+  "name": "Folders",
+  "version": "0.1.0",
+  "protocol": 1,
+  "entry": ["python3", "plugin.py"],
+  "description": "A folder tree as Folder and File nodes joined by CONTAINS",
+  "permissions": { "read_files": true, "commands": ["python3"] }
+}

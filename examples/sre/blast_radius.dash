@@ -1,0 +1,102 @@
+# User story 2: an SRE finds the blast radius of a failing service.
+#
+# Graph: Google Online Boutique's services and the services each one calls,
+# read from its Kubernetes manifests. Build it with examples/datasets
+# (story "sre").
+
+plot "intro" {
+  type  = "text"
+  title = "Blast radius"
+  text  = "Pick a service: the graph shows what it calls, the table what breaks with it."
+}
+
+query "services" {
+  cypher = <<CYPHER
+    MATCH (s:Service)
+    RETURN s.name AS service, s.language AS language, s.tier AS tier, s.cpu_request AS cpu, s.memory_request AS memory
+    ORDER BY service
+  CYPHER
+}
+
+query "calls" {
+  cypher = <<CYPHER
+    MATCH (s:Service)-[r:CALLS]->(d:Service)
+    WHERE $service
+    RETURN s, r, d
+  CYPHER
+}
+
+# Everything that calls the picked service, directly or through up to four
+# hops: what fails or degrades when it does.
+query "impacted" {
+  cypher = <<CYPHER
+    MATCH (a:Service)-[:CALLS*1..4]->(s:Service)
+    WHERE $service
+    RETURN DISTINCT a.name AS impacted, a.tier AS tier
+    ORDER BY impacted
+  CYPHER
+}
+
+query "fan_in" {
+  cypher = <<CYPHER
+    MATCH (a:Service)-[r:CALLS]->(b:Service)
+    RETURN b.name AS service, count(a) AS callers
+    ORDER BY callers DESC
+  CYPHER
+}
+
+query "count" {
+  cypher = "MATCH (s:Service) RETURN count(s) AS services"
+}
+
+query "edges" {
+  cypher = "MATCH (a:Service)-[r:CALLS]->(b:Service) RETURN count(r) AS calls"
+}
+
+plot "count" {
+  type  = "card"
+  query = query.count
+  title = "Services"
+}
+
+plot "edges" {
+  type  = "card"
+  query = query.edges
+  title = "Call paths"
+}
+
+plot "services" {
+  type  = "table"
+  query = query.services
+  width = 6
+}
+
+plot "calls" {
+  type    = "graph"
+  query   = query.calls
+  title   = "Calls"
+  caption = name
+  width   = 6
+}
+
+plot "impacted" {
+  type  = "table"
+  query = query.impacted
+  title = "Impacted when it fails"
+  width = 6
+}
+
+plot "fan_in" {
+  type  = "bar"
+  query = query.fan_in
+  x     = service
+  y     = callers
+  title = "Direct callers per service"
+  width = 6
+}
+
+filter "service" {
+  plot   = plot.services
+  column = service
+  match  = "s.name"
+}

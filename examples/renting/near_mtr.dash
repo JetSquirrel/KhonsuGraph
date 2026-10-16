@@ -1,0 +1,108 @@
+# User story 5: someone looking for a place to rent near the MTR.
+#
+# Graph: Hong Kong MTR lines and stations from OpenStreetMap (© OpenStreetMap
+# contributors, ODbL) and Inside Airbnb's Hong Kong listings (CC BY 4.0), each
+# listing linked to the stations within an 800 m walk. Build it with
+# examples/datasets (story "renting").
+
+plot "intro" {
+  type  = "text"
+  title = "A place near the MTR"
+  text  = "Pick a station to see the listings within walking distance, cheapest first."
+}
+
+query "stations" {
+  cypher = <<CYPHER
+    MATCH (s:Station)-[r:ON_LINE]->(l:Line)
+    RETURN s.name AS station, s.name_zh AS name_zh, l.name AS line
+    ORDER BY station
+  CYPHER
+}
+
+query "nearby" {
+  cypher = <<CYPHER
+    MATCH (l:Listing)-[n:NEAR]->(s:Station)
+    WHERE $station AND l.price_hkd <= 1500
+    RETURN l.name AS listing, l.price_hkd AS price_hkd, n.walk_minutes AS walk_minutes, l.room_type AS room, l.district AS district
+    ORDER BY price_hkd
+    LIMIT 50
+  CYPHER
+}
+
+query "map" {
+  cypher = <<CYPHER
+    MATCH (l:Listing)-[n:NEAR]->(s:Station)
+    WHERE $station
+    RETURN l.lat AS lat, l.lng AS lng, l.room_type AS room, l.price_hkd AS price_hkd, l.name AS listing
+    LIMIT 1500
+  CYPHER
+}
+
+query "line" {
+  cypher = <<CYPHER
+    MATCH (a:Station)-[r:NEXT_TO]->(b:Station)
+    RETURN a, r, b
+  CYPHER
+}
+
+query "by_district" {
+  cypher = <<CYPHER
+    MATCH (l:Listing)
+    RETURN l.district AS district, avg(l.price_hkd) AS average_price
+    ORDER BY average_price
+  CYPHER
+}
+
+query "count" {
+  cypher = "MATCH (l:Listing)-[n:NEAR]->(s:Station) WHERE $station RETURN count(DISTINCT l) AS listings"
+}
+
+plot "count" {
+  type  = "card"
+  query = query.count
+  title = "Listings within 800 m"
+}
+
+plot "stations" {
+  type  = "table"
+  query = query.stations
+  width = 4
+}
+
+plot "map" {
+  type    = "map"
+  query   = query.map
+  color   = room
+  size    = price_hkd
+  tooltip = [listing, price_hkd, room]
+  width   = 8
+}
+
+plot "nearby" {
+  type  = "table"
+  query = query.nearby
+  title = "Cheapest nearby (HKD per night)"
+  width = 6
+}
+
+plot "line" {
+  type    = "graph"
+  query   = query.line
+  title   = "The network"
+  caption = name
+  width   = 6
+}
+
+plot "by_district" {
+  type  = "bar"
+  query = query.by_district
+  x     = district
+  y     = average_price
+  title = "Average price by district (HKD)"
+}
+
+filter "station" {
+  plot   = plot.stations
+  column = station
+  match  = "s.name"
+}

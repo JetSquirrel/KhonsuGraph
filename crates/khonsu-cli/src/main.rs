@@ -4,11 +4,13 @@
 //! `{"error": {...}}` and exit non-zero. Graphs open read-only unless a
 //! command needs to write and `--write` is given.
 
+mod dash;
+
 use clap::{Args, Parser, Subcommand};
 use khonsu_core::plugin::{self, SyncEvent};
 use khonsu_core::protocol::{FieldKind, SyncMode};
 use khonsu_core::settings::{self, Source};
-use khonsu_core::{secrets, AccessMode, Graph, Language, OpenError, QueryError, QueryOptions};
+use khonsu_core::{normalize_path, secrets, AccessMode, Graph, Language, OpenError, QueryError, QueryOptions};
 use serde_json::{json, Map, Value};
 use std::io::Read;
 use std::path::PathBuf;
@@ -89,6 +91,14 @@ enum Command {
         #[command(subcommand)]
         command: SourceCommand,
     },
+    /// Validate a .dash dashboard and run every query read-only.
+    Check(dash::CheckArgs),
+    /// Review threads on a .dash dashboard's plots: list, reply, resolve.
+    Comments(dash::CommentsArgs),
+    /// Tell the running window where you are about to edit a dashboard.
+    Presence(dash::PresenceArgs),
+    /// Show a graph, a .dash file or a query in the window, or read what it shows (--state).
+    Open(dash::OpenArgs),
 }
 
 #[derive(Subcommand)]
@@ -97,13 +107,14 @@ enum PluginCommand {
     List,
     /// A plugin's configuration fields, permissions and output types.
     Describe { id: String },
-    /// Install a plugin from a local directory containing khonsu-plugin.json.
+    /// Install a plugin from a local directory or .zip containing khonsu-plugin.json.
     Install {
         dir: PathBuf,
         /// Approve the permissions the plugin declares (required to sync with it).
         #[arg(long)]
         yes: bool,
     },
+    /// Remove an installed plugin.
     Uninstall { id: String },
     /// Sync a configured source into its graph (or preview with --dry-run).
     Sync {
@@ -145,6 +156,8 @@ struct CliError {
     kind: String,
     message: String,
     detail: Value,
+    /// Exit status: 1 for failures, 2 for a spec or argument mistake.
+    code: u8,
 }
 
 impl CliError {
@@ -153,6 +166,14 @@ impl CliError {
             kind: kind.into(),
             message: message.into(),
             detail: Value::Null,
+            code: 1,
+        }
+    }
+
+    fn usage(message: impl Into<String>) -> Self {
+        Self {
+            code: 2,
+            ..Self::new("usage", message)
         }
     }
 }
@@ -174,6 +195,7 @@ impl From<OpenError> for CliError {
             kind: kind.into(),
             message: err.to_string(),
             detail,
+            code: 1,
         }
     }
 }
@@ -184,6 +206,7 @@ impl From<QueryError> for CliError {
             kind: err.kind.clone(),
             message: err.message.clone(),
             detail: json!({ "line": err.line, "column": err.column }),
+            code: 1,
         }
     }
 }
@@ -198,6 +221,7 @@ impl From<plugin::PluginError> for CliError {
             kind: "plugin".into(),
             message: err.to_string(),
             detail,
+            code: 1,
         }
     }
 }
@@ -258,7 +282,16 @@ fn run(command: Command) -> Result<Value, CliError> {
             let path = resolve_db(&db)?;
             let (language, text) = read_text(&text)?;
             let mode = if write { AccessMode::ReadWrite } else { AccessMode::ReadOnly };
-            let mut graph = Graph::open(&path, mode, PROGRAM)?;
+            let mut graph = match Graph::open(&path, mode, PROGRAM) {
+                Ok(graph) => graph,
+                // The window holds the graph: HawDB leases it to one process,
+                // so a read goes through the window.
+                Err(OpenError::Locked(owner)) if !write && params.is_empty() => {
+                    return dash::query_via_window(&path, language, &text, max_rows)
+                        .unwrap_or_else(|| Err(OpenError::Locked(owner).into()));
+                }
+                Err(e) => return Err(e.into()),
+            };
             let result = graph.run(language, &text, &key_values(&params)?, QueryOptions { max_rows })?;
             Ok(serde_json::to_value(result).expect("result serializes"))
         }
@@ -279,6 +312,10 @@ fn run(command: Command) -> Result<Value, CliError> {
         }
         Command::Plugin { command } => run_plugin(command),
         Command::Source { command } => run_source(command),
+        Command::Check(args) => dash::check(args),
+        Command::Comments(args) => dash::comments(args),
+        Command::Presence(args) => dash::presence(args),
+        Command::Open(args) => dash::open(args),
     }
 }
 
@@ -401,7 +438,7 @@ fn run_source(command: SourceCommand) -> Result<Value, CliError> {
                 id: id.clone(),
                 name,
                 plugin: plugin_id,
-                graph: std::path::absolute(&graph).unwrap_or(graph),
+                graph: normalize_path(&graph),
                 config: plain,
                 secret_keys,
                 cursor: None,
@@ -459,7 +496,7 @@ fn main() -> ExitCode {
                 error["detail"] = err.detail;
             }
             print(&json!({ "error": error }), cli.pretty);
-            ExitCode::FAILURE
+            ExitCode::from(err.code.max(1))
         }
     }
 }

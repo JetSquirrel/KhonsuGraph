@@ -1,0 +1,4 @@
+{"Subnets": [
+ {"SubnetId": "subnet-public", "SubnetArn": "arn:aws:ec2:us-east-1:123456789012:subnet/subnet-public", "VpcId": "vpc-shop", "CidrBlock": "10.0.1.0/24", "AvailabilityZone": "us-east-1a", "MapPublicIpOnLaunch": true, "Tags": [{"Key": "Name", "Value": "public-a"}]},
+ {"SubnetId": "subnet-private", "SubnetArn": "arn:aws:ec2:us-east-1:123456789012:subnet/subnet-private", "VpcId": "vpc-shop", "CidrBlock": "10.0.2.0/24", "AvailabilityZone": "us-east-1a", "MapPublicIpOnLaunch": false, "Tags": [{"Key": "Name", "Value": "private-a"}]}
+]}
