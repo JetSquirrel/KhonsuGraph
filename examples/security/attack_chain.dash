@@ -29,8 +29,8 @@ query "lsass" {
 query "hits" {
   cypher = <<CYPHER
     MATCH (p:Process)-[i:INDICATES]->(t:Technique)
-    RETURN t.external_id AS technique, t.name AS name, p.name AS process, p.recording AS recording, i.rule AS rule
-    ORDER BY technique
+    RETURN t.external_id AS technique, t.name AS name, p.name AS process, count(i) AS events
+    ORDER BY technique, events DESC
   CYPHER
 }
 
