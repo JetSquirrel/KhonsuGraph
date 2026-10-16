@@ -15,7 +15,7 @@ use gpui_graph::{ColorBy, Edge, GraphData as Graph, LabelMode, NetworkGraph, Net
 use gpui_kit::component::button::Button;
 use gpui_kit::component::menu::{DropdownMenu, PopupMenuItem};
 use gpui_kit::component::notification::Notification;
-use gpui_kit::component::{h_flex, v_flex, ActiveTheme, IconName, Sizable, StyledExt, WindowExt};
+use gpui_kit::component::{h_flex, v_flex, ActiveTheme, IconName, Sizable, StyledExt, WindowExt, TITLE_BAR_HEIGHT};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use khonsu_core::{GraphData, GraphEdge, GraphNode};
@@ -144,6 +144,8 @@ pub struct GraphCanvas {
     group_key: Option<String>,
     /// A dashboard panel shows no inspector: its width is the grid's.
     compact: bool,
+    /// Drawn over the whole window below the title bar, instead of in place.
+    maximized: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -169,6 +171,7 @@ impl GraphCanvas {
             caption_key: None,
             group_key: None,
             compact: false,
+            maximized: false,
             _subscriptions: vec![subscription],
         }
     }
@@ -200,6 +203,19 @@ impl GraphCanvas {
         self.graph.update(cx, |graph, cx| {
             graph.set_color_by(color_by, cx);
             graph.set_data(Graph::new(nodes, edges), cx);
+        });
+        cx.notify();
+    }
+
+    /// Show the canvas over the whole window, or back in its place, and fit
+    /// the graph to its new size once that size has been laid out.
+    pub fn toggle_maximized(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.maximized = !self.maximized;
+        let graph = self.graph.clone();
+        window.on_next_frame(move |window, _| {
+            window.on_next_frame(move |_, cx| {
+                graph.update(cx, |graph, cx| graph.fit_view(cx));
+            });
         });
         cx.notify();
     }
@@ -429,7 +445,7 @@ impl GraphCanvas {
 }
 
 impl Render for GraphCanvas {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let halo = theme.background;
         let muted = theme.muted_foreground;
@@ -450,7 +466,8 @@ impl Render for GraphCanvas {
             tr("canvas.hint").to_string()
         };
 
-        h_flex()
+        let maximized = self.maximized;
+        let body = h_flex()
             .size_full()
             .child(
                 div()
@@ -474,6 +491,13 @@ impl Render for GraphCanvas {
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.graph.update(cx, |graph, cx| graph.fit_view(cx));
                                     })),
+                            )
+                            .child(
+                                Button::new("canvas-maximize")
+                                    .xsmall()
+                                    .outline()
+                                    .label(tr(if maximized { "canvas.restore" } else { "canvas.maximize" }))
+                                    .on_click(cx.listener(|this, _, window, cx| this.toggle_maximized(window, cx))),
                             )
                             .child(
                                 Button::new("canvas-relayout")
@@ -582,7 +606,46 @@ impl Render for GraphCanvas {
                             .child(note),
                     ),
             )
-            .when(!self.compact, |this| this.children(self.render_inspector(cx)))
+            .when(!self.compact || maximized, |this| this.children(self.render_inspector(cx)));
+
+        if !maximized {
+            return div().size_full().child(body).into_any_element();
+        }
+        // Over everything below the title bar, so the window's own buttons
+        // stay in reach; the panel keeps a note where the canvas was.
+        let viewport = window.viewport_size();
+        let theme = cx.theme();
+        let (background, border) = (theme.background, theme.border);
+        div()
+            .size_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .text_sm()
+            .text_color(muted)
+            .child(tr("canvas.maximized_note"))
+            .child(
+                deferred(
+                    anchored().position(point(px(0.), TITLE_BAR_HEIGHT)).child(
+                        div()
+                            .id("graph-canvas-maximized")
+                            .occlude()
+                            .w(viewport.width)
+                            .h(viewport.height - TITLE_BAR_HEIGHT)
+                            .bg(background)
+                            .border_t_1()
+                            .border_color(border)
+                            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                                if event.keystroke.key == "escape" {
+                                    this.toggle_maximized(window, cx);
+                                }
+                            }))
+                            .child(body),
+                    ),
+                )
+                .with_priority(1),
+            )
+            .into_any_element()
     }
 }
 

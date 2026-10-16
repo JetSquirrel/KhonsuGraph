@@ -275,6 +275,9 @@ static STRINGS: &[(&str, &str, &str)] = &[
     // ── graph canvas ────────────────────────────────────────────────────
     ("canvas.fit", "适配", "Fit"),
     ("canvas.relayout", "重新布局", "Re-layout"),
+    ("canvas.maximize", "铺满", "Full screen"),
+    ("canvas.restore", "退出铺满", "Exit full screen"),
+    ("canvas.maximized_note", "图已铺满窗口，按 Esc 或“退出铺满”返回", "The graph fills the window; press Esc or Exit full screen to return"),
     ("canvas.group_by", "分组：{0}", "Group: {0}"),
     ("canvas.group", "分组", "Group"),
     ("canvas.group_none", "不分组", "No groups"),
