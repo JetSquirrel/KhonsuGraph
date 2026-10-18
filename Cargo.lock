@@ -2756,7 +2756,9 @@ dependencies = [
 
 [[package]]
 name = "gpui-graph"
-version = "0.1.0"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "06169d7e065687d3b04ce2e3238861e68a3d69dcfba28689997624029e00a37a"
 dependencies = [
  "gpui-base",
  "gpui-pre",
@@ -3371,9 +3373,9 @@ checksum = "ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a"
 
 [[package]]
 name = "hawdb"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f9368b9ef0e12b093681ae54b9f8cafabe398714c2b76184c1918a15606e3bfa"
+checksum = "c0b82c512817cce8eac725ee453edb5993ef6e1f95f25a3cd9e43a896c54155c"
 dependencies = [
  "chrono",
  "getrandom 0.4.3",
@@ -3417,18 +3419,18 @@ dependencies = [
 
 [[package]]
 name = "hawdb-analytics"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1321f864b33747610375ab61d3d20719169bad9bb6c49fb61a9231d7394ce0d1"
+checksum = "2515a79e64ac7a3bbf95496a45c11f6ca46b3d5ce3bf524b3747b2ef9e8e3edf"
 dependencies = [
  "hawdb-core",
 ]
 
 [[package]]
 name = "hawdb-artifact"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c98dce5f0c04f2b4e695d111f812a5a014ccb7ff2dc75e35b98f713fc04cb27"
+checksum = "eb3c44385061a2510ae452fc89c936bd4923a480ba7275937b5f0681534d36be"
 dependencies = [
  "hawdb-core",
  "hawdb-executor",
@@ -3437,9 +3439,9 @@ dependencies = [
 
 [[package]]
 name = "hawdb-bootstrap"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ac1dff3b51075972a68eacb50cd9887fb719a624c0a45ae91c9a590be37690a"
+checksum = "c52ce6c80f475d37843fc498aaa6afe18eca511a120466bdebfd3627402498db"
 dependencies = [
  "hawdb-core",
  "hawdb-integrity",
@@ -3450,21 +3452,21 @@ dependencies = [
 
 [[package]]
 name = "hawdb-cascades"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bdb5cbd708138c287087f8ab6bd9adcf768aef5162e25e9f28eeda7cda6f3c9e"
+checksum = "5b483608c287c414d4f30d73370875fa9664d3a20914cac540f571ee503e5e9a"
 
 [[package]]
 name = "hawdb-cgroup"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92a8d9388aeccdc1cee0fd961fc7ad350ab65cf8fcc8a2a476c8c7219fb7e974"
+checksum = "0341a411f844578d2e3a8a635a5be96e31365ded7055cbde7ddd91ccbf9861a3"
 
 [[package]]
 name = "hawdb-compat"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "05089db243d03dc08b546599d4dc8e43f084706fc9b43239f537b856513b07db"
+checksum = "755d4f7f4bae1cd51dda01d872095259a6139788273104159f77e0f973934834"
 dependencies = [
  "hawdb-analytics",
  "hawdb-core",
@@ -3477,9 +3479,9 @@ dependencies = [
 
 [[package]]
 name = "hawdb-core"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "87fe2c865d659a8560a5363166e99ea03727a9f2f6d8b41a1da6526326e376a8"
+checksum = "f268c684e60a9eb585591875ca8e061e2ac151199d648d05f89c500ef810acfe"
 dependencies = [
  "getrandom 0.4.3",
  "regex",
@@ -3489,9 +3491,9 @@ dependencies = [
 
 [[package]]
 name = "hawdb-cypher"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "27dce0d338d1ec27836663037bda4f99fd9141e666959284818944ee4f3ea297"
+checksum = "2e9bae9591de49055cf739d82919b220b3a84344e984f19f3c0f51d1cb1dc6ee"
 dependencies = [
  "hawdb-core",
  "hawdb-ddl",
@@ -3499,18 +3501,18 @@ dependencies = [
 
 [[package]]
 name = "hawdb-ddl"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "825cd533cfcc4fa9d36921a8df82c6bb7ba84ea04998532304accb6d8b3e61ff"
+checksum = "5c3b2ad29f53f9e12e2ea7fc771d62cdf5d5e70eba7faadbd2ed3fbd2b2c1a6a"
 dependencies = [
  "hawdb-core",
 ]
 
 [[package]]
 name = "hawdb-evidence"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "747fb7743d4ce1ffcf1ab71ddeb302d41b37e6e5cb9e8d9c5bd0c0e177b35714"
+checksum = "ab4a57cd2cdafcfc5d76b9cedc2a0beecbce3614f87c0e22c3afb8d5720cd2b0"
 dependencies = [
  "hawdb-core",
  "hawdb-integrity",
@@ -3520,9 +3522,9 @@ dependencies = [
 
 [[package]]
 name = "hawdb-executor"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e817e09bcb18f68051884423caac7ac6c0d7105d73e3aafabd4dc6d4079b2dc"
+checksum = "1ce182a345e9ae2f01e02a5dbdd27f49004c2f4c9a8a7147f9b2f76d4d1eabcf"
 dependencies = [
  "fs2",
  "hawdb-analytics",
@@ -3536,9 +3538,9 @@ dependencies = [
 
 [[package]]
 name = "hawdb-explain"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9d654b0372617077dc364fffc9c1c6a7b3f70c2de47746460772149ddaa62cd4"
+checksum = "fc8d2e0d98b6c6a248d6ca0c7e3b8c51f80e7a7643e2b9cb510886205971a479"
 dependencies = [
  "hawdb-core",
  "hawdb-executor",
@@ -3552,18 +3554,18 @@ dependencies = [
 
 [[package]]
 name = "hawdb-expression"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "38c13fd129fbb4a857f4e8660bcd042efb8d857c161e58e096bc414018ca8f35"
+checksum = "517a67f5dcc2dbec9b12384c912dc9735f57e2c61ed7c4efae7d2eb74fda6c5d"
 dependencies = [
  "hawdb-core",
 ]
 
 [[package]]
 name = "hawdb-fuzz-contracts"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c190e6421e99510e912a7aa08f3065f0ccebecd5ee9b5a86ef96403ae8282670"
+checksum = "a10c182138d9d6b5f53f73da80e8c3bdad4dea5e106480ef4aa60308d9536c73"
 dependencies = [
  "hawdb-core",
  "serde_json",
@@ -3571,9 +3573,9 @@ dependencies = [
 
 [[package]]
 name = "hawdb-integrity"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "57fb91fa37372cad8050b9001d8e0952c4209da2e151615fb2d6e1ab9e21e021"
+checksum = "82e31c15f676129d4ef1644269a66e1e261c0e1a738ccc27c0bcd96f0ce2402b"
 dependencies = [
  "crc32c",
  "sha2 0.10.9",
@@ -3581,9 +3583,9 @@ dependencies = [
 
 [[package]]
 name = "hawdb-nowledge-contracts"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5486713886debc6aa0f79c2d2a24297441d5435f029ab641fd00ce8cb18b12b0"
+checksum = "523e8c74c2aea67f0ba75fc487b8b7292b3c39319d7be3f3623124f038ca4a56"
 dependencies = [
  "hawdb-core",
  "hawdb-qos",
@@ -3595,9 +3597,9 @@ dependencies = [
 
 [[package]]
 name = "hawdb-optimizer"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0139a4a58de0a68984fd096219610c07910e40ae9ecadca4c9d7fc36146291bc"
+checksum = "4b64b6a6c8201d99b8366d1c1e15090272b7f5738d3e60fb20f66a67b403327f"
 dependencies = [
  "hawdb-cascades",
  "hawdb-optimizer-graph",
@@ -3608,9 +3610,9 @@ dependencies = [
 
 [[package]]
 name = "hawdb-optimizer-graph"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3018a0f76b035bfc4f97a50c5ea7ae8e8f9c3bdda7050e7816187df63502529c"
+checksum = "e5573ff759e4456759176ebeef7d090abfdc17fe28acb1a8e4aeffcbba697c72"
 dependencies = [
  "hawdb-cascades",
  "hawdb-core",
@@ -3622,9 +3624,9 @@ dependencies = [
 
 [[package]]
 name = "hawdb-optimizer-predicate"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e6ed53c7103019ddac569b8e670b526aadf39d92be4ea01fae1c89fa37c0eb4c"
+checksum = "dc594994388af60aa4cc9fb68a2d0641db9e0a1216b31a675e4fb3fbce414ef2"
 dependencies = [
  "hawdb-cascades",
  "serde_json",
@@ -3632,9 +3634,9 @@ dependencies = [
 
 [[package]]
 name = "hawdb-optimizer-relational"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9883df758a9d39180ed7f9490104f7bfad3baba690ae160c34375952582bbb10"
+checksum = "ce5cabfe0d40ed20424ab7ba27d2266c9f00bf97816a02d974ed092cbdb9e512"
 dependencies = [
  "hawdb-cascades",
  "hawdb-expression",
@@ -3642,9 +3644,9 @@ dependencies = [
 
 [[package]]
 name = "hawdb-optimizer-vector"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9345facb9b12a703a6104a41381b5ce4adefc950460d210a263aa5d4b28f2436"
+checksum = "09a1444f08087365a801aa99d0ba58186d13623b7b6d26be5c7048d639537e99"
 dependencies = [
  "hawdb-cascades",
  "hawdb-plan-core",
@@ -3652,9 +3654,9 @@ dependencies = [
 
 [[package]]
 name = "hawdb-plan-cache"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "830a3586b50bd9892149a97f41aa7bd55119a7f8a5fad5adf7197710dcc1fe46"
+checksum = "04e4f18779bfb9fff34e2627a8ec7982eaa0ef2dbc75d3679508e7a58312ede7"
 dependencies = [
  "hawdb-core",
  "hawdb-cypher",
@@ -3663,15 +3665,15 @@ dependencies = [
 
 [[package]]
 name = "hawdb-plan-core"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6033ccca1cc8d9d2f6472db3cc97654728c5d6c335e17989b34422f3eca3f18a"
+checksum = "e3792dba2edeb7591a1925e36e067f540286169f63632fdf4e8618eab85897fd"
 
 [[package]]
 name = "hawdb-plan-cypher"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f3c90a1a3b533b0de96b6d44805c8238033208d2c6eb7dc57825711bdf113e01"
+checksum = "3267f50f462895404df05d42f4aba77ad5fad83c06e6b81b3502d78a92e5e030"
 dependencies = [
  "hawdb-core",
  "hawdb-cypher",
@@ -3682,9 +3684,9 @@ dependencies = [
 
 [[package]]
 name = "hawdb-qos"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c10cadfa71db171dd855ba2a824d434d0558fa5504e5d9c555bb6219e58c9d8"
+checksum = "5870c7520a30f1cb730d9828f2174c4a19e3b2827d4504f77c4a6639f7edf761"
 dependencies = [
  "hawdb-cgroup",
  "hawdb-core",
@@ -3695,18 +3697,18 @@ dependencies = [
 
 [[package]]
 name = "hawdb-query"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c8e11f12d9444e923afb04077a9efe1656c9889a130b3ebf11da860c263e7e73"
+checksum = "78b3859ed5ab268bc8684e978c0832114691d1e58c44b636f8d60aca90354b22"
 dependencies = [
  "sha2 0.10.9",
 ]
 
 [[package]]
 name = "hawdb-query-policy"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d824d1e998311642a384656624662b38611feb4557ba5811543bd46a78ce8e16"
+checksum = "04e4c18eeb082e51f7d177dca133519ace911d241b57c5bf25a375b5f7d9e40d"
 dependencies = [
  "hawdb-core",
  "hawdb-cypher",
@@ -3716,9 +3718,9 @@ dependencies = [
 
 [[package]]
 name = "hawdb-readiness"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f44baaa06aa08ca2a5e223004fa038e50db3dd30824f23228997c305781c28b"
+checksum = "71b82391c1aa445a0379655f55b70d949a516074122f6d42c0ef2c6898d740ee"
 dependencies = [
  "hawdb-core",
  "hawdb-cypher",
@@ -3736,9 +3738,9 @@ dependencies = [
 
 [[package]]
 name = "hawdb-relational"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc35bdf94e25ee94bab9779c294a579d2af944a5bda07492a3e6734820e56ff6"
+checksum = "cd1faf481493c2b01764690f8cb1e563f86ed2e623aa5e197a1f5fabe364218f"
 dependencies = [
  "hawdb-core",
  "hawdb-executor",
@@ -3751,9 +3753,9 @@ dependencies = [
 
 [[package]]
 name = "hawdb-resource-profile"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c2f7ac50610fc9866598787015eed9555e6f5fff1a4622e79b14ff20b9068d16"
+checksum = "7ca413426b389e83217d994211f704ac30e45bd93f66bfe3ffb291f7777d6130"
 dependencies = [
  "hawdb-core",
  "hawdb-evidence",
@@ -3764,18 +3766,18 @@ dependencies = [
 
 [[package]]
 name = "hawdb-route-ownership"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2eef4d4a79271326ecbc5b42435cf428ab436879482af779aa5007ebf5cdac1"
+checksum = "2bc2676445754c8f3ef7a2e0589bce00837ccc5957dc9e95242d164f02fa47b3"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "hawdb-runtime-tokio"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "536bc7ae02e6454f3b4edb3df76973b293e299bdad2a6b0f803cf6fb20672955"
+checksum = "8f8f3abe81b3bc071ede225cc8592a873c24d13a95c001674ecac8a68e4c945d"
 dependencies = [
  "hawdb-core",
  "hawdb-qos",
@@ -3785,9 +3787,9 @@ dependencies = [
 
 [[package]]
 name = "hawdb-search"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1d62a3de3f9c56abc80f6b8ece0bd6c4d9594968a9c2c9126c23bcab086ebf35"
+checksum = "98adaa97d4d0ca91b1453ec7798a1474e89b123fc02180bc00d1e5aa1fa942ec"
 dependencies = [
  "bitpacking",
  "chrono",
@@ -3815,9 +3817,9 @@ dependencies = [
 
 [[package]]
 name = "hawdb-sql"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "888a9e8125fdff1a13f71d65ce78cd982f6e0b3433255fa7977f306e83ce949a"
+checksum = "8f0ca58256c9fb8f1baceedc895fcdc07da3478feecd1df1f1c2df7e8de5a8c9"
 dependencies = [
  "caseless",
  "hawdb-core",
@@ -3830,15 +3832,15 @@ dependencies = [
 
 [[package]]
 name = "hawdb-sql-syntax"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "42da72dd1ff084188adde49daa0c5b2b217b5b3be1a6dcd655c204e006c83838"
+checksum = "1a7d10649ada0d04bc586aabf44b08c760c47be53a8b28b2c35e13b241689425"
 
 [[package]]
 name = "hawdb-storage"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b087df2eaca8ceccb2d9adca61f7e74c2b7d804ade84f2f11cfb1d2b78aa8a12"
+checksum = "e2b967ea1f3ee2730f55dae34b10afaef6d29da97b8365face1302fa17d3626d"
 dependencies = [
  "chrono",
  "fs2",
@@ -3859,9 +3861,9 @@ dependencies = [
 
 [[package]]
 name = "hawdb-system-sql"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e50bb248dc0f17756887946b806bab1300ce2317f1e08d65d062e5e2f21b25f8"
+checksum = "768755606f73d0cc6aa8aad394a2719a509ec0b6606912779ade9b8e799cfcbb"
 dependencies = [
  "hawdb-core",
  "hawdb-executor",
@@ -3874,18 +3876,18 @@ dependencies = [
 
 [[package]]
 name = "hawdb-telemetry"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19fe1b545dec06d75f44546bbb0aeb89a584ec19cb81ef0710c7ca4972b78bde"
+checksum = "bfa66fd2a1d9e0d56530a73ee92405e7bdaeb6c7ae309d1fbde0ae133f5b5120"
 dependencies = [
  "hawdb-qos",
 ]
 
 [[package]]
 name = "hawdb-vector-projection"
-version = "0.8.0"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "21bf97f90d2e0f3a7997282d979526ef8c7aab97ce3ea46d366d02bbf78918d5"
+checksum = "d733b34a4307439d3383fd843c05bf683038a792b7a8f91087b0fcb88a568b04"
 dependencies = [
  "crc32fast",
  "hawdb-core",
