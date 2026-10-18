@@ -197,6 +197,15 @@ impl Render for TitleBarView {
                     ToolbarGroup::new("title-bar-window")
                         .gap_1()
                         .child(
+                            Button::new("setup")
+                                .icon(IconName::Bot)
+                                .tooltip(tr("setup.title"))
+                                // Out of the Windows caption hit-test, like
+                                // "toggle-sidebar".
+                                .occlude()
+                                .on_click(|_, window, cx| crate::ui::setup_dialog::open(window, cx)),
+                        )
+                        .child(
                             Button::new("toggle-language")
                                 .label(match crate::i18n::current() {
                                     Language::Zh => "EN",

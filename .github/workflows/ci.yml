@@ -24,12 +24,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # The canvas comes from gpui-graph, a path dependency checked out
-      # beside this repository (app/Cargo.toml).
-      - name: Check out gpui-graph
-        shell: bash
-        run: git clone --depth 1 https://github.com/JetSquirrel/gpui-graph ../gpui-graph
-
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Configure Windows CI debug information

@@ -27,10 +27,9 @@ cargo build --workspace            # app, CLI, CSV and AWS plugins
 cargo test --workspace
 ```
 
-The app expects gpui-graph checked out beside this repository
-(`../gpui-graph`). On Windows, HawDB 0.8 cannot create a graph under `C:\`
-(it flushes every parent directory up to the drive root); tests use
-`scratch/tests`, set in `.cargo/config.toml`.
+On Windows, HawDB 0.8 could not create a graph under `C:\` (it flushed
+every parent directory up to the drive root; not yet checked on 0.10); tests
+use `scratch/tests`, set in `.cargo/config.toml`.
 
 ## Release builds
 
@@ -42,26 +41,28 @@ The app expects gpui-graph checked out beside this repository
 
 Every package holds the app, the `khonsu` CLI and the official plugins under
 `plugins/<id>/` beside them, which is where both look for built-in plugins.
-On a Mac, put the CLI on your `PATH` with
-`ln -s /Applications/KhonsuGraph.app/Contents/MacOS/khonsu /usr/local/bin/khonsu`.
+The robot button in the title bar (Command line & AI) puts `khonsu` on your
+`PATH` and adds the agent skill to Claude Code.
 Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds both and
 publishes a GitHub release.
 
-## HawDB 0.8 notes
+## HawDB 0.10 notes
 
 What KhonsuGraph works around, found while building it:
 
 - One process per graph directory, readers included. While the app has a
   graph open, `khonsu query` and `khonsu check` run through the app.
-- Cypher has no `sum()`, `OPTIONAL MATCH`, path variables, `labels()` or
+- Cypher has no `sum()`, path variables, `shortestPath`, `labels()` or
   `keys()`; variable-length patterns need a type and no variable;
   `WHERE true` does not parse, so dashboard filters remove an unpicked
-  condition instead.
-- `SET` on a relationship property does nothing; a changed relationship is
-  deleted and created again.
-- Creating a relationship costs time proportional to the relationships of its
-  type already stored, so large imports are slow (35k ratings in one type
-  take about 13 minutes). Nodes go in kernel batches and are fast.
+  condition instead. `CREATE` takes one pattern per statement.
+- A changed relationship is deleted and created again, in one batch per
+  pattern, rather than matched one by one to `SET`.
+
+Fixed since 0.8: `OPTIONAL MATCH` works, `SET` on a relationship property
+sticks, and creating relationships no longer slows with the number already
+stored (the audit story's 35k ratings import in about 2 seconds, down from
+13 minutes). Graphs written by 0.8 open as they are.
 
 ## License
 

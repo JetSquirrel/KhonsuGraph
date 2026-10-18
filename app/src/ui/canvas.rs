@@ -12,10 +12,11 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
 use gpui_graph::{ColorBy, Edge, GraphData as Graph, LabelMode, NetworkGraph, NetworkGraphEvent, Node, Selection};
-use gpui_kit::component::button::Button;
+use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::menu::{DropdownMenu, PopupMenuItem};
 use gpui_kit::component::notification::Notification;
-use gpui_kit::component::{h_flex, v_flex, ActiveTheme, IconName, Sizable, StyledExt, WindowExt};
+use gpui_kit::assets::IconName as AssetIcon;
+use gpui_kit::component::{h_flex, v_flex, ActiveTheme, Icon, IconName, Sizable, StyledExt, WindowExt, TITLE_BAR_HEIGHT};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use khonsu_core::{GraphData, GraphEdge, GraphNode};
@@ -144,6 +145,11 @@ pub struct GraphCanvas {
     group_key: Option<String>,
     /// A dashboard panel shows no inspector: its width is the grid's.
     compact: bool,
+    /// Drawn over the whole window below the title bar, instead of in place.
+    maximized: bool,
+    /// Offers the button that fills the window; a dashboard panel has its
+    /// own, which enlarges the panel within the dashboard.
+    can_fill_window: bool,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -169,6 +175,8 @@ impl GraphCanvas {
             caption_key: None,
             group_key: None,
             compact: false,
+            maximized: false,
+            can_fill_window: true,
             _subscriptions: vec![subscription],
         }
     }
@@ -179,6 +187,7 @@ impl GraphCanvas {
         self.caption_key = caption_key;
         self.group_key = group_key;
         self.compact = compact;
+        self.can_fill_window = !compact;
         cx.notify();
     }
 
@@ -202,6 +211,36 @@ impl GraphCanvas {
             graph.set_data(Graph::new(nodes, edges), cx);
         });
         cx.notify();
+    }
+
+    /// Show the canvas over the whole window, or back in its place, and fit
+    /// the graph to its new size once that size has been laid out.
+    pub fn toggle_maximized(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.maximized = !self.maximized;
+        self.fit_once_laid_out(window);
+        cx.notify();
+    }
+
+    /// Show the inspector beside the canvas, or not, as a dashboard panel
+    /// does once enlarged; the graph is fitted to the size it is left with.
+    pub fn set_compact(&mut self, compact: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if self.compact == compact {
+            return;
+        }
+        self.compact = compact;
+        self.fit_once_laid_out(window);
+        cx.notify();
+    }
+
+    /// Fit the graph to the canvas after the next layout, once a change of
+    /// size has landed.
+    fn fit_once_laid_out(&self, window: &mut Window) {
+        let graph = self.graph.clone();
+        window.on_next_frame(move |window, _| {
+            window.on_next_frame(move |_, cx| {
+                graph.update(cx, |graph, cx| graph.fit_view(cx));
+            });
+        });
     }
 
     fn color_by(&self) -> ColorBy {
@@ -429,7 +468,7 @@ impl GraphCanvas {
 }
 
 impl Render for GraphCanvas {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let theme = cx.theme();
         let halo = theme.background;
         let muted = theme.muted_foreground;
@@ -450,7 +489,8 @@ impl Render for GraphCanvas {
             tr("canvas.hint").to_string()
         };
 
-        h_flex()
+        let maximized = self.maximized;
+        let body = h_flex()
             .size_full()
             .child(
                 div()
@@ -543,29 +583,44 @@ impl Render for GraphCanvas {
                                     )
                             }),
                     )
-                    .when(!legend.is_empty(), |this| {
-                        this.child(
-                            v_flex()
-                                .absolute()
-                                .top_2()
-                                .right_2()
-                                .p_2()
-                                .gap_1()
-                                .rounded_md()
-                                .border_1()
-                                .border_color(border)
-                                .bg(halo)
-                                .text_xs()
-                                .children(legend.into_iter().map(|(label, count)| {
-                                    h_flex()
-                                        .gap_1p5()
-                                        .items_center()
-                                        .child(div().size_2p5().rounded_full().bg(palette::label_color(&label, cx)))
-                                        .child(div().flex_1().child(label))
-                                        .child(div().pl_3().text_color(muted).child(count.to_string()))
-                                })),
-                        )
-                    })
+                    .child(
+                        v_flex()
+                            .absolute()
+                            .top_2()
+                            .right_2()
+                            .items_end()
+                            .gap_1()
+                            .when(self.can_fill_window, |this| {
+                                this.child(
+                                    Button::new("canvas-maximize")
+                                        .xsmall()
+                                        .ghost()
+                                        .icon(Icon::new(if maximized { AssetIcon::Minimize2 } else { AssetIcon::Maximize2 }))
+                                        .tooltip(tr(if maximized { "canvas.restore" } else { "canvas.maximize" }))
+                                        .on_click(cx.listener(|this, _, window, cx| this.toggle_maximized(window, cx))),
+                                )
+                            })
+                            .when(!legend.is_empty(), |this| {
+                                this.child(
+                                    v_flex()
+                                        .p_2()
+                                        .gap_1()
+                                        .rounded_md()
+                                        .border_1()
+                                        .border_color(border)
+                                        .bg(halo)
+                                        .text_xs()
+                                        .children(legend.into_iter().map(|(label, count)| {
+                                            h_flex()
+                                                .gap_1p5()
+                                                .items_center()
+                                                .child(div().size_2p5().rounded_full().bg(palette::label_color(&label, cx)))
+                                                .child(div().flex_1().child(label))
+                                                .child(div().pl_3().text_color(muted).child(count.to_string()))
+                                        })),
+                                )
+                            }),
+                    )
                     .child(
                         div()
                             .absolute()
@@ -582,7 +637,46 @@ impl Render for GraphCanvas {
                             .child(note),
                     ),
             )
-            .when(!self.compact, |this| this.children(self.render_inspector(cx)))
+            .when(!self.compact || maximized, |this| this.children(self.render_inspector(cx)));
+
+        if !maximized {
+            return div().size_full().child(body).into_any_element();
+        }
+        // Over everything below the title bar, so the window's own buttons
+        // stay in reach; the panel keeps a note where the canvas was.
+        let viewport = window.viewport_size();
+        let theme = cx.theme();
+        let (background, border) = (theme.background, theme.border);
+        div()
+            .size_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .text_sm()
+            .text_color(muted)
+            .child(tr("canvas.maximized_note"))
+            .child(
+                deferred(
+                    anchored().position(point(px(0.), TITLE_BAR_HEIGHT)).child(
+                        div()
+                            .id("graph-canvas-maximized")
+                            .occlude()
+                            .w(viewport.width)
+                            .h(viewport.height - TITLE_BAR_HEIGHT)
+                            .bg(background)
+                            .border_t_1()
+                            .border_color(border)
+                            .on_key_down(cx.listener(|this, event: &KeyDownEvent, window, cx| {
+                                if event.keystroke.key == "escape" {
+                                    this.toggle_maximized(window, cx);
+                                }
+                            }))
+                            .child(body),
+                    ),
+                )
+                .with_priority(1),
+            )
+            .into_any_element()
     }
 }
 

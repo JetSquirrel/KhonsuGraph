@@ -3,6 +3,7 @@
 
 use std::collections::HashSet;
 
+use gpui_kit::assets::IconName as AssetIcon;
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::tab::{Tab, TabBar};
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme, Disableable, Icon, IconName, Sizable};
@@ -290,7 +291,7 @@ impl Sidebar {
                                     Button::new(("sync", ix))
                                         .xsmall()
                                         .outline()
-                                        .icon(IconName::Redo)
+                                        .icon(IconName::RotateCw)
                                         .label(tr("sources.sync"))
                                         .loading(syncing.as_deref() == Some(source.id.as_str()))
                                         .disabled(busy)
@@ -313,7 +314,7 @@ impl Sidebar {
                                     Button::new(("remove", ix))
                                         .xsmall()
                                         .ghost()
-                                        .icon(IconName::Delete)
+                                        .icon(Icon::new(AssetIcon::Trash))
                                         .tooltip(tr("sources.remove"))
                                         .disabled(busy)
                                         .on_click(move |_, window, cx| {
@@ -444,7 +445,7 @@ impl Render for Sidebar {
                             Button::new("refresh-schema")
                                 .ghost()
                                 .xsmall()
-                                .icon(IconName::Redo)
+                                .icon(IconName::RotateCw)
                                 .tooltip(tr("sidebar.refresh_schema"))
                                 .on_click(cx.listener(|this, _, window, cx| {
                                     crate::ui::reload_schema(this.state.clone(), window, cx);

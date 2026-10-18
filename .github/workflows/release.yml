@@ -19,9 +19,6 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Check out gpui-graph
-        run: git clone --depth 1 https://github.com/JetSquirrel/gpui-graph ../gpui-graph
-
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-apple-darwin
@@ -81,10 +78,6 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
-
-      - name: Check out gpui-graph
-        shell: bash
-        run: git clone --depth 1 https://github.com/JetSquirrel/gpui-graph ../gpui-graph
 
       - uses: dtolnay/rust-toolchain@stable
 

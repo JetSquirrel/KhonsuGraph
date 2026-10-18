@@ -16,16 +16,16 @@ Use the real `khonsu` executable, never GUI automation or a replacement script. 
 5. Write one statement using observed names, within HawDB's Cypher (below). Read [the CLI reference](references/cli.md) for options and output.
 6. Parse the JSON: `columns`, `rows`, `row_count`, `truncated`, and `graph` (`nodes`, `edges`) when the result holds nodes or relationships. `truncated: true` means `rows` is a prefix; say so. Answer from returned values and name the graph and query.
 
-## HawDB's Cypher (0.8) — what works
+## HawDB's Cypher (0.10) — what works
 
-- `MATCH`, `WHERE` (comparisons, `IN [...]`, `STARTS WITH`, `IS NULL`), `RETURN [DISTINCT]`, `ORDER BY`, `SKIP`, `LIMIT`, `WITH`, `UNWIND`, `CREATE`, `MERGE`, `SET`, `DELETE`, `DETACH DELETE`; parameters `$name` (`-p name=value`). There is no `OPTIONAL MATCH`.
+- `MATCH`, `OPTIONAL MATCH`, `WHERE` (comparisons, `IN [...]`, `STARTS WITH`, `IS NULL`), `RETURN [DISTINCT]`, `ORDER BY`, `SKIP`, `LIMIT`, `WITH`, `UNWIND`, `CREATE`, `MERGE`, `SET`, `DELETE`, `DETACH DELETE`; parameters `$name` (`-p name=value`).
 - Return whole nodes and relationships (`RETURN a, r, b`) to get them under `graph`; nodes come back as `{_id, labels, ...properties}`, relationships as `{_id, type, source_id, target_id, ...properties}`.
 - `id(n)` and `type(r)` work. Aggregates: `count`, `collect`, `min`, `max`, `avg` — **there is no `sum()`**: use `avg(x) * count(x)` only when a number is enough, or SQL over a table.
 - No `labels()`, `keys()`, `properties()`, `shortestPath`, path variables (`p = …`), `CALL db.*`, or `SHOW`; the schema command replaces them.
 - Variable-length patterns need a relationship type and no variable (`(a)-[:CALLS*1..4]->(b)`, not `-[r:CALLS*1..4]->`); an untyped relationship pattern works only for one hop. Return the endpoints, then fetch the hops with one-hop queries when you need them.
 - Result columns come back in alphabetical order; read them by name.
 - A boolean literal (`WHERE true`) is not a predicate; write a real comparison.
-- Relationship properties cannot be changed with `SET` (it silently does nothing): delete and create the relationship instead.
+- `CREATE` takes one pattern per statement: `CREATE (a:N), (b:N)` does not parse; create each, then `MATCH` them to create a relationship.
 - Reads fail as a whole when they exceed the row (100,000) or payload budget; narrow the query instead of retrying.
 
 ## The window and the graph lease
