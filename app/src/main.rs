@@ -10,6 +10,7 @@ mod i18n;
 mod prefs;
 mod query;
 mod remote;
+mod setup;
 mod spec;
 mod state;
 mod ui;
@@ -29,8 +30,8 @@ fn main() {
         gpui_kit::init(cx);
         ui::init(cx);
         let mode = match prefs::get("theme").ok().flatten().as_deref() {
-            Some("dark") => ThemeMode::Dark,
-            _ => ThemeMode::Light,
+            Some("light") => ThemeMode::Light,
+            _ => ThemeMode::Dark,
         };
         ui::theme::install(mode, cx);
         ui::scale::apply(cx);
