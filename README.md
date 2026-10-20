@@ -57,12 +57,16 @@ KhonsuGraph pins HawDB to 0.11.0. See [upgrade validation](docs/hawdb-0.11-upgra
 for compatibility checks and their scope.
 
 - One process per graph directory, readers included. While the app has a
-  graph open, `khonsu query` and `khonsu check` run through the app.
+  graph open, `khonsu query` (writes too), `schema`, `explain`, `check` and
+  `plugin sync` run through the app, which refreshes what it shows after a
+  write.
 - `OPTIONAL MATCH`, scalar `IN` expressions and `json_value()` on JSON text
   are supported. Relationship properties can now be updated with `SET`;
   the importer retains its existing delete/recreate strategy.
 - Cypher `sum()`, `labels()` and `WHERE true` still fail to parse in the
-  checked queries. Dashboard filters remove an unpicked condition instead.
+  checked queries, and SQL takes no `TRUE` either, so an unpicked dashboard
+  filter runs as `(x IS NULL OR x IS NOT NULL)` on what a pick compares:
+  true for every row, as DuckLocal's `TRUE`.
 - KhonsuGraph explicitly limits reads to 100,000 result rows, preserving
   its previous behavior after HawDB removed the default row limit in 0.10.
   The result display limit is separate and does not lower execution cost.

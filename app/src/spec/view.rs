@@ -1449,13 +1449,23 @@ impl Dashboard {
                 }
                 "graph" => {
                     let graph = plot.graph.as_ref();
-                    trf(
+                    let nodes = graph.map_or(0, |g| g.nodes.len());
+                    let mut counts = trf(
                         "dashboard.graph.counts",
-                        &[
-                            &graph.map_or(0, |g| g.nodes.len()).to_string(),
-                            &graph.map_or(0, |g| g.edges.len()).to_string(),
-                        ],
-                    )
+                        &[&nodes.to_string(), &graph.map_or(0, |g| g.edges.len()).to_string()],
+                    );
+                    // Say when the picture is not the whole result: rows the
+                    // dashboard dropped, or nodes past what the canvas draws.
+                    if let Some(rows) = plot.graph_rows_cut {
+                        counts = crate::i18n::join(&counts, &trf("dashboard.graph.rows_cut", &[&rows.to_string()]));
+                    }
+                    if nodes > crate::ui::canvas::NODE_LIMIT {
+                        counts = crate::i18n::join(
+                            &counts,
+                            &trf("canvas.truncated", &[&crate::ui::canvas::NODE_LIMIT.to_string(), &nodes.to_string()]),
+                        );
+                    }
+                    counts
                 }
                 "pie" => {
                     legend = pie_parts(&plot.pie, series.clone().into(), "dashboard-pie-key", cx).1;
@@ -2581,7 +2591,12 @@ fn load(path: &Path, picks: &HashMap<String, Pick>, reuse: &Outcomes) -> Run {
     for query in &spec.queries {
         let sql = match model::writing_keyword(query.language, &query.text) {
             Some(word) => Err(trf("dashboard.query_writes", &[&query.name, &word])),
-            None => Ok(super::filter::apply(&query.text, query.language, &picks_for(&spec, query, picks))),
+            None => Ok(super::filter::apply(
+                &query.text,
+                query.language,
+                &picks_for(&spec, query, picks),
+                &spec.targets_of(query),
+            )),
         };
         let entry = match sql {
             Err(error) => (String::new(), Err(error)),

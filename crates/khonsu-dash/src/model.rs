@@ -221,6 +221,15 @@ pub struct Filter {
 
 impl Spec {
     /// The filters a query reads, by name, in the order its SQL names them.
+    /// What each filter `query` reads compares, for its `$name` to stand
+    /// for a predicate whether or not anything is picked.
+    pub fn targets_of(&self, query: &Query) -> std::collections::HashMap<String, super::filter::Target> {
+        self.filters_of(query)
+            .into_iter()
+            .map(|f| (f.name.clone(), super::filter::Target { column: f.column.clone(), expr: f.match_expr.clone() }))
+            .collect()
+    }
+
     pub fn filters_of(&self, query: &Query) -> Vec<&Filter> {
         let mut used: Vec<&Filter> = Vec::new();
         for placeholder in super::filter::placeholders(&query.text) {

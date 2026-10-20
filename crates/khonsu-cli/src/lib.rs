@@ -120,10 +120,19 @@ enum PluginCommand {
     /// Remove an installed plugin.
     Uninstall { id: String },
     /// Sync a configured source into its graph (or preview with --dry-run).
+    /// Through the window when it has the graph open. Progress lines go to
+    /// stderr; stdout is the one JSON report.
     Sync {
         /// Source ID (see `khonsu source list`).
         #[arg(long)]
         source: String,
+        /// The graph, as for other commands: it must be the one the source
+        /// writes to, which `source add --db` set.
+        #[arg(long, short = 'd')]
+        db: Option<PathBuf>,
+        /// No progress lines on stderr.
+        #[arg(long, short = 'q')]
+        quiet: bool,
         /// Pull only changes since the last sync, when the plugin supports it.
         #[arg(long)]
         incremental: bool,
@@ -243,6 +252,28 @@ fn resolve_db(arg: &DbArg) -> Result<PathBuf, CliError> {
         .ok_or_else(|| CliError::new("usage", "no graph given: pass --db <dir> or set KHONSU_DB"))
 }
 
+/// Why `key` is not a field of the plugin, and where it might belong: a
+/// field named like it (`label_column` → `node_label_column`), or a JSON
+/// field whose help names it as one of its keys (CSV's `nodes`), then every
+/// field there is.
+fn unknown_field(plugin: &str, key: &str, fields: &[khonsu_core::protocol::ConfigField]) -> String {
+    let mut message = format!("{plugin} has no config field {key:?}.");
+    let quoted = format!("\"{key}\"");
+    for field in fields {
+        if field.key.ends_with(&format!("_{key}")) || field.key.starts_with(&format!("{key}_")) {
+            message.push_str(&format!(" Did you mean {:?}? ({})", field.key, field.help));
+        } else if field.kind == FieldKind::Json && field.help.contains(&quoted) {
+            message.push_str(&format!(
+                " {key:?} is a key inside each table of {:?}: -c '{}=[{{...}}]' with {}.",
+                field.key, field.key, field.help
+            ));
+        }
+    }
+    let keys: Vec<&str> = fields.iter().map(|f| f.key.as_str()).collect();
+    message.push_str(&format!(" Fields: {}; see `khonsu plugin describe {plugin}`.", keys.join(", ")));
+    message
+}
+
 fn read_text(text: &QueryText) -> Result<(Language, String), CliError> {
     match (&text.cypher, &text.sql, &text.file) {
         (Some(q), _, _) => Ok((Language::Cypher, q.clone())),
@@ -284,29 +315,42 @@ fn execute(command: Command) -> Result<Value, CliError> {
         } => {
             let path = resolve_db(&db)?;
             let (language, text) = read_text(&text)?;
+            let params = key_values(&params)?;
             let mode = if write { AccessMode::ReadWrite } else { AccessMode::ReadOnly };
             let mut graph = match Graph::open(&path, mode, PROGRAM) {
                 Ok(graph) => graph,
                 // The window holds the graph: HawDB leases it to one process,
-                // so a read goes through the window.
-                Err(OpenError::Locked(owner)) if !write && params.is_empty() => {
-                    return dash::query_via_window(&path, language, &text, max_rows)
+                // so the query, a write included, goes through the window.
+                Err(OpenError::Locked(owner)) => {
+                    return dash::query_via_window(&path, language, &text, max_rows, write, params)
                         .unwrap_or_else(|| Err(OpenError::Locked(owner).into()));
                 }
                 Err(e) => return Err(e.into()),
             };
-            let result = graph.run(language, &text, &key_values(&params)?, QueryOptions { max_rows })?;
+            let result = graph.run(language, &text, &params, QueryOptions { max_rows })?;
             Ok(serde_json::to_value(result).expect("result serializes"))
         }
         Command::Explain { db, text } => {
             let path = resolve_db(&db)?;
             let (language, text) = read_text(&text)?;
-            let mut graph = Graph::open(&path, AccessMode::ReadOnly, PROGRAM)?;
+            let mut graph = match Graph::open(&path, AccessMode::ReadOnly, PROGRAM) {
+                Ok(graph) => graph,
+                Err(OpenError::Locked(owner)) => {
+                    return dash::explain_via_window(&path, language, &text).unwrap_or_else(|| Err(OpenError::Locked(owner).into()));
+                }
+                Err(e) => return Err(e.into()),
+            };
             Ok(json!({ "plan": graph.explain(language, &text)? }))
         }
         Command::Schema { db } => {
             let path = resolve_db(&db)?;
-            let mut graph = Graph::open(&path, AccessMode::ReadOnly, PROGRAM)?;
+            let mut graph = match Graph::open(&path, AccessMode::ReadOnly, PROGRAM) {
+                Ok(graph) => graph,
+                Err(OpenError::Locked(owner)) => {
+                    return dash::schema_via_window(&path).unwrap_or_else(|| Err(OpenError::Locked(owner).into()));
+                }
+                Err(e) => return Err(e.into()),
+            };
             Ok(serde_json::to_value(graph.schema()?).expect("schema serializes"))
         }
         Command::Init { path } => {
@@ -367,6 +411,8 @@ fn run_plugin(command: PluginCommand) -> Result<Value, CliError> {
         }
         PluginCommand::Sync {
             source,
+            db,
+            quiet,
             incremental,
             dry_run,
         } => {
@@ -374,10 +420,26 @@ fn run_plugin(command: PluginCommand) -> Result<Value, CliError> {
                 .into_iter()
                 .find(|s| s.id == source)
                 .ok_or_else(|| CliError::new("not_found", format!("no source {source:?}; see `khonsu source list`")))?;
+            if let Some(db) = db.or_else(|| std::env::var_os("KHONSU_DB").map(PathBuf::from)) {
+                if normalize_path(&db) != normalize_path(&source.graph) {
+                    return Err(CliError::new(
+                        "usage",
+                        format!(
+                            "source {:?} writes to {}, not {}; add a source for that graph with `khonsu source add --db`",
+                            source.id,
+                            source.graph.display(),
+                            db.display()
+                        ),
+                    ));
+                }
+            }
             let mode = if incremental { SyncMode::Incremental } else { SyncMode::Full };
             let cancel = AtomicBool::new(false);
             let progress = |event: SyncEvent| {
                 // Progress goes to stderr so stdout stays one JSON document.
+                if quiet {
+                    return;
+                }
                 if let Ok(line) = serde_json::to_string(&event) {
                     eprintln!("{line}");
                 }
@@ -388,7 +450,16 @@ fn run_plugin(command: PluginCommand) -> Result<Value, CliError> {
                 let preview = plugin::preview(&info, &request, &cancel, progress)?;
                 return Ok(json!({ "dry_run": true, "preview": preview }));
             }
-            let mut graph = Graph::open(&source.graph, AccessMode::ReadWrite, PROGRAM)?;
+            let mut graph = match Graph::open(&source.graph, AccessMode::ReadWrite, PROGRAM) {
+                Ok(graph) => graph,
+                // The window holds the graph and syncs it (without progress
+                // lines: the window shows what changed).
+                Err(OpenError::Locked(owner)) => {
+                    return dash::sync_via_window(&source.graph, &source.id, incremental)
+                        .unwrap_or_else(|| Err(OpenError::Locked(owner).into()));
+                }
+                Err(e) => return Err(e.into()),
+            };
             let report = plugin::sync_source(&mut graph, &source, mode, &cancel, progress)?;
             Ok(serde_json::to_value(report).expect("report serializes"))
         }
@@ -415,7 +486,7 @@ fn run_source(command: SourceCommand) -> Result<Value, CliError> {
             for (key, value) in values {
                 let field = describe.config.iter().find(|f| f.key == key);
                 match field {
-                    None => return Err(CliError::new("usage", format!("{plugin_id} has no config field {key:?}"))),
+                    None => return Err(CliError::new("usage", unknown_field(&plugin_id, &key, &describe.config))),
                     Some(f) if f.secret => {
                         let text = value.as_str().map(str::to_string).unwrap_or_else(|| value.to_string());
                         secrets::set(&id, &key, &text).map_err(|e| CliError::new("keychain", e))?;

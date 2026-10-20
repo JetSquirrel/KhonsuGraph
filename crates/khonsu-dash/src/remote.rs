@@ -34,6 +34,26 @@ pub enum Message {
     Query(QueryRequest),
     /// `khonsu check` on the window's open graph, for the same reason.
     Check(CheckRequest),
+    /// `khonsu schema` and `khonsu explain` on the window's open graph.
+    Schema(GraphRequest),
+    Explain(QueryRequest),
+    /// `khonsu plugin sync` into the window's open graph: the window holds
+    /// the only writer.
+    Sync(SyncRequest),
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct GraphRequest {
+    pub graph: String,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SyncRequest {
+    pub graph: String,
+    /// The source's ID, as in `khonsu source list`.
+    pub source: String,
+    #[serde(default)]
+    pub incremental: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -43,6 +63,11 @@ pub struct QueryRequest {
     pub language: Language,
     pub text: String,
     pub max_rows: usize,
+    /// `--write`: the window runs it when it opened the graph for writing.
+    #[serde(default)]
+    pub write: bool,
+    #[serde(default)]
+    pub params: serde_json::Map<String, Json>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -124,7 +149,16 @@ pub fn notify(message: &Message) -> bool {
 
 /// Send and wait for the window's answer. `None` when no window is running.
 pub fn request(message: &Message) -> Option<Result<Json, String>> {
+    request_within(message, Some(Duration::from_secs(10)))
+}
+
+/// `request`, waiting `limit` for the answer, or as long as it takes: a
+/// sync runs for as long as the source has records.
+pub fn request_within(message: &Message, limit: Option<Duration>) -> Option<Result<Json, String>> {
     let (mut stream, token) = connect()?;
+    if stream.set_read_timeout(limit).is_err() {
+        return Some(Err("cannot wait for the window".into()));
+    }
     if let Err(e) = send(&mut stream, token, message) {
         return Some(Err(e.to_string()));
     }

@@ -1,6 +1,6 @@
 # khonsu CLI reference
 
-Every command prints exactly one JSON object on stdout (`--pretty` indents it). Progress of a sync goes to stderr as JSON lines. On failure the object is `{"error": {"kind", "message", "detail"?}}` and the exit status is 1, or 2 for a usage or spec mistake.
+Every command prints exactly one JSON object on stdout (`--pretty` indents it). Progress of a sync goes to stderr as JSON lines (`--quiet` drops them). On failure the object is `{"error": {"kind", "message", "detail"?}}` and the exit status is 1, or 2 for a usage or spec mistake.
 
 ## Graph
 
@@ -48,10 +48,11 @@ khonsu source add --db DIR --plugin csv --name "Lab" \
 khonsu source list
 khonsu plugin sync --source lab --dry-run         # counts and samples, writes nothing
 khonsu plugin sync --source lab                   # full sync; --incremental when the plugin supports it
+khonsu plugin sync --source lab --db DIR --quiet  # --db must be the source's graph; no progress lines
 khonsu source remove lab
 ```
 
-The CSV plugin also takes `nodes` and `edges` as JSON lists of tables: `-c 'nodes=[{"path":"assets.csv","label_column":"kind","id_column":"id"}]' -c 'edges=[{"path":"links.csv","type_column":"type","source_column":"source","target_column":"target","id_column":"id"}]'`. Other columns become properties; numbers and true/false are typed (`-c infer_types=false` keeps text). A sync report: `{source, mode, received_nodes, received_edges, merge: {nodes_written, edges_written, unchanged_edges, duplicate_nodes, duplicate_edges, skipped_edges, stale_nodes_removed, stale_edges_removed, warnings}, elapsed_ms}`. Every synced element carries `khonsu_id`, `khonsu_source`, `khonsu_plugin` and `khonsu_synced_at`.
+One CSV file of mixed labels or types needs no JSON: `-c node_label_column=kind` or `-c edge_type_column=type` take each row's label or type from that column. The CSV plugin also takes `nodes` and `edges` as JSON lists of tables, for several files; `label_column`, `type_column` and the rest go inside each table, not as `-c` fields: `-c 'nodes=[{"path":"assets.csv","label_column":"kind","id_column":"id"}]' -c 'edges=[{"path":"links.csv","type_column":"type","source_column":"source","target_column":"target","id_column":"id"}]'`. Other columns become properties; numbers and true/false are typed (`-c infer_types=false` keeps text). A sync report: `{source, mode, received_nodes, received_edges, merge: {nodes_written, edges_written, unchanged_edges, duplicate_nodes, duplicate_edges, skipped_edges, stale_nodes_removed, stale_edges_removed, warnings}, elapsed_ms}`. Every synced element carries `khonsu_id`, `khonsu_source`, `khonsu_plugin` and `khonsu_synced_at`.
 
 The AWS plugin reads an account through the `aws` CLI with read-only calls: `-c profile=readonly -c 'regions=["us-east-1","eu-west-1"]'` (or keys stored as secrets: `access_key_id`, `secret_access_key`, `session_token`). Labels: Account, Region, Vpc, Subnet, SecurityGroup, Cidr, Instance, InternetGateway, LoadBalancer, TargetGroup, Role. Relationships: `(Cidr)-[:ALLOWS {protocol, ports}]->(SecurityGroup)`, `(SecurityGroup)-[:ALLOWS]->(SecurityGroup)`, `(Instance)-[:PROTECTED_BY]->(SecurityGroup)`, `(Instance)-[:IN_SUBNET]->(Subnet)-[:IN_VPC]->(Vpc)-[:IN_REGION]->(Region)`, `(Instance)-[:ASSUMES]->(Role)`, `(Cidr)-[:ROUTES_TO]->(LoadBalancer)-[:FORWARDS_TO]->(TargetGroup)-[:ROUTES_TO {health}]->(Instance)`, `(Account)-[:OWNS]->(...)`. The internet is the Cidr node with `cidr = '0.0.0.0/0'`. Ask the person before syncing a real account; `-c fixture_dir=...` reads saved `aws --output json` responses instead.
 
@@ -69,4 +70,4 @@ khonsu open --cypher "MATCH (n) RETURN n LIMIT 50" --run
 khonsu open --state [dash.dash] [--active]
 ```
 
-`check` success: `{file, ok, queries: [{name, language, line, rows, columns: [{name, type}], graph?}], filters: [{name, plot, column, match, queries}], plots: [...]}`. Comments live in `FILE.comments.json` beside the spec. `presence` and `comments` tell a running window what you are doing (`{"delivered": false}` when none runs; not an error). `open --state` reports the window's graph and its tabs: each query tab's text and result summary (columns, counts, first 20 rows, or the error), each dashboard's plots, failures and picks.
+`check` success: `{file, ok, warnings: [...], queries: [{name, language, line, rows, columns: [{name, type}], graph?: {nodes, relationships, sampled_rows?}}], filters: [{name, plot, column, match, queries}], plots: [...]}`. Comments live in `FILE.comments.json` beside the spec. `presence` and `comments` tell a running window what you are doing (`{"delivered": false}` when none runs; not an error). `open --state` reports the window's graph and its tabs: each query tab's text and result summary (columns, counts, first 20 rows, or the error), each dashboard's plots, failures and picks.

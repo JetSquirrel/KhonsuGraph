@@ -2,7 +2,7 @@
 //! status bar. Owns the shared `AppState`.
 
 use gpui_kit::component::resizable::{h_resizable, resizable_panel};
-use gpui_kit::component::{v_flex, ActiveTheme};
+use gpui_kit::component::{v_flex, ActiveTheme, WindowExt};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use khonsu_core::settings::Settings;
@@ -11,6 +11,7 @@ use khonsu_dash::remote::Message;
 use serde_json::json;
 use std::path::PathBuf;
 
+use crate::i18n::trf;
 use crate::state::{self, AppState};
 use crate::ui::sidebar::Sidebar;
 use crate::ui::status_bar::StatusBarView;
@@ -51,7 +52,8 @@ impl KhonsuApp {
         cx.spawn_in(window, async move |this, cx| loop {
             smol::Timer::after(std::time::Duration::from_millis(200)).await;
             let pending = crate::remote::take_pending();
-            if pending.is_empty() {
+            let changes = crate::remote::take_changes();
+            if pending.is_empty() && changes.is_empty() {
                 continue;
             }
             if this
@@ -59,6 +61,13 @@ impl KhonsuApp {
                     for (message, answer) in pending {
                         let reply = this.answer(message, window, cx);
                         let _ = answer.send(reply);
+                    }
+                    // A command wrote to the graph: what the sidebar shows of
+                    // it is stale.
+                    if !changes.is_empty() {
+                        this.state.update(cx, |state, cx| state.reload_lists(cx));
+                        crate::ui::reload_schema(this.state.clone(), window, cx);
+                        window.push_notification(trf("notify.remote.changed", &[&changes.join("\n")]), cx);
                     }
                 })
                 .is_err()
@@ -99,32 +108,54 @@ impl KhonsuApp {
             }
             Message::Open(request) => {
                 window.activate_window();
+                // The graph first: dashboards and the query open on it once
+                // it is open, not among the tabs of the graph it replaces.
+                let mut graph = None;
+                let mut dashboards = Vec::new();
                 let mut opened = Vec::new();
                 for path in request.paths.iter().map(PathBuf::from) {
                     if khonsu_core::engine::is_graph_dir(&path) {
-                        crate::ui::open_graph_at(self.state.clone(), path.clone(), false, false, window, cx);
                         opened.push(json!({"graph": path.display().to_string()}));
+                        graph = Some(path);
                     } else if crate::spec::tabs::is_spec(&path) {
-                        self.workspace.update(cx, |ws, cx| ws.open_dashboard(path.clone(), window, cx));
                         opened.push(json!({"dashboard": path.display().to_string()}));
+                        dashboards.push(path);
                     } else {
                         return json!({"error": {"kind": "not_openable", "message": format!("{} is neither a graph nor a .dash file", path.display())}});
                     }
                 }
-                if let Some(text) = request.text {
-                    let language = request.language.unwrap_or(Language::Cypher);
-                    let run = request.run;
-                    self.workspace.update(cx, |ws, cx| {
-                        ws.add_tab(language, Some(&text), window, cx);
-                        if run {
-                            ws.run_active(window, cx);
+                if request.text.is_some() {
+                    opened.push(json!({"query": true, "run": request.run}));
+                }
+                let workspace = self.workspace.clone();
+                let (text, language, run) = (request.text, request.language.unwrap_or(Language::Cypher), request.run);
+                let show: crate::ui::AfterOpen = Box::new(move |window, cx| {
+                    workspace.update(cx, |ws, cx| {
+                        for path in dashboards {
+                            ws.open_dashboard(path, window, cx);
+                        }
+                        if let Some(text) = text {
+                            ws.add_tab(language, Some(&text), window, cx);
+                            if run {
+                                ws.run_active(window, cx);
+                            }
                         }
                     });
-                    opened.push(json!({"query": true, "run": run}));
+                });
+                // The graph already open is not reopened: that would reset
+                // its tabs for nothing.
+                let open_now = self.state.read(cx).graph.as_ref().map(|g| g.path.clone());
+                match graph {
+                    Some(path) if open_now.as_deref() != Some(khonsu_core::normalize_path(&path).as_path()) => {
+                        crate::ui::open_graph_then(self.state.clone(), path, false, false, Some(show), window, cx);
+                    }
+                    _ => show(window, cx),
                 }
                 json!({"delivered": true, "opened": opened})
             }
-            Message::Query(_) | Message::Check(_) => json!({"error": {"kind": "internal", "message": "answered by the listener"}}),
+            Message::Query(_) | Message::Check(_) | Message::Schema(_) | Message::Explain(_) | Message::Sync(_) => {
+                json!({"error": {"kind": "internal", "message": "answered by the listener"}})
+            }
         }
     }
 }

@@ -86,8 +86,8 @@ pub fn columns_of(result: &QueryResult) -> Vec<(String, String)> {
 }
 
 /// The text to run for `query` with `picks` in place.
-pub fn statement(query: &model::Query, picks: &HashMap<String, Pick>) -> String {
-    filter::apply(&query.text, query.language, picks)
+pub fn statement(spec: &Spec, query: &model::Query, picks: &HashMap<String, Pick>) -> String {
+    filter::apply(&query.text, query.language, picks, &spec.targets_of(query))
 }
 
 /// The value a filter would pick from its plot's result: the first row's
@@ -135,7 +135,7 @@ pub fn check_source(path: &str, source: &str, graph: &mut Graph, summary: bool) 
         {
             continue;
         }
-        let text = statement(query, &none);
+        let text = statement(&spec, query, &none);
         match graph.run(query.language, &text, &Map::new(), QueryOptions { max_rows: CHECK_ROWS }) {
             Ok(result) => {
                 columns.insert(query.name.clone(), columns_of(&result));
@@ -183,7 +183,7 @@ pub fn check_source(path: &str, source: &str, graph: &mut Graph, summary: bool) 
                 continue;
             }
             let picks = HashMap::from([(filter.name.clone(), pick.clone())]);
-            let text = statement(query, &picks);
+            let text = statement(&spec, query, &picks);
             if let Err(error) = graph.run(query.language, &text, &Map::new(), QueryOptions { max_rows: 1 }) {
                 failures.push(format!(
                     "{path}:{}: query {:?} with filter {:?} picked ({}): {}",
@@ -228,6 +228,14 @@ pub fn check_source(path: &str, source: &str, graph: &mut Graph, summary: bool) 
         });
     }
 
+    // Passing is not the same as showing something: a pattern or a filter
+    // that matches nothing returns no rows and no error.
+    let warnings: Vec<String> = spec
+        .queries
+        .iter()
+        .filter(|q| results.get(&q.name).is_some_and(|r| r.row_count == 0))
+        .map(|q| format!("{path}:{}: query {:?} returns no rows with nothing picked; its plots will be empty", q.line, q.name))
+        .collect();
     if summary {
         return Ok(json!({
             "file": path,
@@ -235,11 +243,13 @@ pub fn check_source(path: &str, source: &str, graph: &mut Graph, summary: bool) 
             "queries": spec.queries.len(),
             "filters": spec.filters.len(),
             "plots": spec.plots.len(),
+            "warnings": warnings,
         }));
     }
     Ok(json!({
         "file": path,
         "ok": true,
+        "warnings": warnings,
         "queries": spec.queries.iter().map(|q| {
             let mut entry = json!({
                 "name": q.name,
@@ -251,6 +261,10 @@ pub fn check_source(path: &str, source: &str, graph: &mut Graph, summary: bool) 
                 entry["columns"] = json!(columns[&q.name].iter().map(|(name, ty)| json!({"name": name, "type": ty})).collect::<Vec<_>>());
                 if let Some(graph) = &result.graph {
                     entry["graph"] = json!({"nodes": graph.nodes.len(), "relationships": graph.edges.len()});
+                    // Counted on the rows a check reads, not the whole result.
+                    if result.truncated {
+                        entry["graph"]["sampled_rows"] = json!(result.rows.len());
+                    }
                 }
             }
             entry

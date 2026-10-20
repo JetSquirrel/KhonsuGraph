@@ -138,17 +138,65 @@ pub fn check(args: CheckArgs) -> Result<Value, CliError> {
 }
 
 /// A query on the window's graph, for when the window holds the lease.
-pub fn query_via_window(db: &Path, language: Language, text: &str, max_rows: usize) -> Option<Result<Value, CliError>> {
-    let answer = remote::request(&Message::Query(QueryRequest {
-        graph: normalize_path(db).display().to_string(),
-        language,
-        text: text.to_string(),
-        max_rows,
-    }))?;
+/// Ask the window that holds the graph, waiting `limit` for its answer;
+/// `None` when no window runs. The answer says it came `via_window`.
+fn via_window(message: Message, limit: Option<std::time::Duration>) -> Option<Result<Value, CliError>> {
+    let answer = remote::request_within(&message, limit)?;
     Some(window_answer(Some(answer)).map(|mut value| {
         value["via_window"] = json!(true);
         value
     }))
+}
+
+fn graph_name(db: &Path) -> String {
+    normalize_path(db).display().to_string()
+}
+
+const WINDOW_ANSWER: Option<std::time::Duration> = Some(std::time::Duration::from_secs(60));
+
+pub fn query_via_window(
+    db: &Path,
+    language: Language,
+    text: &str,
+    max_rows: usize,
+    write: bool,
+    params: serde_json::Map<String, Value>,
+) -> Option<Result<Value, CliError>> {
+    let request = QueryRequest {
+        graph: graph_name(db),
+        language,
+        text: text.to_string(),
+        max_rows,
+        write,
+        params,
+    };
+    via_window(Message::Query(request), WINDOW_ANSWER)
+}
+
+pub fn explain_via_window(db: &Path, language: Language, text: &str) -> Option<Result<Value, CliError>> {
+    let request = QueryRequest {
+        graph: graph_name(db),
+        language,
+        text: text.to_string(),
+        max_rows: 0,
+        write: false,
+        params: Default::default(),
+    };
+    via_window(Message::Explain(request), WINDOW_ANSWER)
+}
+
+pub fn schema_via_window(db: &Path) -> Option<Result<Value, CliError>> {
+    via_window(Message::Schema(remote::GraphRequest { graph: graph_name(db) }), WINDOW_ANSWER)
+}
+
+/// A sync takes as long as its source; nothing hurries it.
+pub fn sync_via_window(db: &Path, source: &str, incremental: bool) -> Option<Result<Value, CliError>> {
+    let request = remote::SyncRequest {
+        graph: graph_name(db),
+        source: source.to_string(),
+        incremental,
+    };
+    via_window(Message::Sync(request), None)
 }
 
 pub fn comments(args: CommentsArgs) -> Result<Value, CliError> {

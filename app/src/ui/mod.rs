@@ -193,7 +193,42 @@ pub fn open_graph_at(
     window: &mut Window,
     cx: &mut App,
 ) {
+    open_graph_then(state, path, create, read_only, None, window, cx);
+}
+
+/// What to do once a graph is open, such as showing a dashboard on it.
+pub type AfterOpen = Box<dyn FnOnce(&mut Window, &mut App)>;
+
+/// `open_graph_at`, then `then` once the graph is open and its tabs are
+/// restored: a dashboard opened before that lands among the old graph's
+/// tabs and vanishes with them. Not run when the open fails.
+pub fn open_graph_then(
+    state: Entity<AppState>,
+    path: PathBuf,
+    create: bool,
+    read_only: bool,
+    then: Option<AfterOpen>,
+    window: &mut Window,
+    cx: &mut App,
+) {
     if state.read(cx).is_opening() {
+        // Another open is under way (the last graph, at launch): this one
+        // waits for it rather than being dropped.
+        if then.is_some() {
+            window
+                .spawn(cx, async move |cx| {
+                    loop {
+                        smol::Timer::after(std::time::Duration::from_millis(100)).await;
+                        let busy = cx.update(|_, cx| state.read(cx).is_opening()).unwrap_or(false);
+                        if !busy {
+                            break;
+                        }
+                    }
+                    cx.update(move |window, cx| open_graph_then(state, path, create, read_only, then, window, cx))
+                        .ok();
+                })
+                .detach();
+        }
         return;
     }
     state.update(cx, |state, cx| state.begin_open(cx));
@@ -213,6 +248,12 @@ pub fn open_graph_at(
                     Ok(info) => {
                         state.update(cx, |state, cx| state.set_graph(Some(info), cx));
                         reload_schema(state, window, cx);
+                        // After the switch has taken effect: the workspace
+                        // swaps its tabs when it hears of the new graph,
+                        // which is queued behind this update.
+                        if let Some(then) = then {
+                            window.defer(cx, then);
+                        }
                     }
                     Err(err) => {
                         let title = match err {
