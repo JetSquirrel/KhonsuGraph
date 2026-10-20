@@ -10,7 +10,7 @@ use gpui_kit::{AssetSource, Result, SharedString};
 
 icon_assets!(
     ExtraIcons,
-    [Save, ListTree, Download, CircleStop, DatabasePlus, ChartNoAxesColumn, ChartPie, Code, MessageSquare, UserRound]
+    [Save, ListTree, Download, CircleStop, DatabasePlus, ChartNoAxesColumn, ChartPie, Code, MessageSquare, UserRound, Maximize2, Minimize2]
 );
 
 /// The brand mark, and the agents' marks drawn as their avatars (see

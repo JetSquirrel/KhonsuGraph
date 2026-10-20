@@ -16,6 +16,9 @@ use std::time::Instant;
 
 /// Mutations per kernel write batch, well under HawDB's 100,000 limit.
 const KERNEL_BATCH: usize = 1000;
+/// Preserve KhonsuGraph's read ceiling across HawDB releases. Since 0.10,
+/// the engine's default session policy has no row-count limit.
+const MAX_READ_RESULT_ROWS: usize = 100_000;
 
 /// A node to upsert: its label, the key it is matched on, and the properties
 /// to set whether it was created or found.
@@ -211,6 +214,7 @@ impl Graph {
         };
         let config = DatabaseConfig {
             read_only: mode == AccessMode::ReadOnly,
+            max_read_result_rows: Some(MAX_READ_RESULT_ROWS),
             ..DatabaseConfig::default()
         };
         let db = Database::open_with_config(&path, config).map_err(|err| open_failure(&path, err))?;

@@ -115,9 +115,12 @@ fn tabs_key(graph: &std::path::Path) -> String {
 
 impl Workspace {
     pub fn new(state: Entity<AppState>, _window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let subscriptions = vec![cx.subscribe_in(&state, _window, |this, _, _: &GraphChanged, window, cx| {
-            this.restore_tabs(window, cx);
-        })];
+        let subscriptions = vec![
+            cx.subscribe_in(&state, _window, |this, _, _: &GraphChanged, window, cx| {
+                this.restore_tabs(window, cx);
+            }),
+            cx.observe(&state, |_, _, cx| cx.notify()),
+        ];
         Self {
             state,
             tabs: Vec::new(),
@@ -147,7 +150,10 @@ impl Workspace {
         // newline it inserted, then run.
         let subscription = cx.subscribe_in(&editor, window, |this, editor, event, window, cx| {
             match event {
-                InputEvent::Change => this.remember_tabs(cx),
+                InputEvent::Change => {
+                    this.remember_tabs(cx);
+                    cx.notify();
+                }
                 InputEvent::PressEnter { secondary: true, .. } => {
                     remove_secondary_enter_newline(editor, window, cx);
                     this.run_active(window, cx);
@@ -437,7 +443,7 @@ impl Workspace {
     }
 
     pub fn run_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.running {
+        if self.running || self.state.read(cx).is_opening() {
             return;
         }
         let Some(tab) = self.tabs.get(self.active).and_then(WorkspaceTab::as_query) else {
@@ -510,7 +516,7 @@ impl Workspace {
     }
 
     pub fn explain_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.running {
+        if self.running || self.state.read(cx).is_opening() {
             return;
         }
         let Some(tab) = self.tabs.get(self.active).and_then(WorkspaceTab::as_query) else {
@@ -523,6 +529,7 @@ impl Workspace {
         let language = tab.language;
         let results = tab.results.clone();
         self.running = true;
+        results.update(cx, |r, cx| r.set_running(cx));
         cx.notify();
         cx.spawn_in(window, async move |this, cx| {
             let plan = smol::unblock(move || crate::db::explain(language, &text)).await;
@@ -540,13 +547,14 @@ impl Workspace {
     }
 
     fn render_tab_bar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let closable = self.tabs.len() > 1;
+        let queries = self.tabs.iter().filter(|t| t.as_query().is_some()).count();
         TabBar::new("query-tabs")
             .small()
             .selected_index(self.active)
             .on_click(cx.listener(|this, ix: &usize, window, cx| this.activate_tab(*ix, window, cx)))
             .children(self.tabs.iter().map(|tab| {
                 let id = tab.id();
+                let closable = self.tabs.len() > 1 && (tab.as_query().is_none() || queries > 1);
                 let (badge, title, marked) = match tab {
                     WorkspaceTab::Query(tab) => {
                         let first_line = tab.editor.read(cx).value().lines().next().unwrap_or("").trim().to_string();
@@ -681,6 +689,13 @@ impl Workspace {
 
     fn render_toolbar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let run_keystroke = Keystroke::parse(RUN_QUERY_KEYSTROKE).ok();
+        let empty = self
+            .tabs
+            .get(self.active)
+            .and_then(WorkspaceTab::as_query)
+            .is_none_or(|tab| tab.editor.read(cx).value().trim().is_empty());
+        let opening = self.state.read(cx).is_opening();
+        let disabled = self.running || opening || empty;
         h_flex()
             .w_full()
             .px_3()
@@ -696,6 +711,7 @@ impl Workspace {
                     .icon(IconName::Play)
                     .label(tr("workspace.run"))
                     .loading(self.running)
+                    .disabled(disabled)
                     .when_some(run_keystroke, |this, keystroke| this.child(Kbd::new(keystroke)))
                     .on_click(cx.listener(|this, _, window, cx| this.run_active(window, cx))),
             )
@@ -706,6 +722,7 @@ impl Workspace {
                     .icon(gpui_kit::assets::IconName::ListTree)
                     .label(tr("workspace.explain"))
                     .tooltip(tr("workspace.explain.tooltip"))
+                    .disabled(disabled)
                     .on_click(cx.listener(|this, _, window, cx| this.explain_active(window, cx))),
             )
             .child(div().flex_1())
@@ -713,11 +730,20 @@ impl Workspace {
                 div()
                     .text_xs()
                     .text_color(cx.theme().muted_foreground)
-                    .child(tr("workspace.selection_hint")),
+                    .child(tr(if opening {
+                        "status_bar.opening"
+                    } else if self.running {
+                        "results.running"
+                    } else if empty {
+                        "workspace.empty_hint"
+                    } else {
+                        "workspace.selection_hint"
+                    })),
             )
     }
 
     fn render_welcome(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let opening = self.state.read(cx).is_opening();
         let recent = self.state.read(cx).recent.clone();
         let open_state = self.state.clone();
         let new_state = self.state.clone();
@@ -737,6 +763,7 @@ impl Workspace {
                             .primary()
                             .icon(IconName::FolderOpen)
                             .label(tr("title_bar.open_graph"))
+                            .disabled(opening)
                             .on_click(move |_, window, cx| crate::ui::pick_graph(open_state.clone(), false, window, cx)),
                     )
                     .child(
@@ -744,9 +771,19 @@ impl Workspace {
                             .outline()
                             .icon(IconName::Plus)
                             .label(tr("title_bar.new_graph"))
+                            .disabled(opening)
                             .on_click(move |_, window, cx| crate::ui::pick_graph(new_state.clone(), true, window, cx)),
                     ),
             )
+            .when(opening, |this| {
+                this.child(
+                    h_flex()
+                        .gap_2()
+                        .items_center()
+                        .child(gpui_kit::component::spinner::Spinner::new())
+                        .child(tr("status_bar.opening")),
+                )
+            })
             .child(
                 v_flex()
                     .w(crate::ui::scale::design(520.))
@@ -800,6 +837,7 @@ impl Workspace {
                                     .ghost()
                                     .xsmall()
                                     .label(tr("welcome.read_only"))
+                                    .disabled(opening)
                                     .on_click(move |_, window, cx| {
                                         crate::ui::open_graph_at(read_only.clone(), p2.clone(), false, true, window, cx)
                                     }),

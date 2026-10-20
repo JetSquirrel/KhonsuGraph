@@ -18,6 +18,7 @@ use serde_json::Value as Json;
 use crate::i18n::{tr, trf};
 use crate::state::AppState;
 use crate::ui::canvas::GraphCanvas;
+use crate::ui::grid::{cell_paddings, fit_column_width};
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub enum View {
@@ -107,30 +108,25 @@ impl ResultTableDelegate {
     }
 
     fn set_result(&mut self, result: &QueryResult) {
-        self.rows = result
+        let rows: Vec<Vec<String>> = result
             .rows
             .iter()
-            .map(|row| row.iter().map(|v| SharedString::from(cell_text(v))).collect())
+            .map(|row| row.iter().map(cell_text).collect())
             .collect();
-        let mut columns = vec![Column::new("#", "#").width(56.).text_right().resizable(false)];
+        let mut columns = vec![Column::new("#", "#").width(crate::ui::scale::design(56.)).text_right().resizable(false)];
         columns.extend(result.columns.iter().enumerate().map(|(ix, name)| {
-            let longest = self
-                .rows
-                .iter()
-                .take(200)
-                .map(|r| r.get(ix).map_or(0, |c| c.chars().count()))
-                .max()
-                .unwrap_or(0)
-                .max(name.chars().count());
-            let width = (longest as f32 * 8.0 + 24.0).clamp(80.0, 420.0);
+            // Use the same CJK-aware, UI-scaled fit as dashboard tables.
+            let width = fit_column_width(name, &rows, ix, 0.);
             let numeric = result.rows.iter().take(50).all(|r| r.get(ix).is_some_and(|v| v.is_number() || v.is_null()));
-            let column = Column::new(format!("c{ix}"), name.clone()).width(width);
+            let mut column = Column::new(format!("c{ix}"), name.clone()).width(width);
+            column.paddings = Some(cell_paddings());
             if numeric {
                 column.text_right()
             } else {
                 column
             }
         }));
+        self.rows = rows.into_iter().map(|row| row.into_iter().map(SharedString::from).collect()).collect();
         self.columns = columns;
         self.set_filter("");
     }
@@ -171,14 +167,15 @@ impl TableDelegate for ResultTableDelegate {
 
     fn render_th(&mut self, col_ix: usize, _: &mut Window, cx: &mut Context<TableState<Self>>) -> impl IntoElement {
         let column = self.column(col_ix, cx);
-        h_flex().size_full().px_2().child(
+        h_flex().size_full().paddings(cell_paddings()).child(
             Label::new(column.name.clone())
                 .text_align(column.align)
                 .text_sm()
                 .font_family(cx.theme().mono_font_family.clone())
                 .font_weight(FontWeight::BOLD)
                 .when(col_ix == 0, |this| this.text_color(cx.theme().muted_foreground))
-                .flex_1(),
+                .flex_1()
+                .min_w_0(),
         )
     }
 
@@ -194,7 +191,7 @@ impl TableDelegate for ResultTableDelegate {
         h_flex()
             .id(("cell", row_ix * 10_000 + col_ix))
             .size_full()
-            .px_2()
+            .paddings(cell_paddings())
             .overflow_hidden()
             .when(col_ix > 0, |this| {
                 this.cursor_pointer().on_click(move |event, window, cx| {
@@ -210,7 +207,8 @@ impl TableDelegate for ResultTableDelegate {
                     .text_ellipsis()
                     .font_family(cx.theme().mono_font_family.clone())
                     .when(muted, |this| this.text_color(cx.theme().muted_foreground))
-                    .flex_1(),
+                    .flex_1()
+                    .min_w_0(),
             )
     }
 }
@@ -267,6 +265,9 @@ impl ResultsPanel {
         self.filter.update(cx, |input, cx| input.set_value("", window, cx));
         match &result.graph {
             Some(graph) => {
+                if graph.nodes.is_empty() && self.view == View::Graph {
+                    self.view = View::Table;
+                }
                 let graph = graph.clone();
                 self.canvas.update(cx, |canvas, cx| canvas.set_data(graph, window, cx));
             }
@@ -312,7 +313,17 @@ impl ResultsPanel {
     }
 
     fn has_graph(&self) -> bool {
-        matches!(&self.content, Content::Rows(r) if r.graph.is_some())
+        matches!(&self.content, Content::Rows(r) if r.graph.as_ref().is_some_and(|g| !g.nodes.is_empty()))
+    }
+
+    fn clear_filter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.filter.update(cx, |input, cx| input.set_value("", window, cx));
+        // Programmatic input changes need not emit InputEvent::Change.
+        self.table.update(cx, |table, cx| {
+            table.delegate_mut().set_filter("");
+            table.refresh(cx);
+        });
+        cx.notify();
     }
 
     fn export_csv(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -365,6 +376,10 @@ impl ResultsPanel {
                 }))
         };
         let summary = match &self.content {
+            Content::Rows(r) if view == View::Table && !self.filter.read(cx).value().trim().is_empty() => Some(trf(
+                "results.filtered_rows",
+                &[&self.table.read(cx).delegate().visible.len().to_string(), &r.rows.len().to_string()],
+            )),
             Content::Rows(r) => Some(if r.truncated {
                 trf("results.rows_truncated", &[&r.rows.len().to_string(), &r.row_count.to_string()])
             } else {
@@ -372,7 +387,12 @@ impl ResultsPanel {
             }),
             _ => None,
         };
+        let elapsed = match &self.content {
+            Content::Rows(r) => Some(crate::state::format_duration(r.elapsed_ms)),
+            _ => None,
+        };
         h_flex()
+            .flex_wrap()
             .px_2()
             .py_1()
             .gap_1()
@@ -396,6 +416,7 @@ impl ResultsPanel {
                 this.child(div().w(px(220.)).child(Input::new(&self.filter).xsmall().cleanable(true)))
             })
             .children(summary.map(|s| div().text_xs().text_color(cx.theme().muted_foreground).child(s)))
+            .children(elapsed.map(|s| div().ml_2().text_xs().text_color(cx.theme().muted_foreground).child(s)))
             .child(div().flex_1())
             .when(has_rows, |this| {
                 this.child(
@@ -404,6 +425,7 @@ impl ResultsPanel {
                         .ghost()
                         .icon(gpui_kit::assets::IconName::Download)
                         .label(tr("results.export_csv"))
+                        .tooltip(tr("results.export_csv_hint"))
                         .on_click(cx.listener(|this, _, window, cx| this.export_csv(window, cx))),
                 )
             })
@@ -422,6 +444,12 @@ fn render_error(error: &QueryError, cx: &App) -> impl IntoElement {
         (Some(line), None) => Some(trf("results.error_line", &[&line.to_string()])),
         _ => None,
     };
+    let copy = format!(
+        "{}{}\n{}",
+        error.kind,
+        position.as_ref().map(|p| format!(" — {p}")).unwrap_or_default(),
+        error.message,
+    );
     v_flex()
         .m_3()
         .p_3()
@@ -436,7 +464,19 @@ fn render_error(error: &QueryError, cx: &App) -> impl IntoElement {
                 .items_center()
                 .child(Icon::new(IconName::CircleX).small().text_color(cx.theme().danger))
                 .child(div().font_semibold().child(error.kind.clone()))
-                .children(position.map(|p| div().text_color(cx.theme().muted_foreground).child(p))),
+                .children(position.map(|p| div().text_color(cx.theme().muted_foreground).child(p)))
+                .child(div().flex_1())
+                .child(
+                    Button::new("copy-query-error")
+                        .ghost()
+                        .xsmall()
+                        .icon(IconName::Copy)
+                        .label(tr("results.copy_error"))
+                        .on_click(move |_, window, cx| {
+                            cx.write_to_clipboard(ClipboardItem::new_string(copy.clone()));
+                            window.push_notification(tr("results.copied"), cx);
+                        }),
+                ),
         )
         .child(
             div()
@@ -453,6 +493,7 @@ impl Render for ResultsPanel {
             let state = self.state.read(cx);
             state.schema.as_ref().is_some_and(|s| s.is_empty()) && !state.read_only()
         };
+        let visible_rows = self.table.read(cx).delegate().visible.len();
         let body: AnyElement = match &self.content {
             Content::Empty if empty_graph => crate::ui::sources::empty_graph_prompt(self.state.clone(), cx).into_any_element(),
             Content::Empty => v_flex()
@@ -466,7 +507,9 @@ impl Render for ResultsPanel {
                 .size_full()
                 .items_center()
                 .justify_center()
+                .gap_2()
                 .child(gpui_kit::component::spinner::Spinner::new())
+                .child(div().text_sm().text_color(cx.theme().muted_foreground).child(tr("results.running")))
                 .into_any_element(),
             Content::Error(error) => render_error(error, cx).into_any_element(),
             Content::Plan(plan) => div()
@@ -492,12 +535,35 @@ impl Render for ResultsPanel {
                             .child(trf("results.truncated", &[&result.rows.len().to_string()])),
                     )
                 })
-                .child(
-                    div()
-                        .flex_1()
-                        .min_h_0()
-                        .child(DataTable::new(&self.table).small().stripe(true).scrollbar_visible(true, true)),
-                )
+                .when(result.rows.is_empty(), |this| {
+                    this.child(
+                        v_flex().flex_1().items_center().justify_center().gap_2().p_4().text_center()
+                            .child(div().font_semibold().child(tr("results.no_rows")))
+                            .child(div().text_sm().text_color(cx.theme().muted_foreground).child(tr("results.no_rows_hint"))),
+                    )
+                })
+                .when(!result.rows.is_empty() && visible_rows == 0, |this| {
+                    this.child(
+                        v_flex().flex_1().items_center().justify_center().gap_2().p_4().text_center()
+                            .child(div().font_semibold().child(tr("results.no_matches")))
+                            .child(div().text_sm().text_color(cx.theme().muted_foreground).child(tr("results.no_matches_hint")))
+                            .child(
+                                Button::new("clear-result-filter")
+                                    .outline()
+                                    .small()
+                                    .label(tr("results.clear_filter"))
+                                    .on_click(cx.listener(|this, _, window, cx| this.clear_filter(window, cx))),
+                            ),
+                    )
+                })
+                .when(visible_rows > 0, |this| {
+                    this.child(
+                        div()
+                            .flex_1()
+                            .min_h_0()
+                            .child(DataTable::new(&self.table).small().stripe(true).scrollbar_visible(true, true)),
+                    )
+                })
                 .into_any_element(),
         };
         let show_bar = matches!(self.content, Content::Rows(_) | Content::Plan(_));

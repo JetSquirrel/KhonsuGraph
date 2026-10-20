@@ -28,9 +28,9 @@ cargo test --workspace
 ```
 
 The app expects gpui-graph checked out beside this repository
-(`../gpui-graph`). On Windows, HawDB 0.8 cannot create a graph under `C:\`
-(it flushes every parent directory up to the drive root); tests use
-`scratch/tests`, set in `.cargo/config.toml`.
+(`../gpui-graph`). Tests use `scratch/tests`, set in `.cargo/config.toml`,
+to avoid a Windows drive-root flush issue observed with HawDB 0.8. The
+0.11.0 upgrade was verified on macOS; Windows still needs verification.
 
 ## Release builds
 
@@ -47,21 +47,23 @@ On a Mac, put the CLI on your `PATH` with
 Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds both and
 publishes a GitHub release.
 
-## HawDB 0.8 notes
+## HawDB 0.11.0 notes
 
-What KhonsuGraph works around, found while building it:
+KhonsuGraph pins HawDB to 0.11.0. See [upgrade validation](docs/hawdb-0.11-upgrade.md)
+for compatibility checks and their scope.
 
 - One process per graph directory, readers included. While the app has a
   graph open, `khonsu query` and `khonsu check` run through the app.
-- Cypher has no `sum()`, `OPTIONAL MATCH`, path variables, `labels()` or
-  `keys()`; variable-length patterns need a type and no variable;
-  `WHERE true` does not parse, so dashboard filters remove an unpicked
-  condition instead.
-- `SET` on a relationship property does nothing; a changed relationship is
-  deleted and created again.
-- Creating a relationship costs time proportional to the relationships of its
-  type already stored, so large imports are slow (35k ratings in one type
-  take about 13 minutes). Nodes go in kernel batches and are fast.
+- `OPTIONAL MATCH`, scalar `IN` expressions and `json_value()` on JSON text
+  are supported. Relationship properties can now be updated with `SET`;
+  the importer retains its existing delete/recreate strategy.
+- Cypher `sum()`, `labels()` and `WHERE true` still fail to parse in the
+  checked queries. Dashboard filters remove an unpicked condition instead.
+- KhonsuGraph explicitly limits reads to 100,000 result rows, preserving
+  its previous behavior after HawDB removed the default row limit in 0.10.
+  The result display limit is separate and does not lower execution cost.
+- The earlier import measurement (35k relationships in about 13 minutes)
+  was made on 0.8; it is not a performance estimate for 0.11.0.
 
 ## License
 

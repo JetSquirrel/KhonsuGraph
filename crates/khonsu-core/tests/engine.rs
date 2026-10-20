@@ -131,3 +131,53 @@ fn reopen_keeps_data() {
     let result = run(&mut graph, Language::Cypher, "MATCH (n:Host) RETURN n.name AS name");
     assert_eq!(result.rows, vec![vec![json!("kept")]]);
 }
+
+#[test]
+fn scalar_in_and_json_values_survive_reopen() {
+    let dir = TestDir::new();
+    {
+        let mut graph = Graph::create(dir.graph(), "test").unwrap();
+        let params = Map::from_iter([("metadata".into(), json!(r#"{"source":"audit","count":3,"flag":true}"#))]);
+        graph.run(
+            Language::Cypher,
+            "CREATE (:Record {metadata: $metadata})",
+            &params,
+            QueryOptions::default(),
+        ).unwrap();
+    }
+    let mut graph = Graph::open(dir.graph(), AccessMode::ReadOnly, "test").unwrap();
+    let params = Map::from_iter([("sources".into(), json!(["audit"]))]);
+    let result = graph.run(
+        Language::Cypher,
+        "MATCH (n:Record) WHERE json_value(n.metadata, '$.source') IN $sources RETURN json_value(n.metadata, '$.count') AS count, json_value(n.metadata, '$.flag') AS flag, json_value(n.metadata, '$.missing') AS missing",
+        &params,
+        QueryOptions::default(),
+    ).unwrap();
+    assert_eq!(result.columns, ["count", "flag", "missing"]);
+    assert_eq!(result.rows, vec![vec![json!(3), json!(true), json!(null)]]);
+}
+
+#[test]
+fn read_row_ceiling_is_enforced_before_display_truncation() {
+    let dir = TestDir::new();
+    let mut graph = Graph::create(dir.graph(), "test").unwrap();
+    // Use bounded write batches so fixture creation does not hit the read cap.
+    for start in (0..100_001).step_by(4096) {
+        let items: Vec<_> = (start..(start + 4096).min(100_001)).map(|n| json!({"n": n})).collect();
+        let params = Map::from_iter([("items".into(), json!(items))]);
+        graph.run(
+            Language::Cypher,
+            "UNWIND $items AS item CREATE (:BudgetItem {n: item.n})",
+            &params,
+            QueryOptions::default(),
+        ).unwrap();
+    }
+    let error = graph.run(
+        Language::Cypher,
+        "MATCH (n:BudgetItem) RETURN n.n AS value",
+        &Map::new(),
+        QueryOptions { max_rows: 2 },
+    ).unwrap_err();
+    assert_eq!(error.kind, "read_budget", "{error}");
+    assert!(error.message.contains("100000"), "{error}");
+}

@@ -192,6 +192,9 @@ pub fn open_graph_at(
     window: &mut Window,
     cx: &mut App,
 ) {
+    if state.read(cx).is_opening() {
+        return;
+    }
     state.update(cx, |state, cx| state.begin_open(cx));
     window
         .spawn(cx, async move |cx| {
@@ -229,6 +232,9 @@ pub fn open_graph_at(
 
 /// Ask for a folder and open it as a graph, or create one there.
 pub fn pick_graph(state: Entity<AppState>, create: bool, window: &mut Window, cx: &mut App) {
+    if state.read(cx).is_opening() {
+        return;
+    }
     let rx = cx.prompt_for_paths(PathPromptOptions {
         files: false,
         directories: true,
