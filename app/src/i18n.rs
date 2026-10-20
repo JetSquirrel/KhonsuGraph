@@ -303,7 +303,6 @@ static STRINGS: &[(&str, &str, &str)] = &[
     ("setup.ai.other.copy", "复制说明", "Copy brief"),
     ("setup.error.move_to_applications", "请先把 KhonsuGraph 拖到“应用程序”文件夹，再安装命令。", "Move KhonsuGraph to the Applications folder first, then install the command."),
     ("setup.error.not_ours", "{} 已存在，且不是 KhonsuGraph 创建的，未作改动。", "{} already exists and was not made by KhonsuGraph, so it was left alone."),
-    ("setup.error.no_cli", "找不到 khonsu 命令：{} 不存在。", "The khonsu command is missing: {} does not exist."),
     ("setup.error.cancelled", "已取消安装。", "Installation cancelled."),
     ("notify.setup.command_installed", "已安装 khonsu 命令，打开新的终端即可使用。", "Installed the khonsu command. Open a new terminal to use it."),
     ("notify.setup.command_needs_path", "已安装在 {}，但该目录不在 PATH 中；把它加入 PATH 后即可使用。", "Installed at {}, but that folder is not on your PATH; add it to use the command."),

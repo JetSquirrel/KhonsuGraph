@@ -10,6 +10,8 @@ license.workspace = true
 gpui-kit = { version = "=0.7.3", features = ["tree-sitter-sql"] }
 gpui-graph = "=0.1.1"
 khonsu-core.workspace = true
+# The `khonsu` command, run by this executable (see main.rs).
+khonsu-cli.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 anyhow.workspace = true
@@ -26,8 +28,13 @@ image = { version = "0.25", default-features = false, features = ["png", "jpeg"]
 unicode-width = "0.2"
 chrono = { version = "0.4", default-features = false, features = ["clock", "std"] }
 
+[target.'cfg(windows)'.dependencies]
+# A CLI call borrows the console it was typed in (see windows.rs).
+windows-sys = { version = "0.61", features = ["Win32_Storage_FileSystem", "Win32_System_Console"] }
+
 [build-dependencies]
 embed-resource = "3.0.11"
 
 [dev-dependencies]
 gpui-kit = { version = "=0.7.3", features = ["test-support"] }
+tempfile.workspace = true

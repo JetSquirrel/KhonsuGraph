@@ -1,10 +1,12 @@
 //! Putting the `khonsu` command on the PATH, and telling AI agents about it,
 //! after DuckLocal's "Command line & AI" dialog.
 //!
-//! Installing the app does neither: a `.app` bundle or a zip puts `khonsu`
-//! beside `khonsugraph`, somewhere no shell looks, and an agent that has never
-//! heard of KhonsuGraph will not go looking. Both are one click from the
-//! window.
+//! The app's executable is the command too (see `main.rs`): on macOS and
+//! Linux the command is a link named `khonsu` to it; on Windows, where a
+//! command is found by file name, a copy named `khonsu.exe` beside it, whose
+//! folder goes on the user's Path. Installing the app does neither, and an
+//! agent that has never heard of KhonsuGraph will not go looking. Both are
+//! one click from the window.
 //!
 //! Blocking functions; call via `smol::unblock` from UI code. On macOS the
 //! install may wait on the system's administrator prompt.
@@ -40,20 +42,18 @@ pub struct Installed {
     pub needs_path: bool,
 }
 
-/// The `khonsu` executable beside this app's, resolved through symlinks. Not
-/// on Windows, where canonicalizing yields a `\\?\C:\…` path that has no
-/// business in `Path`.
-fn command() -> Result<PathBuf> {
+/// This executable, resolved through symlinks. Not on Windows, where
+/// canonicalizing yields a `\\?\C:\…` path that has no business in `Path`.
+fn executable() -> Result<PathBuf> {
     let exe = std::env::current_exe().context("Cannot locate the KhonsuGraph executable")?;
-    let exe = if cfg!(windows) { exe } else { exe.canonicalize().unwrap_or(exe) };
-    let cli = exe
-        .parent()
-        .ok_or_else(|| anyhow!("The executable has no folder"))?
-        .join(format!("khonsu{}", std::env::consts::EXE_SUFFIX));
-    if !cli.is_file() {
-        bail!(crate::i18n::trf("setup.error.no_cli", &[&cli.display().to_string()]));
-    }
-    Ok(cli)
+    Ok(if cfg!(windows) { exe } else { exe.canonicalize().unwrap_or(exe) })
+}
+
+/// What the `khonsu` command runs: this executable, or on Windows its copy
+/// `khonsu.exe` beside it (which may not exist yet; see `install_command`).
+fn command() -> Result<PathBuf> {
+    let exe = executable()?;
+    Ok(if cfg!(windows) { exe.with_file_name("khonsu.exe") } else { exe })
 }
 
 fn same_file(a: &Path, b: &Path) -> bool {
@@ -184,6 +184,9 @@ pub fn command_status() -> CommandStatus {
     let Ok(cli) = command() else {
         return CommandStatus::NotInstalled;
     };
+    if !cli.is_file() {
+        return CommandStatus::NotInstalled;
+    }
     let dir = cli.parent().map(Path::to_path_buf).unwrap_or_default();
     match user_path() {
         Ok(path) if path.split(';').any(|entry| same_file(Path::new(entry), &dir)) => CommandStatus::Installed(cli),
@@ -201,6 +204,12 @@ fn user_path() -> Result<String> {
 #[cfg(windows)]
 pub fn install_command() -> Result<Installed> {
     let cli = command()?;
+    // The package ships the copy; a build that lacks it gets one now, and a
+    // stale one (from an older app) is replaced.
+    let exe = executable()?;
+    if std::fs::read(&cli).ok() != std::fs::read(&exe).ok() {
+        std::fs::copy(&exe, &cli).with_context(|| format!("Cannot create {}", cli.display()))?;
+    }
     let dir = cli
         .parent()
         .ok_or_else(|| anyhow!("The executable has no folder"))?
