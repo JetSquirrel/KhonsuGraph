@@ -27,8 +27,7 @@ cargo build --workspace            # app, CLI, CSV and AWS plugins
 cargo test --workspace
 ```
 
-The app expects gpui-graph checked out beside this repository
-(`../gpui-graph`). Tests use `scratch/tests`, set in `.cargo/config.toml`,
+Tests use `scratch/tests`, set in `.cargo/config.toml`,
 to avoid a Windows drive-root flush issue observed with HawDB 0.8. The
 0.11.0 upgrade was verified on macOS; Windows still needs verification.
 
@@ -42,8 +41,8 @@ to avoid a Windows drive-root flush issue observed with HawDB 0.8. The
 
 Every package holds the app, the `khonsu` CLI and the official plugins under
 `plugins/<id>/` beside them, which is where both look for built-in plugins.
-On a Mac, put the CLI on your `PATH` with
-`ln -s /Applications/KhonsuGraph.app/Contents/MacOS/khonsu /usr/local/bin/khonsu`.
+The robot button in the title bar (Command line & AI) puts `khonsu` on your
+`PATH` and adds the agent skill to Claude Code.
 Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds both and
 publishes a GitHub release.
 

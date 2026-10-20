@@ -8,7 +8,7 @@ license.workspace = true
 [dependencies]
 # Pinned to the release gpui-graph builds against: both must share one GPUI.
 gpui-kit = { version = "=0.7.3", features = ["tree-sitter-sql"] }
-gpui-graph = { path = "../../gpui-graph/crates/gpui-graph" }
+gpui-graph = "=0.1.1"
 khonsu-core.workspace = true
 serde.workspace = true
 serde_json.workspace = true

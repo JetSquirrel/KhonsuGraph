@@ -48,6 +48,10 @@ tests also passed, covering CLI source setup/import and core sync updates,
 stale-record removal and idempotence. App tests account for 121 of the regular
 tests; AWS plugin tests use saved fixtures rather than a live AWS account.
 
+After merging the latest `origin/main` (including its crates.io gpui-graph
+dependency and command-line setup UI), the regular suite passed again:
+187 tests, including 124 app tests. The merged workspace also builds.
+
 In this checkout the `target` symlink points to an unavailable directory.
 Validation used `CARGO_TARGET_DIR=/private/tmp/khonsugraph-review-target`,
 `CARGO_PROFILE_DEV_DEBUG=0`, `CARGO_PROFILE_TEST_DEBUG=0` and

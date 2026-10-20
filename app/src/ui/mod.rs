@@ -8,6 +8,7 @@ pub mod grid;
 pub mod palette;
 pub mod results;
 pub mod scale;
+pub mod setup_dialog;
 pub mod sidebar;
 pub mod sources;
 pub mod status_bar;

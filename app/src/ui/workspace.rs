@@ -555,7 +555,7 @@ impl Workspace {
             .children(self.tabs.iter().map(|tab| {
                 let id = tab.id();
                 let closable = self.tabs.len() > 1 && (tab.as_query().is_none() || queries > 1);
-                let (badge, title, marked) = match tab {
+                let (glyph, title, marked) = match tab {
                     WorkspaceTab::Query(tab) => {
                         let first_line = tab.editor.read(cx).value().lines().next().unwrap_or("").trim().to_string();
                         let title = if first_line.is_empty() {
@@ -563,15 +563,17 @@ impl Workspace {
                         } else {
                             first_line.chars().take(28).collect()
                         };
-                        let badge = match tab.language {
-                            Language::Cypher => "CYPHER",
-                            Language::Sql => "SQL",
+                        // A graph query wears a graph's glyph, a table query
+                        // DuckLocal's terminal: the two read apart at a glance.
+                        let glyph = match tab.language {
+                            Language::Cypher => AssetIcon::Waypoints,
+                            Language::Sql => AssetIcon::SquareTerminal,
                         };
-                        (badge, title, false)
+                        (glyph, title, false)
                     }
                     WorkspaceTab::Dashboard(tab) => {
                         let host = tab.host.read(cx);
-                        ("DASH", tab.title.to_string(), host.is_dirty(cx) || host.has_presence())
+                        (AssetIcon::ChartNoAxesColumn, tab.title.to_string(), host.is_dirty(cx) || host.has_presence())
                     }
                 };
                 Tab::new()
@@ -579,13 +581,7 @@ impl Workspace {
                         h_flex()
                             .gap_1p5()
                             .items_center()
-                            .child(
-                                div()
-                                    .text_xs()
-                                    .font_weight(FontWeight::BOLD)
-                                    .text_color(cx.theme().primary)
-                                    .child(badge),
-                            )
+                            .child(Icon::new(glyph).small().text_color(cx.theme().muted_foreground))
                             .child(title)
                             .when(marked, |this| this.child(div().size_1p5().rounded_full().bg(cx.theme().warning))),
                     )
@@ -679,7 +675,7 @@ impl Workspace {
                 Button::new("dashboard-reload")
                     .outline()
                     .small()
-                    .icon(IconName::Redo)
+                    .icon(IconName::RotateCw)
                     .label(tr("dashboard.reload"))
                     .loading(running)
                     .tooltip(tr("dashboard.reload.tooltip"))

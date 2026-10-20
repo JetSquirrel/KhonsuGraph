@@ -9,9 +9,9 @@
 //! | `khonsu_plugin`     | `<plugin id>@<plugin version>`          |
 //! | `khonsu_synced_at`  | sync start, Unix seconds                |
 //!
-//! Nodes are upserted with `MERGE` on `khonsu_id`. Changed relationships are
-//! deleted and created again; unchanged ones are left alone. This strategy
-//! predates relationship-property `SET` support in HawDB 0.11.
+//! Nodes are upserted with `MERGE` on `khonsu_id`. A changed relationship is
+//! deleted and created again, which goes in batches where a `SET` would match
+//! each one alone; an unchanged one is left alone.
 //! Relationship patterns need labeled endpoints in HawDB, so the writer tracks
 //! the label of every node it has seen.
 
@@ -133,8 +133,8 @@ impl<'g> Merger<'g> {
     ///
     /// Relationships are compared with the source's relationships already in
     /// the graph, read once: a new one is created, an unchanged one is left
-    /// alone, and a changed one is deleted and created again (the strategy
-    /// retained from HawDB 0.8). Deletes go in batches by
+    /// alone, and a changed one is deleted and created again (batched, where
+    /// a `SET` would match each relationship alone). Deletes go in batches by
     /// pattern, `WHERE r.khonsu_id IN [...]`: matching one relationship at a
     /// time scans its type, which made a sync quadratic in its edges.
     pub fn finish(mut self, remove_stale: bool, _known_patterns: &[EdgePattern]) -> Result<(MergeStats, Vec<EdgePattern>), QueryError> {
