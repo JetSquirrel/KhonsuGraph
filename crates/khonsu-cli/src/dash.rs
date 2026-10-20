@@ -264,12 +264,14 @@ pub fn presence(args: PresenceArgs) -> Result<Value, CliError> {
     Ok(json!({ "delivered": delivered }))
 }
 
-/// The desktop app beside this executable, to start when no window runs.
+/// The desktop app, to start when no window runs: this very executable, by
+/// its real path, since called as `khonsu` it would run the CLI again. On
+/// Windows that name is a copy, `khonsu.exe`, so the app beside it is used.
 fn app_executable() -> Option<PathBuf> {
     let exe = std::env::current_exe().ok()?;
-    let dir = exe.parent()?;
-    let name = format!("khonsugraph{}", std::env::consts::EXE_SUFFIX);
-    [dir.join(&name), dir.join("../MacOS/KhonsuGraph")].into_iter().find(|p| p.is_file())
+    let exe = exe.canonicalize().unwrap_or(exe);
+    let app = exe.with_file_name(format!("khonsugraph{}", std::env::consts::EXE_SUFFIX));
+    Some(if app.is_file() { app } else { exe })
 }
 
 pub fn open(args: OpenArgs) -> Result<Value, CliError> {
@@ -302,7 +304,12 @@ pub fn open(args: OpenArgs) -> Result<Value, CliError> {
             return Err(CliError::new("not_running", "no KhonsuGraph window is running"));
         }
         let app = app_executable().ok_or_else(|| CliError::new("not_running", "no KhonsuGraph window is running, and the app was not found beside khonsu"))?;
+        // Detached from this command's streams: the window's log lines would
+        // land in the JSON an agent is reading.
         std::process::Command::new(&app)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .spawn()
             .map_err(|e| CliError::new("launch", format!("{}: {e}", app.display())))?;
         // Wait for the window to start listening.

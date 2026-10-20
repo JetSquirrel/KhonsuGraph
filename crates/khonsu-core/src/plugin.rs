@@ -95,7 +95,13 @@ fn builtin_dirs() -> Vec<PathBuf> {
     if let Some(paths) = std::env::var_os("KHONSU_PLUGIN_PATH") {
         dirs.extend(std::env::split_paths(&paths));
     }
-    if let Ok(exe) = std::env::current_exe() {
+    // By its real path too: called through the `khonsu` link in
+    // /usr/local/bin, the executable's own folder is where the plugins are.
+    let exes = std::env::current_exe().into_iter().flat_map(|exe| {
+        let real = exe.canonicalize().ok().filter(|real| *real != exe);
+        std::iter::once(exe).chain(real)
+    });
+    for exe in exes {
         if let Some(dir) = exe.parent() {
             dirs.push(dir.to_path_buf());
             // Test binaries live in target/<profile>/deps.

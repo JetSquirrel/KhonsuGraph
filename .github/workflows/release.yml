@@ -28,7 +28,7 @@ jobs:
           key: aarch64-apple-darwin
 
       - name: Build release binaries
-        run: cargo build --release --locked --target aarch64-apple-darwin -p khonsugraph -p khonsu-cli -p khonsu-plugin-csv -p khonsu-plugin-aws
+        run: cargo build --release --locked --target aarch64-apple-darwin -p khonsugraph -p khonsu-plugin-csv -p khonsu-plugin-aws
 
       - name: Import signing certificate
         env:
@@ -86,7 +86,7 @@ jobs:
           key: x86_64-pc-windows-msvc
 
       - name: Build release binaries
-        run: cargo build --release --locked -p khonsugraph -p khonsu-cli -p khonsu-plugin-csv -p khonsu-plugin-aws
+        run: cargo build --release --locked -p khonsugraph -p khonsu-plugin-csv -p khonsu-plugin-aws
 
       - name: Package
         shell: pwsh

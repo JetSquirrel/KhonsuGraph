@@ -3,18 +3,21 @@
 //! Every command prints one JSON document on stdout. Failures print
 //! `{"error": {...}}` and exit non-zero. Graphs open read-only unless a
 //! command needs to write and `--write` is given.
+//!
+//! There is no separate executable: the app runs [`run`] when it is called
+//! as `khonsu`, or with a subcommand or a flag (see the app's `main.rs`).
 
 mod dash;
 
-use clap::{Args, Parser, Subcommand};
+use clap::{Args, CommandFactory, Parser, Subcommand};
 use khonsu_core::plugin::{self, SyncEvent};
 use khonsu_core::protocol::{FieldKind, SyncMode};
 use khonsu_core::settings::{self, Source};
 use khonsu_core::{normalize_path, secrets, AccessMode, Graph, Language, OpenError, QueryError, QueryOptions};
 use serde_json::{json, Map, Value};
+use std::ffi::OsString;
 use std::io::Read;
 use std::path::PathBuf;
-use std::process::ExitCode;
 use std::sync::atomic::AtomicBool;
 
 const PROGRAM: &str = "khonsu CLI";
@@ -270,7 +273,7 @@ fn key_values(pairs: &[String]) -> Result<Map<String, Value>, CliError> {
     Ok(map)
 }
 
-fn run(command: Command) -> Result<Value, CliError> {
+fn execute(command: Command) -> Result<Value, CliError> {
     match command {
         Command::Query {
             db,
@@ -483,12 +486,30 @@ fn print(value: &Value, pretty: bool) {
     println!("{}", text.expect("JSON serializes"));
 }
 
-fn main() -> ExitCode {
-    let cli = Cli::parse();
-    match run(cli.command) {
+/// Whether `first`, the first argument, names a subcommand: the app runs the
+/// CLI for it instead of opening a window.
+pub fn is_command(first: &str) -> bool {
+    first == "help" || Cli::command().get_subcommands().any(|command| command.get_name() == first)
+}
+
+/// Run one command line, `args` without the program name, and return the
+/// process exit code. Help and usage mistakes print clap's text, as a
+/// standalone program would.
+pub fn run<I>(args: I) -> i32
+where
+    I: IntoIterator<Item = OsString>,
+{
+    let cli = match Cli::try_parse_from(std::iter::once(OsString::from("khonsu")).chain(args)) {
+        Ok(cli) => cli,
+        Err(err) => {
+            let _ = err.print();
+            return err.exit_code();
+        }
+    };
+    match execute(cli.command) {
         Ok(value) => {
             print(&value, cli.pretty);
-            ExitCode::SUCCESS
+            0
         }
         Err(err) => {
             let mut error = json!({ "kind": err.kind, "message": err.message });
@@ -496,7 +517,7 @@ fn main() -> ExitCode {
                 error["detail"] = err.detail;
             }
             print(&json!({ "error": error }), cli.pretty);
-            ExitCode::from(err.code.max(1))
+            i32::from(err.code.max(1))
         }
     }
 }

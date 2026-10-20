@@ -4533,7 +4533,6 @@ dependencies = [
  "khonsu-dash",
  "serde",
  "serde_json",
- "tempfile",
 ]
 
 [[package]]
@@ -4599,16 +4598,19 @@ dependencies = [
  "gpui-graph",
  "gpui-kit",
  "image",
+ "khonsu-cli",
  "khonsu-core",
  "khonsu-dash",
  "lsp-types",
  "serde",
  "serde_json",
  "smol",
+ "tempfile",
  "tracing",
  "tracing-subscriber",
  "unicode-width",
  "ureq",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]

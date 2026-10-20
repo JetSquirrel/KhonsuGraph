@@ -5,9 +5,9 @@ version.workspace = true
 edition.workspace = true
 license.workspace = true
 
-[[bin]]
-name = "khonsu"
-path = "src/main.rs"
+# A library: the app is the `khonsu` command too (see app/src/main.rs).
+[lib]
+name = "khonsu_cli"
 
 [dependencies]
 khonsu-core.workspace = true
@@ -15,6 +15,3 @@ khonsu-dash.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 clap.workspace = true
-
-[dev-dependencies]
-tempfile.workspace = true

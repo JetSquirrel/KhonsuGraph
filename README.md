@@ -13,7 +13,7 @@ HawDB product.
 | `app/` | The desktop app: GPUI with gpui-kit (DuckLocal's shell) and [gpui-graph](https://github.com/JetSquirrel/gpui-graph) for the canvas |
 | `crates/khonsu-core` | HawDB access, writer lock, results, schema, plugin host, merge writer, settings |
 | `crates/khonsu-dash` | `.dash` dashboards: parse, validate, filters, `check`, comments, presence, the window link |
-| `crates/khonsu-cli` | `khonsu`, the windowless JSON CLI for agents and scripts |
+| `crates/khonsu-cli` | `khonsu`, the windowless JSON CLI for agents and scripts; the app runs it when called as `khonsu` or with a subcommand |
 | `crates/khonsu-plugin-protocol` | The data-source plugin protocol (JSON lines over stdio); see [docs/plugins.md](docs/plugins.md) to write a plugin in any language |
 | `plugins/csv` | The built-in CSV plugin |
 | `plugins/aws` | The official AWS plugin: VPCs, subnets, security groups, instances, load balancers and IAM roles, read through the `aws` CLI |
@@ -39,12 +39,17 @@ to avoid a Windows drive-root flush issue observed with HawDB 0.8. The
 | `scripts/package-macos.sh` | The signed, notarized `.dmg` (Developer ID and an App Store Connect key required) |
 | `scripts/package-windows.ps1` | A zip of the Windows build (not code-signed) |
 
-Every package holds the app, the `khonsu` CLI and the official plugins under
-`plugins/<id>/` beside them, which is where both look for built-in plugins.
-The robot button in the title bar (Command line & AI) puts `khonsu` on your
-`PATH` and adds the agent skill to Claude Code.
-Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds both and
-publishes a GitHub release.
+One executable is both the app and the `khonsu` CLI: with no arguments it
+opens the window; called as `khonsu`, or with a subcommand or a flag
+(`khonsugraph query …`, `khonsugraph --help`), it runs the command and exits.
+So `cargo run -p khonsugraph -- query …` works from a checkout. Every package
+holds it and the official plugins under `plugins/<id>/` beside it, which is
+where it looks for built-in plugins; the Windows zip adds a `khonsu.exe` copy,
+since Windows finds a command by file name. The robot button in the title bar
+(Command line & AI) puts `khonsu` on your `PATH` and adds the agent skill to
+Claude Code.
+Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds the
+packages and publishes a GitHub release.
 
 ## HawDB 0.11.0 notes
 

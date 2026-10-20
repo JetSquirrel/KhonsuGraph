@@ -65,7 +65,6 @@ sign() {
 for plugin in "$APP"/Contents/MacOS/plugins/*/khonsu-plugin-*; do
   sign "$plugin"
 done
-sign "$APP/Contents/MacOS/khonsu"
 sign "$APP/Contents/MacOS/khonsugraph"
 sign "$APP"
 codesign --verify --deep --strict --verbose=2 "$APP"
