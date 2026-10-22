@@ -76,6 +76,9 @@ pub fn value_to_json(value: &Value) -> Json {
             // NaN and infinities have no JSON number form.
             .unwrap_or_else(|| Json::String(f.to_string())),
         Value::String(s) => Json::String(s.clone()),
+        Value::Vector(vector) => Json::Array(
+            vector.as_ref().coordinates().map(|coordinate| Json::from(f64::from(coordinate))).collect(),
+        ),
         Value::Binary(bytes) => {
             let mut hex = String::with_capacity(2 + bytes.len() * 2);
             hex.push_str("\\x");

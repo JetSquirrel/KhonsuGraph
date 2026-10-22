@@ -186,6 +186,23 @@ mod tests {
     use super::merge;
     use serde_json::json;
 
+    #[gpui_kit::test]
+    fn graph_colors_follow_the_component_theme(cx: &mut gpui_kit::TestAppContext) {
+        use gpui_kit::component::{Theme, ThemeMode};
+
+        cx.update(gpui_kit::init);
+        for mode in [ThemeMode::Dark, ThemeMode::Light] {
+            cx.update(|cx| {
+                super::install(mode, cx);
+                let graph = gpui_graph::GraphColors::from_theme(cx);
+                let colors = Theme::global(cx).color_tokens();
+                assert_eq!(graph.background, colors.background);
+                assert_eq!(graph.foreground, colors.foreground);
+                assert_eq!(graph.selection, colors.primary);
+            });
+        }
+    }
+
     #[test]
     fn merging_keeps_untouched_keys_and_replaces_named_ones() {
         let mut target = json!({ "colors": { "a": "1", "b": "2" }, "name": "x" });

@@ -202,7 +202,7 @@ UI 外壳可以沿用，引擎层和数据入口要重写，图画布改用独�
 - 平台：沿用 DuckLocal 的 macOS（Apple 芯片）优先，Windows 与 Linux 随后跟进。
 - 性能：画布最多显示 2000 个节点，超出时显示前 2000 个并提示；300 个节点以内始终显示节点名，更多时只在放大或悬停时显示。两个数值待用真实图库压测后再调。
 - 安全：CLI 默认只读，写入需显式参数。
-- 依赖：gpui-kit 与 gpui-graph 必须基于同一版 GPUI（目前 gpui-kit 0.7.3、gpui-base 0.7.3、gpui-pre 0.3.9），两者一起升级。
+- 依赖：gpui-kit 与 gpui-graph 必须基于同一版 GPUI 和 gpui-base（目前 gpui-kit 0.8.0、gpui-graph 0.1.2、gpui-base 0.8.0、gpui-pre 0.3.9），两者一起升级，确保共享主题状态。
 
 ## 品牌与官网素材
 
@@ -257,7 +257,7 @@ V1.1 之后再考虑：Azure 和 Wazuh 官方插件、Windows 与 Linux 构建�
 | HawDB 版本迭代导致接口变化 | 升级时要改引擎层 | 引擎访问封装在一个模块内，锁定 crate 版本；你本人是贡献者，可提前获知变更 |
 | 单写者限制让 GUI 与 CLI 冲突 | agent 用 CLI 查询时可能打不开正在被 GUI 占用的库 | 先确认只读多进程是否可行，不行就让 CLI 在 GUI 运行时给出明确提示 |
 | 图画布工作量大 | 拖慢 M1 | 已改用 gpui-graph 组件库，力导布局、交互和社区显示不再在应用内实现 |
-| gpui-kit 与 gpui-graph 的 GPUI 版本不一致 | 两份 GPUI 无法共存，升级任一方都会编译失败 | 两者锁定精确版本，同时升级；gpui-graph 由你维护，可先发版再跟进 |
+| gpui-kit 与 gpui-graph 的 GPUI 或 gpui-base 版本不一致 | GPUI 类型不兼容，或 gpui-base 主题状态分离 | Cargo.lock 锁定解析版本，同时升级；gpui-graph 由你维护，可先发版再跟进 |
 | 名称和 HawDB 品牌的关系 | 第三方产品使用引擎相关名称可能引发误解 | 对外只写"基于 HawDB"，上线前与 nowledge-co 维护者沟通 |
 | AI 生成 logo 的权属与商标 | 影响商标注册 | 由设计师重绘矢量，并做商标检索 |
 | 隐私承诺未落实 | 官网文案与实际行为不符 | 逐条核对后再沿用 DuckLocal 的文案 |
