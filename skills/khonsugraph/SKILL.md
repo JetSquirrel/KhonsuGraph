@@ -16,7 +16,7 @@ Use the real `khonsu` executable, never GUI automation or a replacement script. 
 5. Write one statement using observed names, within HawDB's Cypher (below). Read [the CLI reference](references/cli.md) for options and output.
 6. Parse the JSON: `columns`, `rows`, `row_count`, `truncated`, and `graph` (`nodes`, `edges`) when the result holds nodes or relationships. `truncated: true` means `rows` is a prefix; say so. Answer from returned values and name the graph and query.
 
-## HawDB's Cypher (0.11.0) — what works
+## HawDB's Cypher (0.12.0) — what works
 
 - `MATCH`, `OPTIONAL MATCH`, `WHERE` (comparisons, `IN [...]`, `STARTS WITH`, `IS NULL`), `RETURN [DISTINCT]`, `ORDER BY`, `SKIP`, `LIMIT`, `WITH`, `UNWIND`, `CREATE`, `MERGE`, `SET`, `DELETE`, `DETACH DELETE`; parameters `$name` (`-p name=value`). `UNWIND` requires a following write clause; it is not a standalone read pipeline.
 - Return whole nodes and relationships (`RETURN a, r, b`) to get them under `graph`; nodes come back as `{_id, labels, ...properties}`, relationships as `{_id, type, source_id, target_id, ...properties}`.
@@ -24,6 +24,7 @@ Use the real `khonsu` executable, never GUI automation or a replacement script. 
 - No `labels()`, `keys()`, `properties()`, `shortestPath`, path variables (`p = …`), `CALL db.*`, or `SHOW`; the schema command replaces them.
 - Variable-length patterns need a relationship type and no variable (`(a)-[:CALLS*1..4]->(b)`, not `-[r:CALLS*1..4]->`); an untyped relationship pattern works only for one hop. Return the endpoints, then fetch the hops with one-hop queries when you need them.
 - Result columns come back in alphabetical order; read them by name.
+- Vector values are returned as JSON number arrays, including vector properties in nodes.
 - A boolean literal (`WHERE true`) is not a predicate; write a real comparison.
 - `CREATE` takes one pattern per statement: `CREATE (a:N), (b:N)` does not parse; create each, then `MATCH` them to create a relationship.
 - Relationship properties can be changed with `SET` in 0.11.0. The importer retains its earlier delete/recreate strategy.

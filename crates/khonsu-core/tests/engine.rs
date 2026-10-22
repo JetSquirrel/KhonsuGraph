@@ -158,6 +158,32 @@ fn scalar_in_and_json_values_survive_reopen() {
 }
 
 #[test]
+fn vector_results_are_json_arrays_after_reopen() {
+    let dir = TestDir::new();
+    {
+        let mut database = hawdb::Database::open(dir.graph()).unwrap();
+        let vector = hawdb::Value::Vector(hawdb::Vector::new(&[1.25, -2.5, 0.0]).unwrap());
+        database.sql_session().query(
+            "CREATE TABLE embeddings (id BIGINT PRIMARY KEY, embedding VECTOR(3))", &[],
+        ).unwrap();
+        database.sql_session().query(
+            "INSERT INTO embeddings (id, embedding) VALUES (1, $1)", &[vector.clone()],
+        ).unwrap();
+        database.query_with_params(
+            "CREATE (:Embedding {embedding: $vector})",
+            &std::collections::BTreeMap::from([("vector".into(), vector)]),
+        ).unwrap();
+    }
+    let mut graph = Graph::open(dir.graph(), AccessMode::ReadOnly, "test").unwrap();
+    let expected = json!([1.25, -2.5, 0.0]);
+    let sql = run(&mut graph, Language::Sql, "SELECT embedding FROM embeddings");
+    assert_eq!(sql.rows, vec![vec![expected.clone()]]);
+    let cypher = run(&mut graph, Language::Cypher, "MATCH (n:Embedding) RETURN n.embedding AS embedding, n");
+    assert_eq!(cypher.rows[0][0], expected);
+    assert_eq!(cypher.graph.unwrap().nodes[0].properties["embedding"], expected);
+}
+
+#[test]
 fn read_row_ceiling_is_enforced_before_display_truncation() {
     let dir = TestDir::new();
     let mut graph = Graph::create(dir.graph(), "test").unwrap();

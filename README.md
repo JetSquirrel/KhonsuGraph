@@ -29,7 +29,7 @@ cargo test --workspace
 
 Tests use `scratch/tests`, set in `.cargo/config.toml`,
 to avoid a Windows drive-root flush issue observed with HawDB 0.8. The
-0.11.0 upgrade was verified on macOS; Windows still needs verification.
+upgrade validation is performed on macOS; Windows still needs verification.
 
 ## Release builds
 
@@ -51,10 +51,11 @@ Claude Code.
 Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds the
 packages and publishes a GitHub release.
 
-## HawDB 0.11.0 notes
+## HawDB 0.12.0 notes
 
-KhonsuGraph pins HawDB to 0.11.0. See [upgrade validation](docs/hawdb-0.11-upgrade.md)
-for compatibility checks and their scope.
+KhonsuGraph pins HawDB to 0.12.0. See [upgrade validation](docs/hawdb-0.12-upgrade.md)
+for compatibility checks and their scope, and the [0.11 validation](docs/hawdb-0.11-upgrade.md)
+for earlier database compatibility checks.
 
 - One process per graph directory, readers included. While the app has a
   graph open, `khonsu query` and `khonsu check` run through the app.
@@ -66,8 +67,10 @@ for compatibility checks and their scope.
 - KhonsuGraph explicitly limits reads to 100,000 result rows, preserving
   its previous behavior after HawDB removed the default row limit in 0.10.
   The result display limit is separate and does not lower execution cost.
+- Vector values returned by SQL and Cypher are exposed as JSON number arrays,
+  including vector properties inside graph elements.
 - The earlier import measurement (35k relationships in about 13 minutes)
-  was made on 0.8; it is not a performance estimate for 0.11.0.
+  was made on 0.8; it is not a performance estimate for 0.12.0.
 
 ## License
 
