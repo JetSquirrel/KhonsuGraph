@@ -9,7 +9,7 @@ Use the real `khonsu` executable, never GUI automation or a replacement script. 
 
 ## Workflow
 
-1. Check `khonsu --version`. If it is not on PATH, look beside the KhonsuGraph app (`khonsu` sits next to `khonsugraph`). If it is missing, say so; never pretend a query ran.
+1. Check `khonsu --version`. If it is not on PATH, the app's own executable is the command: run `khonsugraph --version` (macOS: `/Applications/KhonsuGraph.app/Contents/MacOS/khonsugraph`), which takes the same subcommands, and suggest the Command line & AI button in the window's title bar to install `khonsu`. If neither exists, say so; never pretend a query ran.
 2. Find the graph: `--db DIR`, else `$KHONSU_DB`, else the graph last opened in the app. `khonsu open --state` tells you what the person has open in the window.
 3. Read the schema first: `khonsu schema --db DIR` lists labels (with counts and property names), relationship types (with counts, properties and `(source)→(target)` label patterns) and SQL tables. Do not guess labels, types or property names.
 4. Preview a bounded sample: `khonsu query --db DIR --cypher "MATCH (n:Host) RETURN n LIMIT 20"`.

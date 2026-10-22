@@ -22,7 +22,7 @@ impl Env {
 
     /// Runs `khonsu` and returns (success, stdout JSON).
     fn khonsu(&self, args: &[&str]) -> (bool, Value) {
-        let output = Command::new(env!("CARGO_BIN_EXE_khonsu"))
+        let output = Command::new(env!("CARGO_BIN_EXE_khonsugraph"))
             .args(args)
             .env("KHONSU_CONFIG_DIR", self.dir.path().join("config"))
             .env_remove("KHONSU_DB")
