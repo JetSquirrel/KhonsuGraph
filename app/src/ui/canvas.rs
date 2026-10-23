@@ -132,6 +132,10 @@ pub struct GraphCanvas {
     caption_key: Option<String>,
     /// The node property nodes are grouped by, if any.
     group_key: Option<String>,
+    /// Which captions are drawn, and whether a hovered or picked node fades
+    /// the rest: a dashboard `graph`'s `labels` and `highlight`.
+    label_mode: LabelMode,
+    focus_dimming: bool,
     /// A dashboard panel shows no inspector: its width is the grid's.
     compact: bool,
     /// Drawn over the whole window below the title bar, instead of in place.
@@ -165,6 +169,8 @@ impl GraphCanvas {
             expanding: false,
             caption_key: None,
             group_key: None,
+            label_mode: LabelMode::Auto,
+            focus_dimming: true,
             compact: false,
             maximized: false,
             focus: cx.focus_handle(),
@@ -176,6 +182,23 @@ impl GraphCanvas {
 
     /// For a dashboard panel: no inspector, `caption` as the caption and
     /// nodes grouped by `group`. Takes effect with the next `set_data`.
+    /// A dashboard `graph`'s `labels` and `highlight` (see
+    /// `khonsu_dash::model::LABELS`); `None` keeps the defaults.
+    pub fn set_look(&mut self, labels: Option<&str>, highlight: Option<&str>, cx: &mut Context<Self>) {
+        self.label_mode = match labels {
+            Some("all") => LabelMode::Always,
+            Some("focus") => LabelMode::Focus,
+            Some("none") => LabelMode::Never,
+            _ => LabelMode::Auto,
+        };
+        self.focus_dimming = highlight != Some("none");
+        let (mode, dimming) = (self.label_mode, self.focus_dimming);
+        self.graph.update(cx, |graph, cx| {
+            graph.set_label_mode(mode, cx);
+            graph.set_focus_dimming(dimming, cx);
+        });
+    }
+
     pub fn configure(&mut self, caption_key: Option<String>, group_key: Option<String>, compact: bool, cx: &mut Context<Self>) {
         self.caption_key = caption_key;
         self.group_key = group_key;
@@ -281,10 +304,11 @@ impl GraphCanvas {
     fn load(&mut self, nodes: Vec<GraphNode>, edges: Vec<GraphEdge>, cx: &mut Context<Self>) {
         let data = self.admit(nodes, edges, cx);
         let color_by = self.color_by();
+        let label_mode = self.label_mode;
         self.graph.update(cx, |graph, cx| {
             // Auto culls overlapping captions, even on small graphs fitted
-            // into narrow dashboard panels. Always bypasses that protection.
-            graph.set_label_mode(LabelMode::Auto, cx);
+            // into narrow dashboard panels; a dashboard may choose otherwise.
+            graph.set_label_mode(label_mode, cx);
             graph.set_color_by(color_by, cx);
             graph.set_data(data, cx);
         });
@@ -369,7 +393,6 @@ impl GraphCanvas {
                             let data = this.admit(data.nodes, data.edges, cx);
                             let anchor = id.to_string();
                             this.graph.update(cx, |graph, cx| {
-                                graph.set_label_mode(LabelMode::Auto, cx);
                                 graph.merge(data, Some(&anchor), cx);
                             });
                         }

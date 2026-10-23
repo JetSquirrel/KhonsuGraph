@@ -910,6 +910,7 @@ impl Dashboard {
         let name = plot.name.clone();
         let caption = plot.caption.clone();
         let group = plot.group.clone();
+        let (labels, highlight) = (plot.labels.clone(), plot.highlight.clone());
         let enlarged = self.maximized.as_deref() == Some(name.as_str());
         if !self.graph_canvases.contains_key(&name) {
             let canvas = cx.new(|cx| GraphCanvas::new(window, cx));
@@ -925,6 +926,7 @@ impl Dashboard {
             *shown = Some(data.clone());
             canvas.update(cx, |canvas, cx| {
                 canvas.configure(caption, group, true, cx);
+                canvas.set_look(labels.as_deref(), highlight.as_deref(), cx);
                 canvas.set_compact(!enlarged, window, cx);
                 canvas.set_data((*data).clone(), window, cx);
             });

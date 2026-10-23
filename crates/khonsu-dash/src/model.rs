@@ -59,10 +59,31 @@ const MAP_ATTRS: &[&str] = &["lat", "lng", "color", "size", "size_scale", "toolt
 const CARD_ATTRS: &[&str] = &["value", "note", "tone"];
 
 /// The attributes only a `graph` takes.
-const GRAPH_ATTRS: &[&str] = &["caption", "group"];
+const GRAPH_ATTRS: &[&str] = &["caption", "group", "labels", "highlight"];
+
+/// Which node captions a `graph` draws: `auto` as many as fit, best
+/// connected first; `all` every one, overlapping or not; `focus` only around
+/// the hovered or picked node; `none` no captions.
+pub const LABELS: &[&str] = &["auto", "all", "focus", "none"];
+
+/// What hovering or picking a `graph` node does to the rest: `neighbors`
+/// fades what is not next to it; `none` leaves every node as it was.
+pub const HIGHLIGHTS: &[&str] = &["neighbors", "none"];
 
 /// What a `card`'s `tone` may say: the series accent, or a status.
 pub const TONES: &[&str] = &["accent", "good", "warning", "critical"];
+
+/// A string attribute that must be one of `allowed`.
+fn one_of(attr: &Attr, allowed: &[&str], name: &str, diagnostics: &mut Vec<Diagnostic>) -> Option<String> {
+    match string(attr, diagnostics) {
+        Some(word) if allowed.contains(&word.as_str()) => Some(word),
+        Some(word) => {
+            diagnostics.push(Diagnostic::at_attr(attr, format!("Unknown {name}: {word:?}; one of {}", allowed.join(", "))));
+            None
+        }
+        None => None,
+    }
+}
 
 /// The dashboard's grid: a row is this many columns wide.
 pub const GRID_COLUMNS: u8 = 12;
@@ -182,6 +203,10 @@ pub struct Plot {
     pub caption: Option<String>,
     /// The node property a `graph` groups nodes by; `None` draws no groups.
     pub group: Option<String>,
+    /// A `graph`'s captions, one of [`LABELS`]; `None` is `auto`.
+    pub labels: Option<String>,
+    /// A `graph`'s focus, one of [`HIGHLIGHTS`]; `None` is `neighbors`.
+    pub highlight: Option<String>,
     /// Grid columns spanned as written; `Plot::width` applies the default.
     pub width: Option<u8>,
     /// Line and column of the block's kind keyword.
@@ -785,6 +810,8 @@ fn plot(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Option<Plot> {
     let mut text = None;
     let mut caption = None;
     let mut group = None;
+    let mut labels = None;
+    let mut highlight = None;
     let mut width = None;
     let mut seen: HashSet<&str> = HashSet::new();
     for attr in &block.attrs {
@@ -860,10 +887,12 @@ fn plot(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Option<Plot> {
             "width" => width = grid_width(attr, diagnostics),
             "caption" => caption = column(attr, diagnostics),
             "group" => group = column(attr, diagnostics),
+            "labels" => labels = one_of(attr, LABELS, "labels", diagnostics),
+            "highlight" => highlight = one_of(attr, HIGHLIGHTS, "highlight", diagnostics),
             other => diagnostics.push(Diagnostic::at_attr(
                 attr,
                 format!(
-                    "A plot block holds type, query, x, y, series, title, width, for a map lat, lng, color, size, size_scale, tooltip, for a card value, note, tone, for a graph caption and group, and for a text panel text; unknown attribute: {other}"
+                    "A plot block holds type, query, x, y, series, title, width, for a map lat, lng, color, size, size_scale, tooltip, for a card value, note, tone, for a graph caption, group, labels and highlight, and for a text panel text; unknown attribute: {other}"
                 ),
             )),
         }
@@ -982,6 +1011,8 @@ fn plot(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Option<Plot> {
         text,
         caption,
         group,
+        labels,
+        highlight,
         width,
         line: block.line,
         col: block.col,
@@ -1490,6 +1521,26 @@ plot "web" {
         assert_eq!(spec.plots[0].group.as_deref(), Some("community"));
         let wrong = validate_err(&source.replace("\"graph\"", "\"table\""));
         assert!(wrong.iter().any(|d| d.message.contains("group is for graph plots")), "{wrong:?}");
+    }
+
+    #[test]
+    fn a_graph_chooses_its_labels_and_highlight() {
+        let source = r#"
+query "people" { cypher = "MATCH (a:Person)-[r:KNOWS]->(b:Person) RETURN a, r, b" }
+plot "web" {
+  type      = "graph"
+  query     = query.people
+  labels    = "all"
+  highlight = "none"
+}
+"#;
+        let spec = validate_ok(source);
+        assert_eq!(spec.plots[0].labels.as_deref(), Some("all"));
+        assert_eq!(spec.plots[0].highlight.as_deref(), Some("none"));
+        let wrong = validate_err(&source.replace("\"all\"", "\"most\""));
+        assert!(wrong.iter().any(|d| d.message.contains("Unknown labels: \"most\"; one of auto, all, focus, none")), "{wrong:?}");
+        let misplaced = validate_err(&source.replace("\"graph\"", "\"table\""));
+        assert!(misplaced.iter().any(|d| d.message.contains("labels is for graph plots")), "{misplaced:?}");
     }
 
     #[test]
