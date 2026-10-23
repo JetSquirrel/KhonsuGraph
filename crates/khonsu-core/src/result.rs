@@ -76,8 +76,13 @@ pub fn value_to_json(value: &Value) -> Json {
             // NaN and infinities have no JSON number form.
             .unwrap_or_else(|| Json::String(f.to_string())),
         Value::String(s) => Json::String(s.clone()),
+        // Widen through the shortest f32 decimal so 0.1 stays 0.1, not 0.10000000149011612.
         Value::Vector(vector) => Json::Array(
-            vector.as_ref().coordinates().map(|coordinate| Json::from(f64::from(coordinate))).collect(),
+            vector
+                .as_ref()
+                .coordinates()
+                .map(|coordinate| Json::from(coordinate.to_string().parse::<f64>().unwrap_or(f64::from(coordinate))))
+                .collect(),
         ),
         Value::Binary(bytes) => {
             let mut hex = String::with_capacity(2 + bytes.len() * 2);

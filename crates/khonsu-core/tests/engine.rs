@@ -162,7 +162,7 @@ fn vector_results_are_json_arrays_after_reopen() {
     let dir = TestDir::new();
     {
         let mut database = hawdb::Database::open(dir.graph()).unwrap();
-        let vector = hawdb::Value::Vector(hawdb::Vector::new(&[1.25, -2.5, 0.0]).unwrap());
+        let vector = hawdb::Value::Vector(hawdb::Vector::new(&[1.25, -2.5, 0.1]).unwrap());
         database.sql_session().query(
             "CREATE TABLE embeddings (id BIGINT PRIMARY KEY, embedding VECTOR(3))", &[],
         ).unwrap();
@@ -175,7 +175,7 @@ fn vector_results_are_json_arrays_after_reopen() {
         ).unwrap();
     }
     let mut graph = Graph::open(dir.graph(), AccessMode::ReadOnly, "test").unwrap();
-    let expected = json!([1.25, -2.5, 0.0]);
+    let expected = json!([1.25, -2.5, 0.1]);
     let sql = run(&mut graph, Language::Sql, "SELECT embedding FROM embeddings");
     assert_eq!(sql.rows, vec![vec![expected.clone()]]);
     let cypher = run(&mut graph, Language::Cypher, "MATCH (n:Embedding) RETURN n.embedding AS embedding, n");

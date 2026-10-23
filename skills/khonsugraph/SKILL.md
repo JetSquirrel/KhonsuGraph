@@ -27,7 +27,7 @@ Use the real `khonsu` executable, never GUI automation or a replacement script. 
 - Vector values are returned as JSON number arrays, including vector properties in nodes.
 - A boolean literal (`WHERE true`) is not a predicate; write a real comparison.
 - `CREATE` takes one pattern per statement: `CREATE (a:N), (b:N)` does not parse; create each, then `MATCH` them to create a relationship.
-- Relationship properties can be changed with `SET` in 0.11.0. The importer retains its earlier delete/recreate strategy.
+- Relationship properties can be changed with `SET`. The importer retains its earlier delete/recreate strategy.
 - Scalar expressions support `IN` with lists or list parameters. `json_value(n.metadata, '$.source')` reads a scalar from a JSON string property; missing paths return null.
 - KhonsuGraph enforces a 100,000-row read ceiling even though HawDB no longer sets a default row limit. Reads fail as a whole when they exceed this or the payload budget; narrow the query instead of retrying.
 
