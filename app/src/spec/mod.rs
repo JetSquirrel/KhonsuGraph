@@ -2,7 +2,7 @@
 //! workspace tab. Parsing, validation, filters and comments are the
 //! `khonsu-dash` crate's; this module draws.
 
-pub use khonsu_dash::{comments, filter, model, syntax};
+pub use khonsu_dash::{comments, filter, model};
 
 pub mod comment_card;
 pub mod complete;

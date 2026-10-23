@@ -11,7 +11,7 @@
 //! also size them by a number (`MapStyle`), so it says "how much" too.
 //!
 //! Like the other charts, detection and projection happen once per result set
-//! (`GeoData::detect`); a frame re-derives only the viewport transform, which
+//! (`GeoData::from_columns`); a frame re-derives only the viewport transform, which
 //! is a handful of multiplications, and pushes one quad per point.
 
 use std::collections::HashMap;
@@ -181,30 +181,6 @@ pub struct GeoData {
 }
 
 impl GeoData {
-    /// The map for `result`, or `None` when it has no latitude/longitude
-    /// column pair, or when fewer than half its rows hold valid coordinates in
-    /// them — then they are something else that happens to share the name.
-    pub fn detect(result: &QueryResult) -> Option<Self> {
-        let numeric = |ix: &usize| result.columns[*ix].kind == ColumnKind::Numeric;
-        let lat_ix = (0..result.columns.len())
-            .filter(numeric)
-            .find(|&ix| is_lat_name(&result.columns[ix].name))?;
-        let lng_ix = (0..result.columns.len())
-            .filter(numeric)
-            .find(|&ix| ix != lat_ix && is_lng_name(&result.columns[ix].name))?;
-        let valid = valid_coordinates(result, lat_ix, lng_ix);
-        if valid.is_empty() || valid.len() * 2 < result.rows.len() {
-            return None;
-        }
-        Some(Self::build(
-            result,
-            lat_ix,
-            lng_ix,
-            valid,
-            &MapStyle::default(),
-        ))
-    }
-
     /// The map a dashboard's `map` plot names outright: its latitude and
     /// longitude columns, and the `style` its other attributes ask for.
     /// Rows without valid coordinates are dropped and counted; nothing is
@@ -383,20 +359,6 @@ fn valid_coordinates(result: &QueryResult, lat_ix: usize, lng_ix: usize) -> Vec<
                 .then_some((ix, lat, lng))
         })
         .collect()
-}
-
-/// The latitude and longitude columns names alone suggest, as `detect` finds
-/// them but without the values to check: what `ducklocal check` can say about
-/// a `map` plot that leaves `lat` or `lng` out.
-pub(crate) fn guess_coordinate_columns<'a>(
-    names: impl Iterator<Item = &'a str> + Clone,
-) -> (Option<usize>, Option<usize>) {
-    let lat = names.clone().position(is_lat_name);
-    let lng = names
-        .enumerate()
-        .find(|(ix, name)| Some(*ix) != lat && is_lng_name(name))
-        .map(|(ix, _)| ix);
-    (lat, lng)
 }
 
 fn category_color(slot: usize, is_other: bool, cx: &App) -> Hsla {
@@ -1113,9 +1075,18 @@ mod tests {
     fn column(name: &str, kind: ColumnKind) -> ColumnMeta {
         ColumnMeta {
             name: name.into(),
-            duck_type: format!("{kind:?}"),
             kind,
         }
+    }
+
+    /// The map a dashboard naming the coordinate columns would draw.
+    fn map_of(result: &QueryResult) -> Option<GeoData> {
+        // Numeric columns only, as a dashboard's would be: `name_long` is a
+        // longitude by name alone.
+        let ix = |is: fn(&str) -> bool| {
+            result.columns.iter().position(|c| c.kind == ColumnKind::Numeric && is(&c.name)).unwrap()
+        };
+        Some(GeoData::from_columns(result, ix(is_lat_name), ix(is_lng_name), &MapStyle::default()))
     }
 
     fn stations(rows: Vec<[&str; 4]>) -> QueryResult {
@@ -1130,7 +1101,6 @@ mod tests {
                 .into_iter()
                 .map(|r| r.into_iter().map(String::from).collect())
                 .collect(),
-            elapsed_ms: 0,
             truncated: false,
             graph: None,
         }
@@ -1174,14 +1144,14 @@ mod tests {
             .iter()
             .map(|r| [r[0].as_str(), r[1].as_str(), r[2].as_str(), r[3].as_str()])
             .collect();
-        let geo = GeoData::detect(&stations(rows)).unwrap();
+        let geo = map_of(&stations(rows)).unwrap();
         assert_eq!(geo.outside, 3);
         let (x0, x1, y0, _) = geo.extent;
         assert!(x1 - x0 < 10., "the view is the cluster's, not the globe's");
         assert!(y0 > 0.);
 
         // A handful of points is never trimmed.
-        let few = GeoData::detect(&stations(Vec::from([
+        let few = map_of(&stations(Vec::from([
             ["A", "a", "51.7", "5.3"],
             ["B", "b", "-80", "160"],
         ])))
@@ -1191,7 +1161,7 @@ mod tests {
 
     #[test]
     fn a_station_table_becomes_a_map() {
-        let geo = GeoData::detect(&stations(Vec::from([
+        let geo = map_of(&stations(Vec::from([
             ["HT", "'s-Hertogenbosch", "51.69048", "5.29362"],
             ["AC", "Abcoude", "52.27", "4.97"],
         ])))
@@ -1206,7 +1176,7 @@ mod tests {
 
     #[test]
     fn missing_or_out_of_range_coordinates_are_dropped() {
-        let geo = GeoData::detect(&stations(Vec::from([
+        let geo = map_of(&stations(Vec::from([
             ["A", "a", "52.1", "5.1"],
             ["B", "b", "NULL", "5.1"],
             ["C", "c", "52.3", "5.3"],
@@ -1214,16 +1184,6 @@ mod tests {
         .unwrap();
         assert_eq!(geo.point_count(), 2);
         assert_eq!(geo.dropped, 1);
-    }
-
-    #[test]
-    fn projected_coordinates_are_not_a_map() {
-        // Metres in a national grid share the names but not the ranges.
-        let geo = GeoData::detect(&stations(Vec::from([
-            ["A", "a", "455000", "155000"],
-            ["B", "b", "456000", "156000"],
-        ])));
-        assert!(geo.is_none());
     }
 
     #[test]
@@ -1240,7 +1200,7 @@ mod tests {
                 format!("type-{}", ix % 7),
             ]));
         }
-        let geo = GeoData::detect(&result).unwrap();
+        let geo = map_of(&result).unwrap();
         assert_eq!(geo.category_name.as_deref(), Some("type"));
         assert_eq!(geo.categories.len(), MAX_CATEGORIES);
         assert!(geo.folded_other);
@@ -1286,7 +1246,6 @@ mod tests {
             .into_iter()
             .map(|r| r.into_iter().map(String::from).collect())
             .collect(),
-            elapsed_ms: 0,
             truncated: false,
             graph: None,
         }
@@ -1363,7 +1322,7 @@ mod tests {
 
     #[test]
     fn an_unsized_map_keeps_its_dots_and_still_shows_numbers() {
-        let geo = GeoData::detect(&traffic()).unwrap();
+        let geo = map_of(&traffic()).unwrap();
         assert!(geo.points.iter().all(|p| p.diameter == DOT_SIZE));
         assert_eq!(geo.size_name, None);
         assert_eq!(geo.measures, ["requests", "ips"]);

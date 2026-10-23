@@ -860,7 +860,6 @@ mod tests {
     fn column(name: &str, kind: ColumnKind) -> ColumnMeta {
         ColumnMeta {
             name: name.into(),
-            duck_type: format!("{kind:?}"),
             kind,
         }
     }
@@ -872,7 +871,6 @@ mod tests {
                 .into_iter()
                 .map(|row| row.into_iter().map(String::from).collect())
                 .collect(),
-            elapsed_ms: 0,
             truncated: false,
             graph: None,
         }
@@ -1179,7 +1177,6 @@ mod tests {
             .iter()
             .map(|r| r.iter().map(|c| c.to_string()).collect())
             .collect(),
-            elapsed_ms: 0,
             truncated: false,
             graph: None,
         }
@@ -1209,7 +1206,6 @@ mod tests {
         let result = Ok(QueryResult {
             columns: vec![column("name", ColumnKind::Text)],
             rows: vec![vec!["x".into()]],
-            elapsed_ms: 0,
             truncated: false,
             graph: None,
         });
@@ -1237,7 +1233,6 @@ mod tests {
                 column("y", ColumnKind::Numeric),
             ],
             rows,
-            elapsed_ms: 0,
             truncated: false,
             graph: None,
         });

@@ -230,7 +230,7 @@ pub struct Dashboard {
 /// What a dashboard asks of the workspace around it.
 pub enum DashboardEvent {
     /// Open this SQL in a new query tab, under this title.
-    OpenSql { sql: String, title: String },
+    OpenSql { sql: String },
 }
 
 impl EventEmitter<DashboardEvent> for Dashboard {}
@@ -332,12 +332,6 @@ impl Dashboard {
 
     pub fn is_showing_source(&self) -> bool {
         self.showing_source
-    }
-
-    /// The source editor, once the source view has been opened — for the
-    /// workspace to focus when its tab comes forward.
-    pub fn source_editor(&self) -> Option<Entity<EditorState>> {
-        self.source_editor.clone()
     }
 
     /// The buffer holds edits the file does not: the editor differs from the
@@ -1328,7 +1322,6 @@ impl Dashboard {
         let styles = super::highlight::sql_styles(&sql, &*cx.theme().highlight_theme);
         let copied = sql.clone();
         let opened = sql.clone();
-        let tab_title = title.clone();
         // Headed as the plot's face is, so flipping to the SQL does not move
         // the title.
         v_flex()
@@ -1364,10 +1357,7 @@ impl Dashboard {
                             .ghost()
                             .label(tr("dashboard.sql.open"))
                             .on_click(cx.listener(move |_, _, _, cx| {
-                                cx.emit(DashboardEvent::OpenSql {
-                                    sql: opened.clone(),
-                                    title: tab_title.clone(),
-                                })
+                                cx.emit(DashboardEvent::OpenSql { sql: opened.clone() })
                             })),
                     ),
             )
@@ -3217,14 +3207,12 @@ mod tests {
     use crate::query::{ColumnKind, ColumnMeta, QueryResult};
     use gpui_kit::component::table::ColumnSort;
     use std::collections::HashMap;
-    use std::path::Path;
     use std::sync::Arc;
 
     #[test]
     fn a_table_sorts_numbers_as_numbers_and_nulls_last() {
         let column = |name: &str, kind| ColumnMeta {
             name: name.into(),
-            duck_type: String::new(),
             kind,
         };
         let result = QueryResult {
@@ -3236,7 +3224,6 @@ mod tests {
                 .iter()
                 .map(|row| row.iter().map(|cell| cell.to_string()).collect())
                 .collect(),
-            elapsed_ms: 0,
             truncated: false,
             graph: None,
         };
@@ -3254,7 +3241,6 @@ mod tests {
     fn a_tables_copies_follow_the_shown_order() {
         let column = |name: &str| ColumnMeta {
             name: name.into(),
-            duck_type: String::new(),
             kind: ColumnKind::Text,
         };
         let result = QueryResult {
@@ -3263,7 +3249,6 @@ mod tests {
                 .iter()
                 .map(|row| row.iter().map(|cell| cell.to_string()).collect())
                 .collect(),
-            elapsed_ms: 0,
             truncated: false,
             graph: None,
         };

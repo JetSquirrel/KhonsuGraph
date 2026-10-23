@@ -48,6 +48,7 @@ gpui_kit::actions!(
         NewGraph,
         AddSource,
         OpenLogs,
+        ToggleBaseMap,
         Quit
     ]
 );
@@ -93,6 +94,11 @@ pub fn init(cx: &mut App) {
     cx.on_action(|_: &ZoomOut, cx| scale::set(scale::current().smaller(), cx));
     cx.on_action(|_: &ZoomReset, cx| scale::set(scale::UiSize::Default, cx));
     cx.on_action(|_: &Quit, cx| cx.quit());
+    cx.on_action(|_: &ToggleBaseMap, cx| {
+        tiles::toggle(cx);
+        // The item's check mark is part of the menu, built once.
+        set_menus(cx);
+    });
     cx.on_action(|_: &OpenLogs, cx| {
         if let Some(dir) = crate::crash::logs_dir() {
             std::fs::create_dir_all(&dir).ok();
@@ -106,6 +112,7 @@ pub fn init(cx: &mut App) {
 pub fn set_menus(cx: &mut App) {
     use gpui_kit::component::input;
     use gpui_kit::{Menu, MenuItem};
+    let base_map = tiles::enabled(cx);
     let menu = |name: &'static str, items: Vec<MenuItem>| Menu {
         name: tr(name).into(),
         items,
@@ -163,6 +170,8 @@ pub fn set_menus(cx: &mut App) {
                 MenuItem::action(tr("menu.zoom_in"), ZoomIn),
                 MenuItem::action(tr("menu.zoom_out"), ZoomOut),
                 MenuItem::action(tr("menu.zoom_reset"), ZoomReset),
+                MenuItem::Separator,
+                MenuItem::action(tr("menu.base_map"), ToggleBaseMap).checked(base_map),
             ],
         ),
     ]);

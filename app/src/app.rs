@@ -2,7 +2,9 @@
 //! status bar. Owns the shared `AppState`.
 
 use gpui_kit::component::resizable::{h_resizable, resizable_panel};
-use gpui_kit::component::{v_flex, ActiveTheme};
+use gpui_kit::component::button::Button;
+use gpui_kit::component::notification::Notification;
+use gpui_kit::component::{v_flex, ActiveTheme, Sizable, WindowExt};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use khonsu_core::settings::Settings;
@@ -11,6 +13,7 @@ use khonsu_dash::remote::Message;
 use serde_json::json;
 use std::path::PathBuf;
 
+use crate::i18n::{tr, trf};
 use crate::state::{self, AppState};
 use crate::ui::sidebar::Sidebar;
 use crate::ui::status_bar::StatusBarView;
@@ -40,6 +43,32 @@ impl KhonsuApp {
         let status_bar = cx.new(|cx| StatusBarView::new(state.clone(), cx));
         cx.subscribe(&state, |_, _, _: &state::SidebarToggled, cx| cx.notify()).detach();
         cx.subscribe(&state, |_, _, _: &state::GraphChanged, cx| cx.notify()).detach();
+
+        // The last run crashed: say so once, with the report it left.
+        if let Some(report) = crate::crash::take_pending() {
+            cx.spawn_in(window, async move |_, cx| {
+                cx.update(|window, cx| {
+                    let path = report.path.clone();
+                    window.push_notification(
+                        Notification::error(trf("crash.notice", &[&report.summary]))
+                            .title(tr("crash.title"))
+                            .action(move |_, _, cx| {
+                                let path = path.clone();
+                                Button::new("show-crash-report")
+                                    .small()
+                                    .label(tr("crash.show_report"))
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        cx.reveal_path(&path);
+                                        this.dismiss(window, cx);
+                                    }))
+                            }),
+                        cx,
+                    );
+                })
+                .ok();
+            })
+            .detach();
+        }
 
         // Back to the graph that was open when the app last closed.
         if let Some(path) = Settings::load().last_opened.filter(|p| p.exists()) {
