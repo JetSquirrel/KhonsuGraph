@@ -44,16 +44,6 @@ impl Language {
 
 static CURRENT: RwLock<Language> = RwLock::new(Language::Zh);
 
-/// What joins the parts of a list in running text: `, ` in English, the
-/// full-width `，` in Chinese. The interface writes lists as text, never
-/// with a middle dot.
-pub fn sep() -> &'static str {
-    match current() {
-        Language::Zh => "，",
-        Language::En => ", ",
-    }
-}
-
 /// `a` and `b` as one line. In English a part that is its own sentence
 /// ("Click to filter …") follows a full stop, not a comma.
 pub fn join(a: &str, b: &str) -> String {
@@ -146,12 +136,6 @@ pub fn trf(key: &'static str, args: &[&str]) -> String {
     format_template(tr(key), args)
 }
 
-/// [`trf`] in a given language rather than the UI's: the CLI speaks English
-/// whatever the window does.
-pub fn trf_in(lang: Language, key: &'static str, args: &[&str]) -> String {
-    format_template(translate(lang, key), args)
-}
-
 fn format_template(template: &str, args: &[&str]) -> String {
     let mut out = String::with_capacity(template.len());
     let mut rest = template;
@@ -229,6 +213,10 @@ static STRINGS: &[(&str, &str, &str)] = &[
     ("menu.zoom_in", "放大界面", "Zoom In"),
     ("menu.zoom_out", "缩小界面", "Zoom Out"),
     ("menu.zoom_reset", "实际大小", "Actual Size"),
+    ("menu.base_map", "在线底图（OpenStreetMap）", "Online base map (OpenStreetMap)"),
+    ("crash.title", "KhonsuGraph 上次意外退出", "KhonsuGraph quit unexpectedly last time"),
+    ("crash.notice", "原因：{}。报告已保存在日志文件夹中，反馈问题时可以附上。", "Cause: {}. A report was saved in the logs folder; attach it when you report the problem."),
+    ("crash.show_report", "显示报告", "Show report"),
 
     // ── opening graphs ──────────────────────────────────────────────────
     ("notify.open.failed_title", "无法打开图", "Couldn't open the graph"),

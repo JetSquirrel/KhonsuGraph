@@ -20,8 +20,6 @@ pub enum ColumnKind {
 #[derive(Clone, Debug)]
 pub struct ColumnMeta {
     pub name: String,
-    /// The type as `khonsu check` reports it (`number`, `text`, `node`, ...).
-    pub duck_type: String,
     pub kind: ColumnKind,
 }
 
@@ -29,7 +27,6 @@ pub struct ColumnMeta {
 pub struct QueryResult {
     pub columns: Vec<ColumnMeta>,
     pub rows: Vec<Vec<String>>,
-    pub elapsed_ms: u128,
     pub truncated: bool,
     /// The nodes and relationships the result holds, for `graph` plots.
     pub graph: Option<khonsu_core::GraphData>,
@@ -41,9 +38,6 @@ pub enum QueryOutcome {
 }
 
 impl QueryResult {
-    pub fn row_count(&self) -> usize {
-        self.rows.len()
-    }
 }
 
 /// `2026-10-15`, `2026-10-15T08:30:00Z`, `2026-10-15 08:30`.
@@ -93,7 +87,6 @@ impl From<&khonsu_core::QueryResult> for QueryResult {
                 let values: Vec<&Json> = result.rows.iter().filter_map(|r| r.get(ix)).collect();
                 ColumnMeta {
                     name: name.clone(),
-                    duck_type: khonsu_dash::check::column_type(values.iter().map(|v| (*v).clone())).to_string(),
                     kind: kind_of(&values),
                 }
             })
@@ -101,7 +94,6 @@ impl From<&khonsu_core::QueryResult> for QueryResult {
         Self {
             columns,
             rows: result.rows.iter().map(|row| row.iter().map(cell).collect()).collect(),
-            elapsed_ms: result.elapsed_ms as u128,
             truncated: result.truncated,
             graph: result.graph.clone(),
         }

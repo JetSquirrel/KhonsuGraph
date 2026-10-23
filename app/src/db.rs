@@ -95,12 +95,3 @@ pub fn nodes_by_id(ids: &[i64]) -> Result<GraphData, QueryError> {
     with_graph(|g| g.nodes_by_id(ids))
 }
 
-/// `~/x` as the home directory's `x`; anything else as written.
-pub fn expand_tilde(path: &str) -> String {
-    match path.strip_prefix("~/").or_else(|| path.strip_prefix("~\\")) {
-        Some(rest) => directories::UserDirs::new()
-            .map(|dirs| dirs.home_dir().join(rest).display().to_string())
-            .unwrap_or_else(|| path.to_string()),
-        None => path.to_string(),
-    }
-}

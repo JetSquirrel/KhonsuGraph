@@ -252,7 +252,7 @@ impl Workspace {
         let title = crate::spec::tabs::title_for(&path);
         let host = cx.new(|cx| Dashboard::new(id, path.clone(), cx));
         let events = cx.subscribe_in(&host, window, |this, _, event, window, cx| match event {
-            DashboardEvent::OpenSql { sql, title: _ } => {
+            DashboardEvent::OpenSql { sql } => {
                 // A dashboard query opened for editing: Cypher unless it
                 // reads like SQL.
                 let language = if sql.trim_start().to_ascii_uppercase().starts_with("SELECT") {
