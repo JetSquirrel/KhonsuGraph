@@ -6,6 +6,7 @@ Every command prints exactly one JSON object on stdout (`--pretty` indents it). 
 
 ```bash
 khonsu init DIR                                   # a new, empty graph
+khonsu rebuild --db DIR [--quiet]                 # an old-format graph (kind old_format), again from its data sources
 khonsu schema --db DIR                            # labels, types, properties, tables
 khonsu query  --db DIR --cypher "MATCH (n:Host) RETURN n LIMIT 20"
 khonsu query  --db DIR --sql "SELECT * FROM assets LIMIT 20"

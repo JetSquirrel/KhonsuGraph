@@ -84,6 +84,16 @@ enum Command {
     },
     /// Create a new, empty graph directory.
     Init { path: PathBuf },
+    /// Make a graph written by an older HawDB (kind `old_format`) again from
+    /// its data sources. The old directory is kept beside it as
+    /// `<name>.hawdb-old`; anything written by hand is not carried over.
+    Rebuild {
+        #[command(flatten)]
+        db: DbArg,
+        /// No progress lines on stderr.
+        #[arg(long, short = 'q')]
+        quiet: bool,
+    },
     /// Data-source plugins.
     Plugin {
         #[command(subcommand)]
@@ -187,6 +197,7 @@ impl From<OpenError> for CliError {
             OpenError::Locked(_) => "locked",
             OpenError::NotAGraph(_) | OpenError::Missing(_) => "not_a_graph",
             OpenError::NotEmpty(_) => "not_empty",
+            OpenError::OldFormat(_) => "old_format",
             _ => "open",
         };
         let detail = match &err {
@@ -312,6 +323,29 @@ fn execute(command: Command) -> Result<Value, CliError> {
         Command::Init { path } => {
             let graph = Graph::create(&path, PROGRAM)?;
             Ok(json!({ "created": graph.path() }))
+        }
+        Command::Rebuild { db, quiet } => {
+            let path = resolve_db(&db)?;
+            let cancel = AtomicBool::new(false);
+            let report = khonsu_core::rebuild::rebuild(&path, PROGRAM, &cancel, |source, event| {
+                if quiet {
+                    return;
+                }
+                if let Ok(mut line) = serde_json::to_value(&event) {
+                    line["source"] = json!(source.id);
+                    eprintln!("{line}");
+                }
+            })
+            .map_err(|e| {
+                let kind = match &e {
+                    khonsu_core::rebuild::RebuildError::NotOld(_) => "not_old",
+                    khonsu_core::rebuild::RebuildError::NoSources(_) => "no_sources",
+                    khonsu_core::rebuild::RebuildError::Backup { .. } => "io",
+                    khonsu_core::rebuild::RebuildError::Open(_) => "open",
+                };
+                CliError::new(kind, e.to_string())
+            })?;
+            Ok(serde_json::to_value(report).expect("report serializes"))
         }
         Command::Plugin { command } => run_plugin(command),
         Command::Source { command } => run_source(command),

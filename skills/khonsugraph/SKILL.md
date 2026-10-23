@@ -35,6 +35,8 @@ Use the real `khonsu` executable, never GUI automation or a replacement script. 
 
 HawDB leases a graph directory to one process. While the KhonsuGraph window has a graph open, `khonsu query` (reads only) and `khonsu check` on that graph go **through the window** — the output carries `"via_window": true` — so you can keep working while the person looks at it. Writes (`--write`) and syncs need the graph free: an error of kind `locked` names the program and pid holding it; ask the person to close the graph rather than deleting lock files.
 
+A graph written by an older HawDB (0.8–0.11) fails to open with kind `old_format`: HawDB 0.12 cannot read that format and has no migration. `khonsu rebuild --db DIR` makes it again from its data sources — the old directory is kept beside it as `DIR.hawdb-old`, and anything written by hand rather than synced is not carried over, so say so to the person before running it.
+
 ## Data sources
 
 Data comes in through plugins, never by writing nodes one by one: `khonsu plugin list`, `khonsu source add --db DIR --plugin csv --name NAME -c key=value ... --test`, then `khonsu plugin sync --source ID` (`--dry-run` counts and samples without writing). The CSV plugin maps a node table (`node_file`, `node_label` or `label_column`, `node_id_column`) and an edge table (`edge_file`, `edge_type` or `type_column`, `edge_source_column`, `edge_target_column`); one row is one node or one relationship. Re-syncing is idempotent: records are merged by stable ID and rows removed from the source disappear. A third-party plugin needs the person's approval of its declared permissions (`khonsu plugin install DIR --yes` only when they said so). Secrets go to the system keychain; never put them in commands you echo, files, or history.

@@ -65,6 +65,10 @@ pub enum OpenError {
     NotEmpty(PathBuf),
     #[error("{0} does not exist")]
     Missing(PathBuf),
+    /// Written by HawDB 0.8–0.11, whose format 0.12 rejects and does not
+    /// migrate; `rebuild` makes it again from its data sources.
+    #[error("{} was written by an older HawDB (0.8–0.11), which HawDB {} cannot read. Rebuild it from its data sources with `khonsu rebuild --db {}`; the old files are kept beside it", .0.display(), crate::HAWDB_VERSION, .0.display())]
+    OldFormat(PathBuf),
     #[error("cannot open graph: {message}")]
     Engine { message: String, hint: Option<String> },
     #[error("{0}")]
@@ -178,6 +182,13 @@ pub fn is_graph_dir(path: &Path) -> bool {
     path.join(HAWDB_MANIFEST).is_file()
 }
 
+/// Whether the graph at `path` is in the project format HawDB 0.8–0.11
+/// wrote, which 0.12 rejects ("unknown or incomplete project identity
+/// header") with no migration: HawDB keeps no compatibility for it.
+pub fn is_old_format(path: &Path) -> bool {
+    std::fs::read(path.join(HAWDB_MANIFEST)).is_ok_and(|bytes| bytes.starts_with(b"HAWDB_BRANCH_PROJECT_V1\n"))
+}
+
 impl Graph {
     /// Opens an existing graph. `program` names this process in lock messages.
     pub fn open(path: impl AsRef<Path>, mode: AccessMode, program: &str) -> Result<Self, OpenError> {
@@ -187,6 +198,9 @@ impl Graph {
         }
         if !is_graph_dir(path) {
             return Err(OpenError::NotAGraph(path.to_path_buf()));
+        }
+        if is_old_format(path) {
+            return Err(OpenError::OldFormat(normalize_path(path)));
         }
         Self::open_inner(path, mode, program)
     }
