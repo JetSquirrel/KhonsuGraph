@@ -6,6 +6,7 @@ pub mod engine;
 pub mod lock;
 pub mod merge;
 pub mod plugin;
+pub mod rebuild;
 pub mod result;
 pub mod schema;
 pub mod secrets;

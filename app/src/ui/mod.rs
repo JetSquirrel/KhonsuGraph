@@ -214,6 +214,9 @@ pub fn open_graph_at(
                         state.update(cx, |state, cx| state.set_graph(Some(info), cx));
                         reload_schema(state, window, cx);
                     }
+                    // Written by an older HawDB: offer to make it again
+                        // rather than show the engine's integrity error.
+                        Err(OpenError::OldFormat(path)) => crate::ui::sources::offer_rebuild(state, path, window, cx),
                     Err(err) => {
                         let title = match err {
                             OpenError::Locked(_) => tr("notify.open.locked_title"),

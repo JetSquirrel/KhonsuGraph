@@ -922,3 +922,69 @@ impl Render for SourceForm {
             })
     }
 }
+
+/// A graph an older HawDB wrote cannot be opened: offer to make it again
+/// from its data sources (see `khonsu_core::rebuild`), then open it.
+pub fn offer_rebuild(state: Entity<AppState>, path: std::path::PathBuf, window: &mut Window, cx: &mut App) {
+    let sources = khonsu_core::rebuild::sources_of(&path);
+    window.open_dialog(cx, move |dialog, _, cx| {
+        let (state, path) = (state.clone(), path.clone());
+        let names: Vec<String> = sources.iter().map(|s| s.name.clone()).collect();
+        let body = if names.is_empty() {
+            trf("rebuild.no_sources", &[&path.display().to_string()])
+        } else {
+            trf("rebuild.body", &[&path.display().to_string(), &names.join(", ")])
+        };
+        let can_rebuild = !names.is_empty();
+        dialog
+            .title(tr("rebuild.title"))
+            .w(crate::ui::scale::design(480.))
+            .child(div().text_sm().text_color(cx.theme().muted_foreground).whitespace_normal().child(body))
+            .footer(
+                DialogFooter::new()
+                    .gap_2()
+                    .child(Button::new("cancel").outline().label(tr("common.cancel")).on_click(|_, window, cx| window.close_dialog(cx)))
+                    .when(can_rebuild, |footer| {
+                        footer.child(Button::new("rebuild").primary().label(tr("rebuild.action")).on_click(move |_, window, cx| {
+                            window.close_dialog(cx);
+                            run_rebuild(state.clone(), path.clone(), window, cx);
+                        }))
+                    }),
+            )
+    });
+}
+
+fn run_rebuild(state: Entity<AppState>, path: std::path::PathBuf, window: &mut Window, cx: &mut App) {
+    window.push_notification(trf("rebuild.running", &[&path.display().to_string()]), cx);
+    window
+        .spawn(cx, async move |cx| {
+            let target = path.clone();
+            let result = smol::unblock(move || {
+                let cancel = AtomicBool::new(false);
+                khonsu_core::rebuild::rebuild(&target, crate::db::PROGRAM, &cancel, |_, _| {})
+            })
+            .await;
+            cx.update(move |window, cx| match result {
+                Ok(report) => {
+                    let nodes: u64 = report.synced.iter().map(|r| r.merge.nodes_written).sum();
+                    let edges: u64 = report.synced.iter().map(|r| r.merge.edges_written).sum();
+                    let mut text = trf(
+                        "rebuild.done",
+                        &[&nodes.to_string(), &edges.to_string(), &report.backup.display().to_string()],
+                    );
+                    if report.failed.is_empty() {
+                        window.push_notification(Notification::success(text), cx);
+                    } else {
+                        for failed in &report.failed {
+                            text.push_str(&format!("\n{}: {}", failed.source, failed.error));
+                        }
+                        window.push_notification(Notification::warning(text), cx);
+                    }
+                    crate::ui::open_graph_at(state, path, false, false, window, cx);
+                }
+                Err(e) => window.push_notification(Notification::error(e.to_string()).title(tr("rebuild.failed")), cx),
+            })
+            .ok();
+        })
+        .detach();
+}
