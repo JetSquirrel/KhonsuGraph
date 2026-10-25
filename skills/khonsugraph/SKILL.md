@@ -16,7 +16,7 @@ Use the real `khonsu` executable, never GUI automation or a replacement script. 
 5. Write one statement using observed names, within HawDB's Cypher (below). Read [the CLI reference](references/cli.md) for options and output.
 6. Parse the JSON: `columns`, `rows`, `row_count`, `truncated`, and `graph` (`nodes`, `edges`) when the result holds nodes or relationships. `truncated: true` means `rows` is a prefix; say so. Answer from returned values and name the graph and query.
 
-## HawDB's Cypher (0.12.0) — what works
+## HawDB's Cypher (0.15.0) — what works
 
 - `MATCH`, `OPTIONAL MATCH`, `WHERE` (comparisons, `IN [...]`, `STARTS WITH`, `IS NULL`), `RETURN [DISTINCT]`, `ORDER BY`, `SKIP`, `LIMIT`, `WITH`, `UNWIND`, `CREATE`, `MERGE`, `SET`, `DELETE`, `DETACH DELETE`; parameters `$name` (`-p name=value`). `UNWIND` requires a following write clause; it is not a standalone read pipeline.
 - Return whole nodes and relationships (`RETURN a, r, b`) to get them under `graph`; nodes come back as `{_id, labels, ...properties}`, relationships as `{_id, type, source_id, target_id, ...properties}`.
@@ -35,7 +35,7 @@ Use the real `khonsu` executable, never GUI automation or a replacement script. 
 
 HawDB leases a graph directory to one process. While the KhonsuGraph window has a graph open, `khonsu query` (reads only) and `khonsu check` on that graph go **through the window** — the output carries `"via_window": true` — so you can keep working while the person looks at it. Writes (`--write`) and syncs need the graph free: an error of kind `locked` names the program and pid holding it; ask the person to close the graph rather than deleting lock files.
 
-A graph written by an older HawDB (0.8–0.11) fails to open with kind `old_format`: HawDB 0.12 cannot read that format and has no migration. `khonsu rebuild --db DIR` makes it again from its data sources — the old directory is kept beside it as `DIR.hawdb-old`, and anything written by hand rather than synced is not carried over, so say so to the person before running it.
+A graph written by an older HawDB (0.8–0.11) fails to open with kind `old_format`: HawDB 0.12 and later cannot read that format and has no migration. `khonsu rebuild --db DIR` makes it again from its data sources — the old directory is kept beside it as `DIR.hawdb-old`, and anything written by hand rather than synced is not carried over, so say so to the person before running it.
 
 ## Data sources
 
