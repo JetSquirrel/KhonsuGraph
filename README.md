@@ -51,10 +51,10 @@ Claude Code.
 Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds the
 packages and publishes a GitHub release.
 
-## HawDB 0.12.0 notes
+## HawDB 0.15.0 notes
 
-KhonsuGraph pins HawDB to 0.12.0. See [upgrade validation](docs/hawdb-0.12-upgrade.md)
-for compatibility checks and their scope, and the [0.11 validation](docs/hawdb-0.11-upgrade.md)
+KhonsuGraph pins HawDB to 0.15.0. See [upgrade validation](docs/hawdb-0.15-upgrade.md)
+for compatibility checks and their scope, and the [0.12](docs/hawdb-0.12-upgrade.md) and [0.11 validation](docs/hawdb-0.11-upgrade.md)
 for earlier database compatibility checks.
 
 - One process per graph directory, readers included. While the app has a
@@ -70,7 +70,7 @@ for earlier database compatibility checks.
 - Vector values returned by SQL and Cypher are exposed as JSON number arrays,
   including vector properties inside graph elements.
 - The earlier import measurement (35k relationships in about 13 minutes)
-  was made on 0.8; it is not a performance estimate for 0.12.0.
+  was made on 0.8; it is not a performance estimate for 0.15.0.
 
 ## License
 
