@@ -248,6 +248,7 @@ pub fn check_source(path: &str, source: &str, graph: &mut Graph, summary: bool) 
             });
             if let Some(result) = results.get(&q.name) {
                 entry["rows"] = json!(result.row_count);
+                entry["elapsed_ms"] = json!(result.elapsed_ms);
                 entry["columns"] = json!(columns[&q.name].iter().map(|(name, ty)| json!({"name": name, "type": ty})).collect::<Vec<_>>());
                 if let Some(graph) = &result.graph {
                     entry["graph"] = json!({"nodes": graph.nodes.len(), "relationships": graph.edges.len()});

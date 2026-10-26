@@ -90,7 +90,7 @@ filter "service" {
 - There is no `source` block: dashboards read the open graph; bring files in with a data source.
 - No functions, conditionals or data-dependent styling exist; say so instead of faking it.
 
-Always validate: `khonsu check FILE --db DIR` runs every query read-only, types columns from their values (`number`, `text`, `node`, `relationship`, …), checks every plot's columns, and tries each filter with a value really picked. A spec mistake is exit 2 (kind `spec`, `file:line: message` per mistake, all at once); a query the graph refuses is exit 1 (kind `sql`). Fix all of them. `--summary` prints one line on success.
+Always validate: `khonsu check FILE --db DIR` runs every query read-only, types columns from their values (`number`, `text`, `node`, `relationship`, …), checks every plot's columns, and tries each filter with a value really picked. Each query reports its `rows` and `elapsed_ms`; a query a filter uses reruns on every pick, so tighten one that takes seconds. A spec mistake is exit 2 (kind `spec`, `file:line: message` per mistake, all at once); a query the graph refuses is exit 1 (kind `sql`). Fix all of them. `--summary` prints one line on success.
 
 Show it to the person with `khonsu open FILE` (it opens a dashboard tab in the running window, or starts one; `--no-launch` when a window appearing unasked would be unwelcome). `khonsu open --cypher "…" --run` puts a query in a tab of its own.
 
