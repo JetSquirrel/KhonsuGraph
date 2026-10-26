@@ -451,6 +451,13 @@ fn run_source(command: SourceCommand) -> Result<Value, CliError> {
             test,
         } => {
             let graph = resolve_db(&db)?;
+            // Otherwise the mistake only shows at the first sync.
+            if !graph.exists() {
+                return Err(OpenError::Missing(graph).into());
+            }
+            if !khonsu_core::engine::is_graph_dir(&graph) {
+                return Err(OpenError::NotAGraph(graph).into());
+            }
             let info = plugin::find(&plugin_id)?;
             let describe = plugin::describe(&info)?;
             let values = key_values(&config)?;

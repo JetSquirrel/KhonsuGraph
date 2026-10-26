@@ -216,8 +216,19 @@ impl Graph {
         if path.exists() && fs::read_dir(path)?.next().is_some() {
             return Err(OpenError::NotEmpty(path.to_path_buf()));
         }
+        let existed = path.exists();
         fs::create_dir_all(path)?;
-        Self::open_inner(path, AccessMode::ReadWrite, program)
+        Self::open_inner(path, AccessMode::ReadWrite, program).inspect_err(|_| {
+            // The directory was empty or new, so all of it is ours: leave no
+            // lock file behind, or trying the same path again says "not empty".
+            if existed {
+                for entry in fs::read_dir(path).into_iter().flatten().flatten() {
+                    let _ = if entry.path().is_dir() { fs::remove_dir_all(entry.path()) } else { fs::remove_file(entry.path()) };
+                }
+            } else {
+                let _ = fs::remove_dir_all(path);
+            }
+        })
     }
 
     fn open_inner(path: &Path, mode: AccessMode, program: &str) -> Result<Self, OpenError> {
@@ -291,10 +302,15 @@ impl Graph {
                     .collect()
             })
             .collect();
-        // HawDB sorts Cypher columns by name; give them the RETURN order.
+        // HawDB sorts Cypher columns by name, and names none when no row
+        // matched; give them the RETURN order either way.
         if language == Language::Cypher {
             if let Some(wanted) = crate::cypher_columns::return_columns(text) {
-                crate::cypher_columns::reorder(&mut columns, &mut rows, &wanted);
+                if columns.is_empty() && rows.is_empty() && !wanted.iter().any(|c| c == "*") {
+                    columns = wanted;
+                } else {
+                    crate::cypher_columns::reorder(&mut columns, &mut rows, &wanted);
+                }
             }
         }
         Ok(QueryResult {

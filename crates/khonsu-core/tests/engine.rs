@@ -41,6 +41,9 @@ fn cypher_columns_keep_the_return_order() {
     let result = run(&mut graph, Language::Cypher, "MATCH (s:Service) RETURN s.name AS service, s.cpu, count(s) AS n");
     assert_eq!(result.columns, ["service", "s.cpu", "n"]);
     assert_eq!(result.rows, vec![vec![json!("cart"), json!("200m"), json!(1)]]);
+
+    let none = run(&mut graph, Language::Cypher, "MATCH (s:Service {name: 'gone'}) RETURN s.name AS service, s.cpu");
+    assert_eq!((none.columns, none.row_count), (vec!["service".to_string(), "s.cpu".to_string()], 0));
 }
 
 #[test]
