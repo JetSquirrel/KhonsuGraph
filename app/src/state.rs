@@ -102,6 +102,7 @@ impl AppState {
         let _ = stored.save();
         self.recent = stored.recent;
         self.graph = graph;
+        crate::ui::palette::forget_labels();
         self.schema = None;
         self.schema_error = None;
         self.last_query = None;
