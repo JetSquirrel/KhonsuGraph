@@ -107,7 +107,9 @@ pub fn panel(cx: &App) -> Hsla {
 /// Node labels take palette slots in the order they are first seen, so two
 /// labels on one canvas never share a colour until the palette runs out. The
 /// schema registers its labels in sorted order when it loads, which keeps a
-/// label's colour the same in the sidebar and on the canvas.
+/// label's colour the same in the sidebar and on the canvas. Opening another
+/// graph starts over, so a graph's colours do not depend on what was open
+/// before it.
 static LABEL_SLOTS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
 
 pub fn register_labels<'a>(labels: impl IntoIterator<Item = &'a str>) {
@@ -116,6 +118,11 @@ pub fn register_labels<'a>(labels: impl IntoIterator<Item = &'a str>) {
     for label in sorted {
         label_slot(label);
     }
+}
+
+/// Frees every label's slot; the next graph's schema takes them afresh.
+pub fn forget_labels() {
+    LABEL_SLOTS.lock().unwrap_or_else(|e| e.into_inner()).clear();
 }
 
 fn label_slot(label: &str) -> usize {
