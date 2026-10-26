@@ -306,7 +306,14 @@ fn execute(command: Command) -> Result<Value, CliError> {
                 }
                 Err(e) => return Err(e.into()),
             };
-            let result = graph.run(language, &text, &key_values(&params)?, QueryOptions { max_rows })?;
+            let result = graph.run(language, &text, &key_values(&params)?, QueryOptions { max_rows }).map_err(|e| {
+                let read_only = e.kind == "read_only";
+                let mut err = CliError::from(e);
+                if read_only {
+                    err.message.push_str("; pass --write to change it");
+                }
+                err
+            })?;
             Ok(serde_json::to_value(result).expect("result serializes"))
         }
         Command::Explain { db, text } => {
