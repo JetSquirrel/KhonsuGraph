@@ -1,7 +1,8 @@
 //! `khonsu`: windowless access to KhonsuGraph graphs for agents and scripts.
 //!
 //! Every command prints one JSON document on stdout. Failures print
-//! `{"error": {...}}` and exit non-zero. Graphs open read-only unless a
+//! `{"error": {...}}` and exit non-zero; so does a rebuild that left a
+//! source out, after its report (`failed`). Graphs open read-only unless a
 //! command needs to write and `--write` is given.
 //!
 //! There is no separate executable: the app runs [`run`] when it is called
@@ -87,6 +88,8 @@ enum Command {
     /// Make a graph written by an older HawDB (kind `old_format`) again from
     /// its data sources. The old directory is kept beside it as
     /// `<name>.hawdb-old`; anything written by hand is not carried over.
+    /// Exits 1 when a source failed (`failed` says why); `khonsu plugin sync
+    /// --source ID` fills it in afterwards.
     Rebuild {
         #[command(flatten)]
         db: DbArg,
@@ -551,7 +554,10 @@ where
     match execute(cli.command) {
         Ok(value) => {
             print(&value, cli.pretty);
-            0
+            // A rebuild runs once: a source missing from it must not look
+            // like success to a script.
+            let left_out = value.get("failed").and_then(Value::as_array).is_some_and(|failed| !failed.is_empty());
+            i32::from(left_out)
         }
         Err(err) => {
             let mut error = json!({ "kind": err.kind, "message": err.message });
