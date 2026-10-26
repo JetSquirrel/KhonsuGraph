@@ -647,6 +647,33 @@ fn nice_step(span: f64, pixels: f64) -> f64 {
     step.min(30.)
 }
 
+/// The largest 1, 2 or 5 times a power of ten at most `value`; `value`
+/// itself when it is not positive.
+fn round_down(value: f64) -> f64 {
+    if value <= 0. || !value.is_finite() {
+        return value;
+    }
+    let magnitude = 10f64.powf(value.log10().floor());
+    [5., 2., 1.]
+        .into_iter()
+        .map(|m| m * magnitude)
+        .find(|v| *v <= value * (1. + 1e-9))
+        .unwrap_or(magnitude)
+}
+
+/// The smallest 1, 2 or 5 times a power of ten at least `value`.
+fn round_up(value: f64) -> f64 {
+    if value <= 0. || !value.is_finite() {
+        return value;
+    }
+    let magnitude = 10f64.powf(value.log10().floor());
+    [1., 2., 5., 10.]
+        .into_iter()
+        .map(|m| m * magnitude)
+        .find(|v| *v >= value * (1. - 1e-9))
+        .unwrap_or(10. * magnitude)
+}
+
 /// The multiples of `step` within `[min, max]`.
 fn steps_within(min: f64, max: f64, step: f64) -> impl Iterator<Item = f64> {
     let first = (min / step).ceil() as i64;
@@ -1000,9 +1027,11 @@ impl Plot for GeoPlot {
     }
 }
 
-/// The size key: the largest value's circle and a smaller reference inside
-/// it, bottom-aligned in the plot area's lower-left corner, each labelled —
-/// how a reader turns a circle back into a number.
+/// The size key: a large circle and a smaller reference inside it,
+/// bottom-aligned in the plot area's lower-left corner, each labelled — how a
+/// reader turns a circle back into a number. Both are round values (1, 2 or 5
+/// times a power of ten) within the data's range, read more easily than the
+/// exact maximum.
 fn paint_size_key(
     key: &SizeKey,
     view: &Viewport,
@@ -1012,13 +1041,16 @@ fn paint_size_key(
 ) {
     let theme = cx.theme();
     let (muted, background) = (theme.muted_foreground, theme.background);
+    // Rounded down past every value (all of them close together), the key
+    // would draw a circle no point has: keep the exact maximum then.
+    let large = Some(round_down(key.max)).filter(|v| *v >= key.min).unwrap_or(key.max);
     let small = match key.scale {
-        // A quarter of the largest value draws half its diameter: the pair
-        // shows that area, not width, carries the value.
-        SizeScale::Sqrt => key.max / 4.,
-        SizeScale::Log => key.min,
+        // About a quarter of the large value draws about half its diameter:
+        // the pair shows that area, not width, carries the value.
+        SizeScale::Sqrt => round_down(key.max / 4.),
+        SizeScale::Log => round_up(key.min).min(large),
     };
-    let entries: Vec<(f64, f32)> = [key.max, small]
+    let entries: Vec<(f64, f32)> = [large, small]
         .into_iter()
         .filter(|v| *v > 0. || key.scale == SizeScale::Sqrt)
         .filter_map(|v| key.scale.diameter(v, key.min, key.max).map(|d| (v, d)))
@@ -1067,7 +1099,7 @@ mod tests {
     // Deliberately not `use super::*`: that pulls in `gpui_kit::*`, whose
     // `test` macro shadows the built-in `#[test]`.
     use super::{
-        format_degrees, inverse_mercator_y, is_lat_name, is_lng_name, mercator_y, nice_step,
+        format_degrees, inverse_mercator_y, is_lat_name, is_lng_name, mercator_y, nice_step, round_down, round_up,
         GeoData, MapStyle, SizeScale, DOT_SIZE, MAX_CATEGORIES, MAX_SIZED, MIN_SIZED,
     };
     use crate::query::{ColumnKind, ColumnMeta, QueryResult};
@@ -1270,6 +1302,18 @@ mod tests {
             .find(|p| p.label == label)
             .unwrap()
             .diameter
+    }
+
+    #[test]
+    fn the_size_key_shows_round_values() {
+        assert_eq!(round_down(5938.), 5000.);
+        assert_eq!(round_down(5938. / 4.), 1000.);
+        assert_eq!(round_down(2000.), 2000.);
+        assert_eq!(round_down(0.37), 0.2);
+        assert_eq!(round_up(37.2), 50.);
+        assert_eq!(round_up(100.), 100.);
+        assert_eq!(round_up(0.013), 0.02);
+        assert_eq!(round_down(0.), 0.);
     }
 
     #[test]
