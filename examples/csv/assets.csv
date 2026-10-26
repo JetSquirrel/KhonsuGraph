@@ -1,0 +1,13 @@
+id,kind,name,env,owner,cpu
+lb-1,LoadBalancer,edge-lb,prod,platform,
+web-1,Host,web-1,prod,platform,4
+web-2,Host,web-2,prod,platform,4
+api-1,Host,api-1,prod,payments,8
+db-1,Host,db-primary,prod,data,16
+db-2,Host,db-replica,prod,data,16
+svc-web,Service,storefront,prod,web,
+svc-api,Service,payments-api,prod,payments,
+svc-db,Service,postgres,prod,data,
+svc-cache,Service,redis,prod,platform,
+alert-17,Alert,disk 91% on db-primary,prod,data,
+alert-23,Alert,5xx spike on payments-api,prod,payments,

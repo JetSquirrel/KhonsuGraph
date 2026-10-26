@@ -27,9 +27,8 @@ cargo build --workspace            # app, CLI, CSV and AWS plugins
 cargo test --workspace
 ```
 
-Tests use `scratch/tests`, set in `.cargo/config.toml`,
-to avoid a Windows drive-root flush issue observed with HawDB 0.8. The
-upgrade validation is performed on macOS; Windows still needs verification.
+Tests create their graphs in `scratch/tests` (set in `.cargo/config.toml`),
+not the system temp directory, because of the Windows drive-root limit below.
 
 ## Release builds
 
@@ -59,6 +58,10 @@ for earlier database compatibility checks.
 
 - One process per graph directory, readers included. While the app has a
   graph open, `khonsu query` and `khonsu check` run through the app.
+- On Windows, opening a graph for writing flushes every directory up to the
+  drive root, which needs write access to the root itself. Ordinary users
+  cannot write to `C:\`, so keep graphs on a drive whose root you can write
+  to (for example `D:\graphs`); graphs anywhere can still be opened read-only.
 - `OPTIONAL MATCH`, scalar `IN` expressions and `json_value()` on JSON text
   are supported. Relationship properties can now be updated with `SET`;
   the importer retains its existing delete/recreate strategy.

@@ -1,0 +1,15 @@
+id,source,target,type,port
+l1,lb-1,web-1,ROUTES_TO,443
+l2,lb-1,web-2,ROUTES_TO,443
+l3,web-1,svc-web,RUNS,8080
+l4,web-2,svc-web,RUNS,8080
+l5,api-1,svc-api,RUNS,9000
+l6,db-1,svc-db,RUNS,5432
+l7,db-2,svc-db,RUNS,5432
+l8,svc-web,svc-api,DEPENDS_ON,9000
+l9,svc-api,svc-db,DEPENDS_ON,5432
+l10,svc-api,svc-cache,DEPENDS_ON,6379
+l11,svc-web,svc-cache,DEPENDS_ON,6379
+l12,db-2,db-1,REPLICATES,5432
+l13,alert-17,db-1,FIRED_ON,
+l14,alert-23,svc-api,FIRED_ON,
