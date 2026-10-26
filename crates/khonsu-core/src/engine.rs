@@ -125,6 +125,11 @@ impl From<HawDBError> for QueryError {
             _ => "engine",
         };
         let message = err.to_string();
+        // A write on a read-only database is the same refusal as
+        // `ensure_writable`'s, which names the kind callers act on.
+        if message.contains("opened in read-only mode") {
+            return Self::new("read_only", "the query writes, but the graph is open read-only");
+        }
         let (line, column) = error_position(&message);
         Self {
             kind: kind.into(),

@@ -103,9 +103,10 @@ fn writer_lock_and_read_only_access() {
     drop(writer);
     let mut reader = Graph::open(dir.graph(), AccessMode::ReadOnly, "khonsu-cli").unwrap();
     assert_eq!(run(&mut reader, Language::Cypher, "MATCH (n) RETURN n").row_count, 1);
-    assert!(reader
+    let refused = reader
         .run(Language::Cypher, "CREATE (:Host {name: 'b'})", &Map::new(), QueryOptions::default())
-        .is_err());
+        .unwrap_err();
+    assert_eq!(refused.kind, "read_only", "{refused:?}");
     drop(reader);
     Graph::open(dir.graph(), AccessMode::ReadWrite, "khonsu-cli").unwrap();
 }

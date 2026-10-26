@@ -69,8 +69,9 @@ for earlier database compatibility checks.
   The result display limit is separate and does not lower execution cost.
 - Vector values returned by SQL and Cypher are exposed as JSON number arrays,
   including vector properties inside graph elements.
-- The earlier import measurement (35k relationships in about 13 minutes)
-  was made on 0.8; it is not a performance estimate for 0.15.0.
+- A full CSV import of the audit story (5,881 nodes, 35,592 relationships)
+  took 47 seconds on 0.15.0 with debug builds on Windows 11; the same import
+  took about 13 minutes on 0.8.
 
 ## License
 

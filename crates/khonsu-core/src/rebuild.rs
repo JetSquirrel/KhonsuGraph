@@ -41,6 +41,10 @@ pub enum RebuildError {
     NotOld(PathBuf),
     #[error("{} has no data sources to rebuild from (see `khonsu source list`)", .0.display())]
     NoSources(PathBuf),
+    /// Checked before anything moves: a graph is rebuilt once, so a source
+    /// that cannot sync would leave its data out for good.
+    #[error("plugin {} is not available (see `khonsu plugin list`); {} is rebuilt only once, so its sources need their plugins first", .plugins.join(", "), .graph.display())]
+    MissingPlugins { graph: PathBuf, plugins: Vec<String> },
     #[error("cannot move the old graph aside to {}: {error}", .backup.display())]
     Backup { backup: PathBuf, error: std::io::Error },
     #[error(transparent)]
@@ -54,6 +58,18 @@ pub fn sources_of(path: &Path) -> Vec<Source> {
         .into_iter()
         .filter(|s| normalize_path(&s.graph) == path)
         .collect()
+}
+
+/// The plugins `sources` use that are not installed, each named once.
+pub fn missing_plugins(sources: &[Source]) -> Vec<String> {
+    let installed: Vec<String> = plugin::list().iter().map(|p| p.id().to_string()).collect();
+    let mut missing: Vec<String> = Vec::new();
+    for source in sources {
+        if !installed.contains(&source.plugin) && !missing.contains(&source.plugin) {
+            missing.push(source.plugin.clone());
+        }
+    }
+    missing
 }
 
 /// `graph` beside itself as `<name>.hawdb-old`, numbered if that is taken.
@@ -83,6 +99,10 @@ pub fn rebuild(
     let sources = sources_of(&graph_path);
     if sources.is_empty() {
         return Err(RebuildError::NoSources(graph_path));
+    }
+    let plugins = missing_plugins(&sources);
+    if !plugins.is_empty() {
+        return Err(RebuildError::MissingPlugins { graph: graph_path, plugins });
     }
     let backup = backup_path(&graph_path);
     std::fs::rename(&graph_path, &backup).map_err(|error| RebuildError::Backup { backup: backup.clone(), error })?;
@@ -123,6 +143,24 @@ mod tests {
         assert_eq!(backup_path(&graph), dir.path().join("graph.hawdb-old"));
         std::fs::create_dir(dir.path().join("graph.hawdb-old")).unwrap();
         assert_eq!(backup_path(&graph), dir.path().join("graph.hawdb-old-2"));
+    }
+
+    #[test]
+    fn a_missing_plugin_is_named_once() {
+        let source = |id: &str, plugin: &str| Source {
+            id: id.into(),
+            name: id.into(),
+            plugin: plugin.into(),
+            graph: PathBuf::from("graph"),
+            config: Default::default(),
+            secret_keys: Vec::new(),
+            cursor: None,
+            patterns: Vec::new(),
+            last_sync: None,
+        };
+        let sources = [source("a", "no-such-plugin"), source("b", "no-such-plugin")];
+        assert_eq!(missing_plugins(&sources), ["no-such-plugin"]);
+        assert!(missing_plugins(&[]).is_empty());
     }
 
     #[test]
