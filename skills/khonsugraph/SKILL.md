@@ -23,7 +23,7 @@ Use the real `khonsu` executable, never GUI automation or a replacement script. 
 - `id(n)` and `type(r)` work. Aggregates: `count`, `collect`, `min`, `max`, `avg` — **there is no `sum()`**: use `avg(x) * count(x)` only when a number is enough, or SQL over a table.
 - No `labels()`, `keys()`, `properties()`, `shortestPath`, path variables (`p = …`), `CALL db.*`, or `SHOW`; the schema command replaces them.
 - Variable-length patterns need a relationship type and no variable (`(a)-[:CALLS*1..4]->(b)`, not `-[r:CALLS*1..4]->`); an untyped relationship pattern works only for one hop. Return the endpoints, then fetch the hops with one-hop queries when you need them.
-- Result columns come back in alphabetical order; read them by name.
+- Result columns come back in RETURN order (KhonsuGraph restores it; HawDB itself sorts them by name). Still read them by name.
 - Vector values are returned as JSON number arrays, including vector properties in nodes.
 - A boolean literal (`WHERE true`) is not a predicate; write a real comparison.
 - `CREATE` takes one pattern per statement: `CREATE (a:N), (b:N)` does not parse; create each, then `MATCH` them to create a relationship.

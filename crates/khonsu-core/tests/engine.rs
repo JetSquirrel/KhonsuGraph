@@ -33,6 +33,17 @@ fn create_query_and_read_back_nodes_and_relationships() {
 }
 
 #[test]
+fn cypher_columns_keep_the_return_order() {
+    let dir = TestDir::new();
+    let mut graph = Graph::create(dir.graph(), "test").unwrap();
+    run(&mut graph, Language::Cypher, "CREATE (:Service {name: 'cart', cpu: '200m'})");
+
+    let result = run(&mut graph, Language::Cypher, "MATCH (s:Service) RETURN s.name AS service, s.cpu, count(s) AS n");
+    assert_eq!(result.columns, ["service", "s.cpu", "n"]);
+    assert_eq!(result.rows, vec![vec![json!("cart"), json!("200m"), json!(1)]]);
+}
+
+#[test]
 fn parameters_truncation_and_error_positions() {
     let dir = TestDir::new();
     let mut graph = Graph::create(dir.graph(), "test").unwrap();

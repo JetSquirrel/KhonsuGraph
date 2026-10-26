@@ -275,10 +275,10 @@ impl Graph {
             Language::Sql => self.db.query_sql_with_params(text, &positional(params)),
         }?;
         let elapsed_ms = started.elapsed().as_millis() as u64;
-        let columns: Vec<String> = output.schema().columns().iter().map(|c| c.to_string()).collect();
+        let mut columns: Vec<String> = output.schema().columns().iter().map(|c| c.to_string()).collect();
         let row_count = output.value_rows().count();
         let mut collector = GraphCollector::default();
-        let rows: Vec<Vec<Json>> = output
+        let mut rows: Vec<Vec<Json>> = output
             .value_rows()
             .take(options.max_rows)
             .map(|row| {
@@ -291,6 +291,12 @@ impl Graph {
                     .collect()
             })
             .collect();
+        // HawDB sorts Cypher columns by name; give them the RETURN order.
+        if language == Language::Cypher {
+            if let Some(wanted) = crate::cypher_columns::return_columns(text) {
+                crate::cypher_columns::reorder(&mut columns, &mut rows, &wanted);
+            }
+        }
         Ok(QueryResult {
             columns,
             truncated: rows.len() < row_count,
