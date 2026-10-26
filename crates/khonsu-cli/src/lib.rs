@@ -340,6 +340,7 @@ fn execute(command: Command) -> Result<Value, CliError> {
                 let kind = match &e {
                     khonsu_core::rebuild::RebuildError::NotOld(_) => "not_old",
                     khonsu_core::rebuild::RebuildError::NoSources(_) => "no_sources",
+                    khonsu_core::rebuild::RebuildError::MissingPlugins { .. } => "missing_plugin",
                     khonsu_core::rebuild::RebuildError::Backup { .. } => "io",
                     khonsu_core::rebuild::RebuildError::Open(_) => "open",
                 };

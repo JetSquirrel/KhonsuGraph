@@ -927,15 +927,18 @@ impl Render for SourceForm {
 /// from its data sources (see `khonsu_core::rebuild`), then open it.
 pub fn offer_rebuild(state: Entity<AppState>, path: std::path::PathBuf, window: &mut Window, cx: &mut App) {
     let sources = khonsu_core::rebuild::sources_of(&path);
+    let missing = khonsu_core::rebuild::missing_plugins(&sources);
     window.open_dialog(cx, move |dialog, _, cx| {
         let (state, path) = (state.clone(), path.clone());
         let names: Vec<String> = sources.iter().map(|s| s.name.clone()).collect();
         let body = if names.is_empty() {
             trf("rebuild.no_sources", &[&path.display().to_string()])
+        } else if !missing.is_empty() {
+            trf("rebuild.missing_plugins", &[&path.display().to_string(), &missing.join(", ")])
         } else {
             trf("rebuild.body", &[&path.display().to_string(), &names.join(", ")])
         };
-        let can_rebuild = !names.is_empty();
+        let can_rebuild = !names.is_empty() && missing.is_empty();
         dialog
             .title(tr("rebuild.title"))
             .w(crate::ui::scale::design(480.))

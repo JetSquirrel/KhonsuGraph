@@ -300,6 +300,7 @@ static STRINGS: &[(&str, &str, &str)] = &[
     ("notify.setup.prompt_copied", "已复制，粘贴给你的 AI 助手即可。", "Copied. Paste it into your agent."),
     ("rebuild.title", "这个图需要重建", "This graph needs rebuilding"),
     ("rebuild.body", "{} 由较早的 HawDB（0.8–0.11）写成，当前版本无法读取，也没有迁移方式。可以从它的数据源重建：{}。旧文件会原样保留在旁边（.hawdb-old）；手工写入、不在数据源里的内容不会带过来。", "{} was written by an older HawDB (0.8–0.11), which this version cannot read or migrate. It can be rebuilt from its data sources: {}. The old files stay beside it untouched (.hawdb-old); anything written by hand rather than synced is not carried over."),
+    ("rebuild.missing_plugins", "{} 由较早的 HawDB（0.8–0.11）写成，可以从数据源重建，但它需要的插件不可用：{}。重建只能进行一次，缺少插件的数据源会丢失数据。", "{} was written by an older HawDB (0.8–0.11) and can be rebuilt from its data sources, but the plugin it needs is not available: {}. A graph is rebuilt only once, and a source without its plugin would leave its data out."),
     ("rebuild.no_sources", "{} 由较早的 HawDB（0.8–0.11）写成，当前版本无法读取。它没有配置数据源，无法自动重建。", "{} was written by an older HawDB (0.8–0.11), which this version cannot read. It has no data sources, so it cannot be rebuilt automatically."),
     ("rebuild.action", "从数据源重建", "Rebuild from data sources"),
     ("rebuild.running", "正在重建 {}…", "Rebuilding {}…"),
