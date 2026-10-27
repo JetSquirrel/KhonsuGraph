@@ -393,7 +393,7 @@ impl Graph {
         let columns: Vec<String> = output.schema().columns().iter().map(|c| c.to_string()).collect();
         Ok(output
             .value_rows()
-            .map(|row| columns.iter().cloned().zip(row.iter().map(|v| v.clone())).collect())
+            .map(|row| columns.iter().cloned().zip(row.iter().cloned()).collect())
             .collect())
     }
 
