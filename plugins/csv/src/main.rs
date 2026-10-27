@@ -2,7 +2,9 @@
 //!
 //! Each node table row becomes one node and each edge table row one
 //! relationship, so imported counts equal file row counts (minus rows that
-//! repeat a stable ID). Columns other than the mapped ones become properties.
+//! repeat a stable ID). Columns other than the mapped ones become properties,
+//! or only those a table lists in `columns`. Cells such as `NA` or `NULL`
+//! (`null_values`) are missing values: the property is left out.
 
 use khonsu_plugin_protocol::{
     read_request, ConfigField, Describe, EdgeRecord, Emitter, FieldKind, Message, NodeRecord, Permissions, Request,
@@ -13,6 +15,28 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+/// Missing-value markers when `null_values` is not set; R, pandas and SQL
+/// exports write these.
+const DEFAULT_NULL_VALUES: [&str; 5] = ["NA", "N/A", "NULL", "null", "NaN"];
+
+/// One column, or several whose values are joined with `:` into a composite
+/// key, e.g. `["game_id", "play_id"]` -> `2023090700:56`.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(untagged)]
+enum Columns {
+    One(String),
+    Many(Vec<String>),
+}
+
+impl Columns {
+    fn names(&self) -> &[String] {
+        match self {
+            Columns::One(name) => std::slice::from_ref(name),
+            Columns::Many(names) => names,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 struct NodeTable {
     path: String,
@@ -21,9 +45,12 @@ struct NodeTable {
     label: Option<String>,
     #[serde(default)]
     label_column: Option<String>,
-    /// Stable ID column; defaults to `id`, else the first column.
+    /// Stable ID column(s); defaults to `id`, else the first column.
     #[serde(default)]
-    id_column: Option<String>,
+    id_column: Option<Columns>,
+    /// Columns kept as properties; all but the label column when unset.
+    #[serde(default)]
+    columns: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -33,11 +60,15 @@ struct EdgeTable {
     rel_type: Option<String>,
     #[serde(default)]
     type_column: Option<String>,
-    source_column: String,
-    target_column: String,
-    /// Stable ID column; defaults to `<file name>:<row number>`.
+    source_column: Columns,
+    target_column: Columns,
+    /// Stable ID column(s); defaults to `<file name>:<row number>`.
     #[serde(default)]
-    id_column: Option<String>,
+    id_column: Option<Columns>,
+    /// Columns kept as properties; all but the endpoint and type columns
+    /// when unset.
+    #[serde(default)]
+    columns: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone)]
@@ -45,6 +76,7 @@ struct Config {
     base_dir: Option<PathBuf>,
     delimiter: u8,
     infer_types: bool,
+    null_values: Vec<String>,
     nodes: Vec<NodeTable>,
     edges: Vec<EdgeTable>,
 }
@@ -75,13 +107,13 @@ fn describe() -> Describe {
                 "nodes",
                 "Node tables (advanced)",
                 FieldKind::Json,
-                r#"[{"path", "label" | "label_column", "id_column"}]; used instead of the single-file fields"#,
+                r#"[{"path", "label" | "label_column", "id_column", "columns"}]; used instead of the single-file fields. An ID or endpoint column can be a list, joined with ':' (["game_id","play_id"])"#,
             ),
             field(
                 "edges",
                 "Edge tables (advanced)",
                 FieldKind::Json,
-                r#"[{"path", "rel_type" | "type_column", "source_column", "target_column", "id_column"}]"#,
+                r#"[{"path", "rel_type" | "type_column", "source_column", "target_column", "id_column", "columns"}]"#,
             ),
             ConfigField {
                 default: Some(Value::String(",".into())),
@@ -90,6 +122,15 @@ fn describe() -> Describe {
             ConfigField {
                 default: Some(Value::Bool(true)),
                 ..field("infer_types", "Infer types", FieldKind::Bool, "Store numbers and true/false as typed values")
+            },
+            ConfigField {
+                default: Some(Value::from(DEFAULT_NULL_VALUES.to_vec())),
+                ..field(
+                    "null_values",
+                    "Missing values",
+                    FieldKind::Json,
+                    "Cells that mean no value; the property is left out. [] keeps them as text",
+                )
             },
         ],
         permissions: Permissions {
@@ -136,7 +177,8 @@ fn parse_config(request: &Request) -> Result<Config, String> {
             label: Some(text(c, "node_label").unwrap_or_else(|| label_from_path(&path))),
             path,
             label_column: None,
-            id_column: text(c, "node_id_column"),
+            id_column: text(c, "node_id_column").map(Columns::One),
+            columns: None,
         });
     }
     if let Some(path) = text(c, "edge_file") {
@@ -144,9 +186,10 @@ fn parse_config(request: &Request) -> Result<Config, String> {
             rel_type: Some(text(c, "edge_type").unwrap_or_else(|| "RELATED_TO".into())),
             path,
             type_column: None,
-            source_column: text(c, "edge_source_column").unwrap_or_else(|| "source".into()),
-            target_column: text(c, "edge_target_column").unwrap_or_else(|| "target".into()),
+            source_column: Columns::One(text(c, "edge_source_column").unwrap_or_else(|| "source".into())),
+            target_column: Columns::One(text(c, "edge_target_column").unwrap_or_else(|| "target".into())),
             id_column: None,
+            columns: None,
         });
     }
     if nodes.is_empty() && edges.is_empty() {
@@ -166,9 +209,25 @@ fn parse_config(request: &Request) -> Result<Config, String> {
         base_dir: text(c, "base_dir").map(PathBuf::from),
         delimiter,
         infer_types: c.get("infer_types").and_then(Value::as_bool).unwrap_or(true),
+        null_values: null_values(c.get("null_values"))?,
         nodes,
         edges,
     })
+}
+
+/// A JSON list, or text: JSON or comma-separated (`NA, -`).
+fn null_values(value: Option<&Value>) -> Result<Vec<String>, String> {
+    let list = |v: &Value| -> Result<Vec<String>, String> {
+        serde_json::from_value(v.clone()).map_err(|_| "null_values: expected a list of strings".to_string())
+    };
+    match value {
+        None | Some(Value::Null) => Ok(DEFAULT_NULL_VALUES.map(String::from).to_vec()),
+        Some(Value::String(s)) if s.trim_start().starts_with('[') => {
+            list(&serde_json::from_str(s).map_err(|e| format!("null_values: {e}"))?)
+        }
+        Some(Value::String(s)) => Ok(s.split(',').map(str::trim).filter(|v| !v.is_empty()).map(String::from).collect()),
+        Some(v) => list(v),
+    }
 }
 
 /// `hosts.csv` -> `Hosts`.
@@ -206,8 +265,14 @@ impl Config {
         Ok((reader, headers))
     }
 
+    fn properties(&self, row: &csv::StringRecord, headers: &[String], cols: &[usize]) -> Map<String, Value> {
+        cols.iter()
+            .filter_map(|&col| Some((headers[col].clone(), self.value(row.get(col)?)?)))
+            .collect()
+    }
+
     fn value(&self, raw: &str) -> Option<Value> {
-        if raw.is_empty() {
+        if raw.is_empty() || self.null_values.iter().any(|null| null == raw.trim()) {
             return None;
         }
         if !self.infer_types {
@@ -240,6 +305,30 @@ fn column(headers: &[String], name: &str, path: &str) -> Result<usize, String> {
         .ok_or_else(|| format!("{path}: no column named {name:?} (columns: {})", headers.join(", ")))
 }
 
+fn key_columns(headers: &[String], columns: &Columns, path: &str) -> Result<Vec<usize>, String> {
+    if columns.names().is_empty() {
+        return Err(format!("{path}: an empty column list"));
+    }
+    columns.names().iter().map(|name| column(headers, name, path)).collect()
+}
+
+/// The key's parts joined with `:`; empty when one of them is.
+fn key(row: &csv::StringRecord, cols: &[usize]) -> String {
+    let parts: Vec<&str> = cols.iter().map(|&col| row.get(col).unwrap_or("").trim()).collect();
+    if parts.iter().any(|part| part.is_empty()) {
+        return String::new();
+    }
+    parts.join(":")
+}
+
+/// Which columns become properties: those listed, else all but `mapped`.
+fn property_columns(headers: &[String], listed: Option<&[String]>, mapped: &[usize], path: &str) -> Result<Vec<usize>, String> {
+    match listed {
+        Some(names) => names.iter().map(|name| column(headers, name, path)).collect(),
+        None => Ok((0..headers.len()).filter(|col| !mapped.contains(col)).collect()),
+    }
+}
+
 fn count_rows(config: &Config, path: &str) -> Result<u64, String> {
     let (mut reader, _) = config.reader(path)?;
     let mut n = 0;
@@ -263,21 +352,23 @@ fn sync<W: Write>(config: &Config, out: &mut Emitter<W>) -> Result<(u64, u64), S
 
     for table in &config.nodes {
         let (mut reader, headers) = config.reader(&table.path)?;
-        let id_col = match &table.id_column {
-            Some(name) => column(&headers, name, &table.path)?,
-            None => headers.iter().position(|h| h == "id").unwrap_or(0),
+        let id_cols = match &table.id_column {
+            Some(columns) => key_columns(&headers, columns, &table.path)?,
+            None => vec![headers.iter().position(|h| h == "id").unwrap_or(0)],
         };
         let label_col = table
             .label_column
             .as_deref()
             .map(|name| column(&headers, name, &table.path))
             .transpose()?;
+        let property_cols = property_columns(&headers, table.columns.as_deref(), label_col.as_slice(), &table.path)?;
         for (i, row) in reader.records().enumerate() {
             let row = row.map_err(|e| format!("{}: {e}", table.path))?;
             let line = i + 2;
-            let id = row.get(id_col).unwrap_or("").trim();
+            let id = key(&row, &id_cols);
             if id.is_empty() {
-                return Err(format!("{} line {line}: empty ID in column {:?}", table.path, headers[id_col]));
+                let names: Vec<&str> = id_cols.iter().map(|&col| headers[col].as_str()).collect();
+                return Err(format!("{} line {line}: empty ID in {}", table.path, names.join(", ")));
             }
             let label = match label_col {
                 Some(col) => row.get(col).unwrap_or("").trim().to_string(),
@@ -286,17 +377,9 @@ fn sync<W: Write>(config: &Config, out: &mut Emitter<W>) -> Result<(u64, u64), S
             if label.is_empty() {
                 return Err(format!("{} line {line}: empty label", table.path));
             }
-            let mut properties = Map::new();
-            for (col, raw) in row.iter().enumerate() {
-                if Some(col) == label_col {
-                    continue;
-                }
-                if let Some(value) = config.value(raw) {
-                    properties.insert(headers[col].clone(), value);
-                }
-            }
+            let properties = config.properties(&row, &headers, &property_cols);
             out.node(NodeRecord {
-                id: id.to_string(),
+                id,
                 label,
                 properties,
             })
@@ -311,29 +394,31 @@ fn sync<W: Write>(config: &Config, out: &mut Emitter<W>) -> Result<(u64, u64), S
 
     for table in &config.edges {
         let (mut reader, headers) = config.reader(&table.path)?;
-        let source_col = column(&headers, &table.source_column, &table.path)?;
-        let target_col = column(&headers, &table.target_column, &table.path)?;
-        let id_col = table
+        let source_cols = key_columns(&headers, &table.source_column, &table.path)?;
+        let target_cols = key_columns(&headers, &table.target_column, &table.path)?;
+        let id_cols = table
             .id_column
-            .as_deref()
-            .map(|name| column(&headers, name, &table.path))
+            .as_ref()
+            .map(|columns| key_columns(&headers, columns, &table.path))
             .transpose()?;
         let type_col = table
             .type_column
             .as_deref()
             .map(|name| column(&headers, name, &table.path))
             .transpose()?;
+        let mapped: Vec<usize> = source_cols.iter().chain(&target_cols).chain(&type_col).copied().collect();
+        let property_cols = property_columns(&headers, table.columns.as_deref(), &mapped, &table.path)?;
         let file_name = Path::new(&table.path).file_name().and_then(|s| s.to_str()).unwrap_or(&table.path).to_string();
         for (i, row) in reader.records().enumerate() {
             let row = row.map_err(|e| format!("{}: {e}", table.path))?;
             let line = i + 2;
             let get = |col: usize| row.get(col).unwrap_or("").trim().to_string();
-            let (source, target) = (get(source_col), get(target_col));
+            let (source, target) = (key(&row, &source_cols), key(&row, &target_cols));
             if source.is_empty() || target.is_empty() {
                 return Err(format!("{} line {line}: empty source or target", table.path));
             }
-            let id = match id_col {
-                Some(col) if !get(col).is_empty() => get(col),
+            let id = match id_cols.as_deref().map(|cols| key(&row, cols)) {
+                Some(id) if !id.is_empty() => id,
                 _ => format!("{file_name}:{line}"),
             };
             let rel_type = match type_col {
@@ -343,15 +428,7 @@ fn sync<W: Write>(config: &Config, out: &mut Emitter<W>) -> Result<(u64, u64), S
             if rel_type.is_empty() {
                 return Err(format!("{} line {line}: empty relationship type", table.path));
             }
-            let mut properties = Map::new();
-            for (col, raw) in row.iter().enumerate() {
-                if col == source_col || col == target_col || Some(col) == type_col {
-                    continue;
-                }
-                if let Some(value) = config.value(raw) {
-                    properties.insert(headers[col].clone(), value);
-                }
-            }
+            let properties = config.properties(&row, &headers, &property_cols);
             out.edge(EdgeRecord {
                 id,
                 source,
@@ -378,8 +455,8 @@ fn test(config: &Config) -> Result<String, String> {
     }
     for table in &config.edges {
         let (_, headers) = config.reader(&table.path)?;
-        column(&headers, &table.source_column, &table.path)?;
-        column(&headers, &table.target_column, &table.path)?;
+        key_columns(&headers, &table.source_column, &table.path)?;
+        key_columns(&headers, &table.target_column, &table.path)?;
         parts.push(format!("{}: {} rows", table.path, count_rows(config, &table.path)?));
     }
     Ok(parts.join("; "))
@@ -461,6 +538,58 @@ mod tests {
         assert_eq!(edges[0].id, "deps.csv:2");
         assert_eq!(edges[1].properties["weight"], 1.5);
         assert_ne!(edges[0].id, edges[1].id);
+    }
+
+    #[test]
+    fn missing_value_markers_leave_the_property_out() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("p.csv"), "id,yards,team\np1,NA,NULL\np2,12,NA\n").unwrap();
+        let nodes = |config| -> Vec<NodeRecord> {
+            run(dir.path(), config)
+                .unwrap()
+                .into_iter()
+                .filter_map(|m| if let Message::Node(n) = m { Some(n) } else { None })
+                .collect()
+        };
+        let default = nodes(serde_json::json!({"node_file": "p.csv"}));
+        assert!(!default[0].properties.contains_key("yards"));
+        assert!(!default[0].properties.contains_key("team"));
+        assert_eq!(default[1].properties["yards"], 12);
+        let kept = nodes(serde_json::json!({"node_file": "p.csv", "null_values": []}));
+        assert_eq!(kept[0].properties["yards"], "NA");
+        let custom = nodes(serde_json::json!({"node_file": "p.csv", "null_values": "NULL"}));
+        assert_eq!(custom[0].properties["yards"], "NA");
+        assert!(!custom[0].properties.contains_key("team"));
+    }
+
+    #[test]
+    fn composite_keys_and_chosen_columns() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("pp.csv"),
+            "game_id,play_id,nfl_id,quarter,tackle\n2023,56,p1,1,1\n2023,56,p2,1,0\n2023,80,p1,2,0\n",
+        )
+        .unwrap();
+        let messages = run(
+            dir.path(),
+            serde_json::json!({
+                "nodes": [{"path": "pp.csv", "label": "Play", "id_column": ["game_id", "play_id"], "columns": ["quarter"]}],
+                "edges": [{
+                    "path": "pp.csv", "rel_type": "IN_PLAY", "source_column": "nfl_id",
+                    "target_column": ["game_id", "play_id"], "id_column": ["nfl_id", "game_id", "play_id"],
+                    "columns": ["tackle"]
+                }]
+            }),
+        )
+        .unwrap();
+        let nodes: Vec<&NodeRecord> = messages.iter().filter_map(|m| if let Message::Node(n) = m { Some(n) } else { None }).collect();
+        let edges: Vec<&EdgeRecord> = messages.iter().filter_map(|m| if let Message::Edge(e) = m { Some(e) } else { None }).collect();
+        assert_eq!(nodes[0].id, "2023:56");
+        assert_eq!(nodes[2].id, "2023:80");
+        assert_eq!(nodes[0].properties.keys().collect::<Vec<_>>(), ["quarter"]);
+        assert_eq!(edges[1].id, "p2:2023:56");
+        assert_eq!(edges[1].target, "2023:56");
+        assert_eq!(edges[1].properties.keys().collect::<Vec<_>>(), ["tackle"]);
     }
 
     #[test]

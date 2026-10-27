@@ -386,6 +386,17 @@ impl Graph {
         Ok(output.value_rows().map(|row| row.iter().map(|v| v.clone()).collect()).collect())
     }
 
+    /// Runs a parameterized Cypher statement and returns rows keyed by column
+    /// name: HawDB sorts Cypher columns by name, not in `RETURN` order.
+    pub(crate) fn raw_cypher_named(&mut self, text: &str, params: &BTreeMap<String, Value>) -> Result<Vec<BTreeMap<String, Value>>, QueryError> {
+        let output = self.db.query_with_params(text, params)?;
+        let columns: Vec<String> = output.schema().columns().iter().map(|c| c.to_string()).collect();
+        Ok(output
+            .value_rows()
+            .map(|row| columns.iter().cloned().zip(row.iter().map(|v| v.clone())).collect())
+            .collect())
+    }
+
     /// Runs SQL and returns rows keyed by column name.
     pub(crate) fn raw_sql(&mut self, text: &str) -> Result<Vec<BTreeMap<String, Value>>, QueryError> {
         let output = self.db.query_sql(text)?;
