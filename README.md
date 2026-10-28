@@ -50,11 +50,15 @@ Claude Code.
 Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds the
 packages and publishes a GitHub release.
 
-## HawDB 0.15.0 notes
+## HawDB 0.19.0 notes
 
-KhonsuGraph pins HawDB to 0.15.0. See [upgrade validation](docs/hawdb-0.15-upgrade.md)
-for compatibility checks and their scope, and the [0.12](docs/hawdb-0.12-upgrade.md) and [0.11 validation](docs/hawdb-0.11-upgrade.md)
+KhonsuGraph pins HawDB to 0.19.0. See [upgrade validation](docs/hawdb-0.19-upgrade.md)
+for compatibility checks and their scope, and the [0.15](docs/hawdb-0.15-upgrade.md), [0.12](docs/hawdb-0.12-upgrade.md) and [0.11 validation](docs/hawdb-0.11-upgrade.md)
 for earlier database compatibility checks.
+
+- Graphs written by HawDB 0.8–0.15, including the first v0.1.0 build, cannot
+  be read and report `old_format`; `khonsu rebuild` makes them again from
+  their data sources.
 
 - One process per graph directory, readers included. While the app has a
   graph open, `khonsu query` and `khonsu check` run through the app.
