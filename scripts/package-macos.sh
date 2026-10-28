@@ -62,7 +62,7 @@ scripts/assemble-app.sh "$BIN" "$APP" "$VERSION"
 sign() {
   codesign --force --timestamp --options runtime --sign "$MACOS_SIGN_IDENTITY" "$1"
 }
-for plugin in "$APP"/Contents/MacOS/plugins/*/khonsu-plugin-*; do
+for plugin in "$APP"/Contents/Resources/plugins/*/khonsu-plugin-*; do
   sign "$plugin"
 done
 sign "$APP/Contents/MacOS/khonsugraph"
