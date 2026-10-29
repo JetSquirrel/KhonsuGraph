@@ -112,6 +112,62 @@ fn edge_id(edge: &Edge) -> Option<i64> {
     edge.properties.iter().find(|(k, _)| k.as_ref() == EDGE_ID)?.1.parse().ok()
 }
 
+/// A graph analysis the canvas draws over what it shows, after networkx
+/// (see `khonsu_core::analysis`): a centrality as node size, or a
+/// partition as groups.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum Measure {
+    #[default]
+    None,
+    Degree,
+    PageRank,
+    Betweenness,
+    Communities,
+    Components,
+}
+
+impl Measure {
+    const ALL: [Measure; 5] = [Self::Degree, Self::PageRank, Self::Betweenness, Self::Communities, Self::Components];
+
+    fn name(self) -> &'static str {
+        tr(match self {
+            Self::None => "canvas.analyze_none",
+            Self::Degree => "canvas.analyze.degree",
+            Self::PageRank => "canvas.analyze.pagerank",
+            Self::Betweenness => "canvas.analyze.betweenness",
+            Self::Communities => "canvas.analyze.communities",
+            Self::Components => "canvas.analyze.components",
+        })
+    }
+
+    fn groups(self) -> bool {
+        matches!(self, Self::Communities | Self::Components)
+    }
+}
+
+/// What the current measure found, by HawDB node ID.
+#[derive(Default)]
+struct Analysis {
+    /// Each node's score, and the range they span, for sizing.
+    scores: HashMap<i64, f64>,
+    min: f64,
+    max: f64,
+    /// Each node's group number, from 0 for the largest.
+    groups: HashMap<i64, usize>,
+}
+
+/// Node radius for a score: from a small dot for the lowest score on the
+/// canvas to a large disc for the highest, area growing evenly between —
+/// so close scores in a dense graph still read apart.
+fn radius(score: f64, min: f64, max: f64) -> f32 {
+    const SMALLEST: f32 = 4.;
+    const LARGEST: f32 = 24.;
+    if max <= min {
+        return (SMALLEST + LARGEST) / 2.;
+    }
+    SMALLEST + (LARGEST - SMALLEST) * ((score - min) / (max - min)).clamp(0.0, 1.0).sqrt() as f32
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Selected {
     Node(i64),
@@ -132,6 +188,9 @@ pub struct GraphCanvas {
     caption_key: Option<String>,
     /// The node property nodes are grouped by, if any.
     group_key: Option<String>,
+    /// The analysis drawn over the graph, and what it found.
+    measure: Measure,
+    analysis: Analysis,
     /// Which captions are drawn, and whether a hovered or picked node fades
     /// the rest: a dashboard `graph`'s `labels` and `highlight`.
     label_mode: LabelMode,
@@ -169,6 +228,8 @@ impl GraphCanvas {
             expanding: false,
             caption_key: None,
             group_key: None,
+            measure: Measure::None,
+            analysis: Analysis::default(),
             label_mode: LabelMode::Auto,
             focus_dimming: true,
             compact: false,
@@ -213,13 +274,86 @@ impl GraphCanvas {
         if self.group_key == key {
             return;
         }
+        // One grouping at a time: a property's, or an analysis's.
+        if key.is_some() && self.measure.groups() {
+            self.measure = Measure::None;
+            self.analysis = Analysis::default();
+        }
         self.group_key = key;
         self.selected = None;
-        let nodes: Vec<Node> = self
-            .nodes
-            .values()
-            .map(|n| to_node(n, self.caption_key.as_deref(), self.group_key.as_deref(), cx))
-            .collect();
+        self.redraw(cx);
+    }
+
+    /// Draw `measure` over the graph, or stop. A grouping measure replaces
+    /// grouping by a property.
+    pub fn set_measure(&mut self, measure: Measure, cx: &mut Context<Self>) {
+        if self.measure == measure {
+            return;
+        }
+        if measure.groups() {
+            self.group_key = None;
+        }
+        self.measure = measure;
+        self.analyze();
+        self.redraw(cx);
+    }
+
+    /// Run the measure over everything on the canvas.
+    fn analyze(&mut self) {
+        use khonsu_core::analysis;
+        self.analysis = Analysis::default();
+        if self.measure == Measure::None {
+            return;
+        }
+        let mut net = analysis::Network::new();
+        for &id in self.nodes.keys() {
+            net.add_node(id);
+        }
+        for edge in self.edges.values() {
+            net.add_edge(edge.source, edge.target, 1.0);
+        }
+        let scores = match self.measure {
+            Measure::None => return,
+            Measure::Degree => analysis::degree_centrality(&net),
+            Measure::PageRank => analysis::pagerank(&net, 0.85, true, 100, 1e-6).0,
+            // At most the canvas's node limit: exact is quick enough.
+            Measure::Betweenness => analysis::betweenness(&net, true, false, None),
+            Measure::Communities | Measure::Components => {
+                let partition = if self.measure == Measure::Communities {
+                    analysis::louvain(&net, 1.0, 42).0
+                } else {
+                    analysis::weak_components(&net)
+                };
+                self.analysis.groups = (0..net.node_count()).map(|v| (net.id(v), partition.of[v])).collect();
+                return;
+            }
+        };
+        self.analysis.min = scores.iter().copied().fold(f64::INFINITY, f64::min);
+        self.analysis.max = scores.iter().copied().fold(f64::NEG_INFINITY, f64::max);
+        self.analysis.scores = (0..net.node_count()).map(|v| (net.id(v), scores[v])).collect();
+    }
+
+    /// The canvas's node for `node`: grouped by the analysis or the group
+    /// property, sized by the analysis.
+    fn canvas_node(&self, node: &GraphNode, cx: &App) -> Node {
+        let mut converted = match self.analysis.groups.get(&node.id) {
+            Some(&group) => {
+                let label = first_label(node);
+                Node::new(node.id.to_string(), caption(node, self.caption_key.as_deref()), label.to_string())
+                    .group(trf(if self.measure == Measure::Communities { "canvas.community_n" } else { "canvas.component_n" }, &[&(group + 1).to_string()]))
+            }
+            None => to_node(node, self.caption_key.as_deref(), self.group_key.as_deref(), cx),
+        };
+        if let Some(&score) = self.analysis.scores.get(&node.id) {
+            converted = converted.size(radius(score, self.analysis.min, self.analysis.max));
+        }
+        converted
+    }
+
+    /// Hand every node and edge to the graph again, as they now convert; the
+    /// layout starts over.
+    fn redraw(&mut self, cx: &mut Context<Self>) {
+        let nodes: Vec<Node> = self.nodes.values().map(|n| self.canvas_node(n, cx)).collect();
         let edges: Vec<Edge> = self.edges.values().map(to_edge).collect();
         let color_by = self.color_by();
         self.graph.update(cx, |graph, cx| {
@@ -266,7 +400,7 @@ impl GraphCanvas {
     }
 
     fn color_by(&self) -> ColorBy {
-        if self.group_key.is_some() {
+        if self.group_key.is_some() || self.measure.groups() {
             ColorBy::Group
         } else {
             ColorBy::Category
@@ -302,7 +436,13 @@ impl GraphCanvas {
     }
 
     fn load(&mut self, nodes: Vec<GraphNode>, edges: Vec<GraphEdge>, cx: &mut Context<Self>) {
-        let data = self.admit(nodes, edges, cx);
+        // Record the result first, so the analysis sees all of it.
+        self.admit(nodes, edges, cx);
+        self.analyze();
+        let data = Graph::new(
+            self.nodes.values().map(|n| self.canvas_node(n, cx)).collect(),
+            self.edges.values().map(to_edge).collect(),
+        );
         let color_by = self.color_by();
         let label_mode = self.label_mode;
         self.graph.update(cx, |graph, cx| {
@@ -322,7 +462,7 @@ impl GraphCanvas {
         let mut fresh_nodes = Vec::new();
         for node in nodes {
             if !self.nodes.contains_key(&node.id) {
-                fresh_nodes.push(to_node(&node, self.caption_key.as_deref(), self.group_key.as_deref(), cx));
+                fresh_nodes.push(self.canvas_node(&node, cx));
                 self.nodes.insert(node.id, node);
             }
         }
@@ -391,10 +531,16 @@ impl GraphCanvas {
                             );
                         } else {
                             let data = this.admit(data.nodes, data.edges, cx);
-                            let anchor = id.to_string();
-                            this.graph.update(cx, |graph, cx| {
-                                graph.merge(data, Some(&anchor), cx);
-                            });
+                            if this.measure == Measure::None {
+                                let anchor = id.to_string();
+                                this.graph.update(cx, |graph, cx| {
+                                    graph.merge(data, Some(&anchor), cx);
+                                });
+                            } else {
+                                // New neighbors change every score and group.
+                                this.analyze();
+                                this.redraw(cx);
+                            }
                         }
                     }
                     Err(e) => window.push_notification(Notification::error(e.message), cx),
@@ -404,6 +550,21 @@ impl GraphCanvas {
             .ok();
         })
         .detach();
+    }
+
+    /// The analysis's word on the selected node, for the inspector: named
+    /// as over the canvas, since a stored property of the same name may hold
+    /// the whole graph's.
+    fn measure_row(&self, selected: Selected) -> Option<(String, String)> {
+        let Selected::Node(id) = selected else {
+            return None;
+        };
+        let name = trf("canvas.analyze.on_canvas", &[self.measure.name()]);
+        if let Some(&group) = self.analysis.groups.get(&id) {
+            return Some((name, (group + 1).to_string()));
+        }
+        let score = self.analysis.scores.get(&id)?;
+        Some((name, format!("{score:.4}")))
     }
 
     fn render_inspector(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
@@ -454,6 +615,11 @@ impl GraphCanvas {
                         .child(div().font_semibold().child(title)),
                 )
                 .children(subtitle.map(|s| div().text_xs().text_color(muted).font_family(mono.clone()).child(s)))
+                .children(self.measure_row(selected).map(|(name, value)| {
+                    v_flex()
+                        .child(div().text_xs().text_color(muted).child(name))
+                        .child(div().text_sm().font_family(mono.clone()).child(value))
+                }))
                 .children(rows.into_iter().map(|(key, value)| {
                     let provenance = key.starts_with("khonsu_");
                     v_flex()
@@ -503,6 +669,8 @@ impl Render for GraphCanvas {
 
         let group_keys = group_keys(self.nodes.values());
         let group_key = self.group_key.clone();
+        let measure = self.measure;
+        let grouped = group_key.is_some() || measure.groups();
         let this = cx.entity().downgrade();
 
         let note = if self.hidden > 0 {
@@ -585,7 +753,39 @@ impl Render for GraphCanvas {
                                     },
                                 ))
                             })
-                            .when(group_key.is_some(), |this_bar| {
+                            .when(!self.nodes.is_empty(), |this_bar| {
+                                let label = match measure {
+                                    Measure::None => tr("canvas.analyze").to_string(),
+                                    measure => trf("canvas.analyze_by", &[measure.name()]),
+                                };
+                                let menu_target = this.clone();
+                                this_bar.child(
+                                    Button::new("canvas-analyze")
+                                        .xsmall()
+                                        .outline()
+                                        .label(label)
+                                        .tooltip(tr("canvas.analyze.tooltip"))
+                                        .dropdown_menu(move |menu, _, _| {
+                                            let pick = |menu: gpui_kit::component::menu::PopupMenu, item: Measure| {
+                                                let target = menu_target.clone();
+                                                menu.item(PopupMenuItem::new(item.name()).checked(measure == item).on_click(
+                                                    move |_, _, cx| {
+                                                        target.update(cx, |canvas, cx| canvas.set_measure(item, cx)).ok();
+                                                    },
+                                                ))
+                                            };
+                                            let mut menu = pick(menu, Measure::None).separator();
+                                            for item in Measure::ALL {
+                                                if item == Measure::Communities {
+                                                    menu = menu.separator();
+                                                }
+                                                menu = pick(menu, item);
+                                            }
+                                            menu
+                                        }),
+                                )
+                            })
+                            .when(grouped, |this_bar| {
                                 this_bar
                                     .child(
                                         Button::new("canvas-collapse")
@@ -710,7 +910,7 @@ impl Render for GraphCanvas {
 
 #[cfg(test)]
 mod tests {
-    use super::{edge_id, group_keys, to_edge};
+    use super::{edge_id, group_keys, radius, to_edge};
     use khonsu_core::{GraphEdge, GraphNode};
     use serde_json::json;
 
@@ -738,6 +938,15 @@ mod tests {
             person(4, "Di", 2, "Paris"),
         ];
         assert_eq!(group_keys(nodes.iter()), vec!["city".to_string(), "community".to_string()]);
+    }
+
+    #[test]
+    fn sizes_span_the_scores_on_the_canvas() {
+        assert_eq!(radius(0.2, 0.2, 0.6), 4.);
+        assert_eq!(radius(0.6, 0.2, 0.6), 24.);
+        assert!(radius(0.4, 0.2, 0.6) > 14.);
+        // All alike: one middle size, not all dots.
+        assert_eq!(radius(0.3, 0.3, 0.3), 14.);
     }
 
     #[test]
