@@ -3,6 +3,7 @@ plot "intro" {
   type  = "text"
   title = "Blast radius"
   text  = "Pick a service to see what depends on it and which alerts fired near it."
+  width = 9
 }
 
 query "services" {
@@ -41,6 +42,7 @@ plot "open_alerts" {
   query = query.alert_count
   title = "Open alerts"
   tone  = "warning"
+  width = 3
 }
 
 plot "services" {

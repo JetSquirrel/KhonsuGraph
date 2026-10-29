@@ -478,7 +478,7 @@ impl GraphCanvas {
                                 .small()
                                 .outline()
                                 .icon(IconName::Plus)
-                                .label(tr("canvas.expand"))
+                                .tooltip(tr("canvas.expand"))
                                 .loading(self.expanding)
                                 .on_click(cx.listener(move |this, _, window, cx| this.expand(id, window, cx))),
                         )

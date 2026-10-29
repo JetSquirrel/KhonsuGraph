@@ -130,7 +130,7 @@ fn show(command: CommandStatus, skill: SkillStatus, window: &mut Window, cx: &mu
                                         .small()
                                         .outline()
                                         .icon(IconName::Copy)
-                                        .label(tr("setup.ai.other.copy"))
+                                        .tooltip(tr("setup.ai.other.copy"))
                                         .on_click(|_, window, cx| {
                                             cx.write_to_clipboard(ClipboardItem::new_string(
                                                 setup::agent_prompt(),

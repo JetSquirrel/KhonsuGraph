@@ -32,6 +32,14 @@ pub struct Sidebar {
     _subscriptions: Vec<Subscription>,
 }
 
+/// Rows hover as one group, so a row's sample-query button can show only
+/// while it is hovered: at rest the list reads as names and counts.
+const ROW_GROUP: &str = "sidebar-row";
+
+fn shown_on_hover(child: impl IntoElement) -> Div {
+    div().opacity(0.).group_hover(ROW_GROUP, |s| s.opacity(1.)).child(child)
+}
+
 pub fn sample_for_label(label: &str) -> String {
     format!("MATCH (n:{})\nRETURN n\nLIMIT 100", quote_ident(label))
 }
@@ -103,8 +111,10 @@ impl Sidebar {
             .items_center()
             .text_sm()
             .cursor_pointer()
+            .group(ROW_GROUP)
             .hover(|s| s.bg(cx.theme().secondary))
     }
+
 
     fn toggle(&mut self, key: String, cx: &mut Context<Self>) {
         if !self.expanded.remove(&key) {
@@ -143,7 +153,7 @@ impl Sidebar {
                     .child(div().size_2p5().rounded_full().flex_none().bg(palette::label_color(&name, cx)))
                     .child(div().flex_1().min_w_0().truncate().child(name))
                     .child(div().text_xs().text_color(muted).child(label.count.to_string()))
-                    .child(
+                    .child(shown_on_hover(
                         Button::new(("label-run", ix))
                             .ghost()
                             .xsmall()
@@ -153,7 +163,7 @@ impl Sidebar {
                                 cx.stop_propagation();
                                 this.insert(Language::Cypher, sample_for_label(&run_name), window, cx);
                             })),
-                    ),
+                    )),
             );
             if open {
                 list = list.children(label.properties.iter().map(|p| {
@@ -176,7 +186,7 @@ impl Sidebar {
                     .child(Icon::new(if open { IconName::ChevronDown } else { IconName::ChevronRight }).xsmall().text_color(muted))
                     .child(div().flex_1().min_w_0().truncate().child(format!("→ {}", rel.name)))
                     .child(div().text_xs().text_color(muted).child(rel.count.to_string()))
-                    .child(
+                    .child(shown_on_hover(
                         Button::new(("rel-run", ix))
                             .ghost()
                             .xsmall()
@@ -186,7 +196,7 @@ impl Sidebar {
                                 cx.stop_propagation();
                                 this.insert(Language::Cypher, sample.clone(), window, cx);
                             })),
-                    ),
+                    )),
             );
             if open {
                 list = list
@@ -210,7 +220,7 @@ impl Sidebar {
                         .on_click(cx.listener(move |this, _, _, cx| this.toggle(key.clone(), cx)))
                         .child(Icon::new(IconName::Inbox).xsmall().text_color(muted))
                         .child(div().flex_1().min_w_0().truncate().child(table.name.clone()))
-                        .child(
+                        .child(shown_on_hover(
                             Button::new(("table-run", ix))
                                 .ghost()
                                 .xsmall()
@@ -220,7 +230,7 @@ impl Sidebar {
                                     cx.stop_propagation();
                                     this.insert(Language::Sql, sample.clone(), window, cx);
                                 })),
-                        ),
+                        )),
                 );
                 if open {
                     list = list.children(table.columns.iter().map(|c| {
@@ -238,20 +248,9 @@ impl Sidebar {
         let syncing = state.syncing.clone();
         let read_only = state.read_only();
         let muted = cx.theme().muted_foreground;
-        let add_state = self.state.clone();
         v_flex()
             .p_2()
             .gap_2()
-            .when(!read_only, |this| {
-                this.child(
-                    Button::new("add-source")
-                        .outline()
-                        .small()
-                        .icon(IconName::Plus)
-                        .label(tr("sources.add"))
-                        .on_click(move |_, window, cx| crate::ui::sources::open_add(add_state.clone(), window, cx)),
-                )
-            })
             .when(sources.is_empty(), |this| this.child(div().px_1().text_sm().text_color(muted).child(tr("sources.empty"))))
             .children(sources.into_iter().enumerate().map(|(ix, source)| {
                 let last = match &source.last_sync {
@@ -271,28 +270,17 @@ impl Sidebar {
                     .border_color(cx.theme().border)
                     .child(
                         h_flex()
-                            .gap_2()
+                            .gap_1()
+                            .items_center()
                             .child(div().flex_1().min_w_0().truncate().font_weight(FontWeight::SEMIBOLD).child(source.name.clone()))
-                            .child(div().text_xs().px_1p5().rounded_sm().bg(cx.theme().secondary).child(source.plugin.clone())),
-                    )
-                    .child(
-                        div()
-                            .text_xs()
-                            .when(failed, |this| this.text_color(cx.theme().danger))
-                            .when(!failed, |this| this.text_color(muted))
-                            .whitespace_normal()
-                            .child(last),
-                    )
-                    .when(!read_only, |this| {
-                        this.child(
-                            h_flex()
-                                .gap_1()
-                                .child(
+                            .child(div().text_xs().px_1p5().rounded_sm().bg(cx.theme().secondary).child(source.plugin.clone()))
+                            .when(!read_only, |this| {
+                                this.child(
                                     Button::new(("sync", ix))
                                         .xsmall()
-                                        .outline()
+                                        .ghost()
                                         .icon(IconName::RotateCw)
-                                        .label(tr("sources.sync"))
+                                        .tooltip(tr("sources.sync"))
                                         .loading(syncing.as_deref() == Some(source.id.as_str()))
                                         .disabled(busy)
                                         .on_click(move |_, window, cx| {
@@ -303,13 +291,13 @@ impl Sidebar {
                                     Button::new(("edit", ix))
                                         .xsmall()
                                         .ghost()
-                                        .label(tr("sources.edit"))
+                                        .icon(Icon::new(AssetIcon::Pencil))
+                                        .tooltip(tr("sources.edit"))
                                         .disabled(busy)
                                         .on_click(move |_, window, cx| {
                                             crate::ui::sources::open_edit(edit_state.clone(), edit_source.clone(), window, cx)
                                         }),
                                 )
-                                .child(div().flex_1())
                                 .child(
                                     Button::new(("remove", ix))
                                         .xsmall()
@@ -320,9 +308,17 @@ impl Sidebar {
                                         .on_click(move |_, window, cx| {
                                             crate::ui::sources::remove(remove_state.clone(), remove_source.clone(), window, cx)
                                         }),
-                                ),
-                        )
-                    })
+                                )
+                            }),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .when(failed, |this| this.text_color(cx.theme().danger))
+                            .when(!failed, |this| this.text_color(muted))
+                            .whitespace_normal()
+                            .child(last),
+                    )
             }))
             .into_any_element()
     }
@@ -450,6 +446,19 @@ impl Render for Sidebar {
                                 .on_click(cx.listener(|this, _, window, cx| {
                                     crate::ui::reload_schema(this.state.clone(), window, cx);
                                 })),
+                        )
+                    })
+                    // The Sources tab's one action sits where Schema keeps
+                    // its refresh, rather than on a row of its own.
+                    .when(has_graph && self.section == Section::Sources && !self.state.read(cx).read_only(), |this| {
+                        let add_state = self.state.clone();
+                        this.child(
+                            Button::new("add-source")
+                                .ghost()
+                                .xsmall()
+                                .icon(IconName::Plus)
+                                .tooltip(tr("sources.add"))
+                                .on_click(move |_, window, cx| crate::ui::sources::open_add(add_state.clone(), window, cx)),
                         )
                     }),
             )

@@ -424,7 +424,6 @@ impl ResultsPanel {
                         .xsmall()
                         .ghost()
                         .icon(gpui_kit::assets::IconName::Download)
-                        .label(tr("results.export_csv"))
                         .tooltip(tr("results.export_csv_hint"))
                         .on_click(cx.listener(|this, _, window, cx| this.export_csv(window, cx))),
                 )
@@ -471,7 +470,7 @@ fn render_error(error: &QueryError, cx: &App) -> impl IntoElement {
                         .ghost()
                         .xsmall()
                         .icon(IconName::Copy)
-                        .label(tr("results.copy_error"))
+                        .tooltip(tr("results.copy_error"))
                         .on_click(move |_, window, cx| {
                             cx.write_to_clipboard(ClipboardItem::new_string(copy.clone()));
                             window.push_notification(tr("results.copied"), cx);
