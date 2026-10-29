@@ -8,6 +8,7 @@
 //! There is no separate executable: the app runs [`run`] when it is called
 //! as `khonsu`, or with a subcommand or a flag (see the app's `main.rs`).
 
+mod analyze;
 mod dash;
 
 use clap::{Args, CommandFactory, Parser, Subcommand};
@@ -115,6 +116,8 @@ enum Command {
     Presence(dash::PresenceArgs),
     /// Show a graph, a .dash file or a query in the window, or read what it shows (--state).
     Open(dash::OpenArgs),
+    /// Graph algorithms after networkx: PageRank, betweenness, components, communities, paths and more.
+    Analyze(analyze::AnalyzeArgs),
 }
 
 #[derive(Subcommand)]
@@ -364,6 +367,7 @@ fn execute(command: Command) -> Result<Value, CliError> {
         Command::Comments(args) => dash::comments(args),
         Command::Presence(args) => dash::presence(args),
         Command::Open(args) => dash::open(args),
+        Command::Analyze(args) => analyze::analyze(args),
     }
 }
 

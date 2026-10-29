@@ -31,6 +31,10 @@ Use the real `khonsu` executable, never GUI automation or a replacement script. 
 - Scalar expressions support `IN` with lists or list parameters. `json_value(n.metadata, '$.source')` reads a scalar from a JSON string property; missing paths return null.
 - KhonsuGraph enforces a 100,000-row read ceiling even though HawDB no longer sets a default row limit. Reads fail as a whole when they exceed this or the payload budget; narrow the query instead of retrying.
 
+## Graph analysis
+
+For what Cypher cannot say — who is most central, which groups form, how two nodes connect — use `khonsu analyze ALGORITHM --db DIR` (`summary`, `degree`, `pagerank`, `betweenness`, `closeness`, `components`, `communities`, `clustering`, `kcore`, `path`). It reads the whole graph, or `--label`/`--type`, or a `--cypher` subgraph, and returns the `--top` nodes with their labels and names; algorithms follow networkx. Start with `summary` on an unfamiliar graph. Name the algorithm and the subgraph when you report a result, and say when betweenness was sampled (`sampled_sources`). See [the CLI reference](references/cli.md#graph-analysis).
+
 ## The window and the graph lease
 
 HawDB leases a graph directory to one process. While the KhonsuGraph window has a graph open, `khonsu query` (reads only) and `khonsu check` on that graph go **through the window** — the output carries `"via_window": true` — so you can keep working while the person looks at it. Writes (`--write`) and syncs need the graph free: an error of kind `locked` names the program and pid holding it; ask the person to close the graph rather than deleting lock files.
