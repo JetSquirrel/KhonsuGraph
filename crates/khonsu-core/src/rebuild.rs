@@ -1,7 +1,8 @@
 //! Making an old graph again from its data sources.
 //!
-//! HawDB 0.12 rejects the project format 0.8–0.11 wrote and offers no
-//! migration (its storage spec keeps no compatibility for earlier formats).
+//! HawDB 0.12 rejects the project format 0.8–0.11 wrote, and 0.19 the
+//! relational codec 0.12–0.15 wrote; neither offers a migration (its storage
+//! spec keeps no compatibility for earlier formats).
 //! Everything KhonsuGraph puts in a graph comes from a data source, so the
 //! graph can be made again: the old directory is moved aside, kept whole, a
 //! new graph is created at the same path, and every source configured for
@@ -14,7 +15,7 @@ use std::sync::atomic::AtomicBool;
 
 use serde::Serialize;
 
-use crate::engine::{is_old_format, normalize_path, Graph, OpenError};
+use crate::engine::{is_old_format, normalize_path, AccessMode, Graph, OpenError};
 use crate::plugin::{self, SyncEvent, SyncReport};
 use crate::protocol::SyncMode;
 use crate::settings::{self, Source};
@@ -93,7 +94,9 @@ pub fn rebuild(
     mut on_event: impl FnMut(&Source, SyncEvent),
 ) -> Result<RebuildReport, RebuildError> {
     let graph_path = normalize_path(path);
-    if !is_old_format(&graph_path) {
+    let old = is_old_format(&graph_path)
+        || matches!(Graph::open(&graph_path, AccessMode::ReadOnly, program), Err(OpenError::OldFormat(_)));
+    if !old {
         return Err(RebuildError::NotOld(graph_path));
     }
     let sources = sources_of(&graph_path);

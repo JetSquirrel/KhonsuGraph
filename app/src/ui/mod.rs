@@ -21,7 +21,7 @@ use std::path::PathBuf;
 
 use gpui_kit::component::notification::Notification;
 use gpui_kit::component::WindowExt;
-use gpui_kit::{Action, App, Entity, KeyBinding, PathPromptOptions, Window};
+use gpui_kit::{Action, App, Entity, KeyBinding, KeyBindingContextPredicate, PathPromptOptions, Window};
 use khonsu_core::OpenError;
 use serde::Deserialize;
 
@@ -66,30 +66,40 @@ pub const WORKSPACE_KEY_CONTEXT: &str = "KhonsuGraph";
 // `secondary` is ⌘ on macOS and Ctrl on Windows and Linux.
 pub const RUN_QUERY_KEYSTROKE: &str = "secondary-enter";
 
+/// A binding that may use `secondary-`, which only the host OS can resolve.
+fn bind(keystrokes: &str, action: impl Action, context: Option<&str>, cx: &App) -> KeyBinding {
+    let context = context.map(|context| KeyBindingContextPredicate::parse(context).unwrap().into());
+    KeyBinding::load(keystrokes, Box::new(action), context, false, None, cx).unwrap()
+}
+
 pub fn init(cx: &mut App) {
     gpui_graph::init(cx);
-    cx.bind_keys([
-        KeyBinding::new(RUN_QUERY_KEYSTROKE, RunQuery, Some(WORKSPACE_KEY_CONTEXT)),
-        KeyBinding::new("secondary-e", ExplainQuery, Some(WORKSPACE_KEY_CONTEXT)),
-        KeyBinding::new("secondary-s", SaveSpec, Some(WORKSPACE_KEY_CONTEXT)),
-        KeyBinding::new("secondary-=", ZoomIn, None),
-        KeyBinding::new("secondary-+", ZoomIn, None),
-        KeyBinding::new("secondary--", ZoomOut, None),
-        KeyBinding::new("secondary-0", ZoomReset, None),
-        KeyBinding::new("secondary-b", ToggleSidebar, None),
-        KeyBinding::new("secondary-t", NewQuery, None),
-        KeyBinding::new("secondary-shift-t", NewSqlQuery, None),
-        KeyBinding::new("secondary-w", CloseTab, None),
+    let bindings = [
+        bind(RUN_QUERY_KEYSTROKE, RunQuery, Some(WORKSPACE_KEY_CONTEXT), cx),
+        bind("secondary-e", ExplainQuery, Some(WORKSPACE_KEY_CONTEXT), cx),
+        bind("secondary-s", SaveSpec, Some(WORKSPACE_KEY_CONTEXT), cx),
+        bind("secondary-=", ZoomIn, None, cx),
+        bind("secondary-+", ZoomIn, None, cx),
+        bind("secondary--", ZoomOut, None, cx),
+        bind("secondary-0", ZoomReset, None, cx),
+        bind("secondary-b", ToggleSidebar, None, cx),
+        bind("secondary-t", NewQuery, None, cx),
+        bind("secondary-shift-t", NewSqlQuery, None, cx),
+        bind("secondary-w", CloseTab, None, cx),
         KeyBinding::new("ctrl-tab", NextTab, None),
         KeyBinding::new("ctrl-shift-tab", PreviousTab, None),
-        KeyBinding::new("secondary-o", OpenGraph, None),
-        KeyBinding::new("secondary-n", NewGraph, None),
-        KeyBinding::new("secondary-q", Quit, None),
-    ]);
-    cx.bind_keys((1..=9).map(|n| {
-        let index = if n == 9 { usize::MAX } else { n - 1 };
-        KeyBinding::new(&format!("secondary-{n}"), ActivateTab { index }, None)
-    }));
+        bind("secondary-o", OpenGraph, None, cx),
+        bind("secondary-n", NewGraph, None, cx),
+        bind("secondary-q", Quit, None, cx),
+    ];
+    cx.bind_keys(bindings);
+    let tabs: Vec<_> = (1..=9)
+        .map(|n| {
+            let index = if n == 9 { usize::MAX } else { n - 1 };
+            bind(&format!("secondary-{n}"), ActivateTab { index }, None, cx)
+        })
+        .collect();
+    cx.bind_keys(tabs);
     cx.on_action(|_: &ZoomIn, cx| scale::set(scale::current().larger(), cx));
     cx.on_action(|_: &ZoomOut, cx| scale::set(scale::current().smaller(), cx));
     cx.on_action(|_: &ZoomReset, cx| scale::set(scale::UiSize::Default, cx));

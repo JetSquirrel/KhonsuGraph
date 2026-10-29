@@ -684,7 +684,7 @@ impl Workspace {
     }
 
     fn render_toolbar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let run_keystroke = Keystroke::parse(RUN_QUERY_KEYSTROKE).ok();
+        let run_keystroke = Keystroke::parse_with_os(RUN_QUERY_KEYSTROKE, cx.platform_info().os).ok();
         let empty = self
             .tabs
             .get(self.active)
