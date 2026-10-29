@@ -67,6 +67,7 @@ plot "accounts" {
   type  = "card"
   query = query.accounts
   title = "Accounts"
+  width = 4
 }
 
 plot "flagged_count" {
@@ -74,6 +75,7 @@ plot "flagged_count" {
   query = query.flagged_count
   title = "Flagged accounts"
   tone  = "critical"
+  width = 4
 }
 
 plot "warnings" {
@@ -81,6 +83,7 @@ plot "warnings" {
   query = query.warnings
   title = "Negative ratings"
   tone  = "warning"
+  width = 4
 }
 
 plot "flagged" {

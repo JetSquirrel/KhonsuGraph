@@ -69,12 +69,14 @@ plot "entities" {
   type  = "card"
   query = query.entities
   title = "Companies in the case file"
+  width = 6
 }
 
 plot "officers" {
   type  = "card"
   query = query.officers
   title = "Officers"
+  width = 6
 }
 
 plot "busiest" {

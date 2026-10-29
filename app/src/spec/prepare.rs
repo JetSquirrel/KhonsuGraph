@@ -352,6 +352,9 @@ pub(crate) fn prepare<R: std::borrow::Borrow<QueryResult>>(
                 let mut ixs = Vec::with_capacity(names.len());
                 for name in names {
                     match column(name) {
+                        // The color column already heads the tooltip, by
+                        // its dot; listed again it would read twice.
+                        Some(ix) if Some(ix) == color_ix => {}
                         Some(ix) => ixs.push(ix),
                         None => return base(Some(missing_column(name, result))),
                     }
