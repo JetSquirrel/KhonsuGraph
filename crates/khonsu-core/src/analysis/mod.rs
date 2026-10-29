@@ -18,5 +18,5 @@ mod load;
 mod network;
 
 pub use algorithms::*;
-pub use load::{describe_nodes, load, CypherReader, LoadSpec, NodeInfo};
+pub use load::{describe_nodes, load, write_back, CypherReader, LoadSpec, NodeInfo};
 pub use network::Network;

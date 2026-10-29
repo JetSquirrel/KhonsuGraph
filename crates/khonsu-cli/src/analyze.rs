@@ -80,6 +80,9 @@ pub struct AnalyzeArgs {
     /// Path: the end node's ID.
     #[arg(long)]
     to: Option<i64>,
+    /// Store each analyzed node's result as this node property (the community or component number, the score, the degree or core), for dashboards and the canvas to sort, color and group by. Needs the graph free of the window.
+    #[arg(long, value_name = "PROPERTY")]
+    write: Option<String>,
 }
 
 /// Graphs above this many nodes get sampled betweenness unless --sample says otherwise.
@@ -92,11 +95,20 @@ pub fn analyze(args: AnalyzeArgs) -> Result<Value, CliError> {
     if args.algorithm == Algorithm::Path && (args.from.is_none() || args.to.is_none()) {
         return Err(CliError::usage("path needs --from ID and --to ID (node IDs: `RETURN id(n)`, or `_id` in a result)"));
     }
+    if args.write.is_some() && matches!(args.algorithm, Algorithm::Summary | Algorithm::Path) {
+        return Err(CliError::usage("--write stores a result per node; summary and path have none"));
+    }
+    if let Some(property) = &args.write {
+        if property.is_empty() || !property.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            return Err(CliError::usage("--write takes a plain property name: letters, digits and _"));
+        }
+    }
     let path = resolve_db(&args.db)?;
-    let mut reader: Box<dyn CypherReader> = match Graph::open(&path, AccessMode::ReadOnly, PROGRAM) {
-        Ok(graph) => Box::new(graph),
+    let mode = if args.write.is_some() { AccessMode::ReadWrite } else { AccessMode::ReadOnly };
+    let mut reader = match Graph::open(&path, mode, PROGRAM) {
+        Ok(graph) => Reader::Graph(graph),
         // The window holds the graph: read through it, as `query` does.
-        Err(OpenError::Locked(_)) => Box::new(WindowReader(path.clone())),
+        Err(OpenError::Locked(_)) if args.write.is_none() => Reader::Window(WindowReader(path.clone())),
         Err(e) => return Err(e.into()),
     };
     let spec = LoadSpec {
@@ -106,11 +118,15 @@ pub fn analyze(args: AnalyzeArgs) -> Result<Value, CliError> {
         weight: args.weight.clone(),
     };
     let started = Instant::now();
-    let net = analysis::load(reader.as_mut(), &spec)?;
+    let net = analysis::load(&mut reader, &spec)?;
     let loaded_ms = started.elapsed().as_millis() as u64;
     let directed = !args.undirected;
     let weighted = args.weight.is_some();
-    let mut out = run(&args, &net, directed, weighted, reader.as_mut())?;
+    let (mut out, values) = run(&args, &net, directed, weighted, &mut reader)?;
+    if let (Some(property), Some(values), Reader::Graph(graph)) = (&args.write, values, &mut reader) {
+        let written = analysis::write_back(graph, &net, property, &values)?;
+        out["written"] = json!({ "property": property, "nodes": written });
+    }
     out["algorithm"] = json!(args.algorithm.to_possible_value().map(|v| v.get_name().to_string()));
     out["graph"] = json!({
         "nodes": net.node_count(),
@@ -123,10 +139,12 @@ pub fn analyze(args: AnalyzeArgs) -> Result<Value, CliError> {
     Ok(out)
 }
 
-fn run(args: &AnalyzeArgs, net: &Network, directed: bool, weighted: bool, reader: &mut dyn CypherReader) -> Result<Value, CliError> {
+/// The output, and each node's value for `--write` (by node index).
+fn run(args: &AnalyzeArgs, net: &Network, directed: bool, weighted: bool, reader: &mut dyn CypherReader) -> Result<(Value, Option<Vec<Value>>), CliError> {
     let n = net.node_count();
+    let floats = |values: &[f64]| Some(values.iter().map(|&v| json!(v)).collect::<Vec<_>>());
     Ok(match args.algorithm {
-        Algorithm::Summary => json!({ "summary": analysis::summary(net) }),
+        Algorithm::Summary => (json!({ "summary": analysis::summary(net) }), None),
         Algorithm::Degree => {
             let degrees = analysis::degrees(net);
             let centrality = analysis::degree_centrality(net);
@@ -143,25 +161,29 @@ fn run(args: &AnalyzeArgs, net: &Network, directed: bool, weighted: bool, reader
                     row
                 })
                 .collect::<Vec<_>>();
-            json!({ "rows": rows })
+            (json!({ "rows": rows }), Some(degrees.iter().map(|&(i, o)| json!(i + o)).collect()))
         }
         Algorithm::Pagerank => {
             let (scores, converged) = analysis::pagerank(net, args.alpha, directed, 100, 1e-6);
             let mut out = scored(reader, net, &scores, args.top, "pagerank")?;
             out["converged"] = json!(converged);
-            out
+            (out, floats(&scores))
         }
         Algorithm::Betweenness => {
             let sample = args.sample.or((n > EXACT_BETWEENNESS).then_some(DEFAULT_SAMPLE));
             let scores = analysis::betweenness(net, directed, weighted, sample);
             let mut out = scored(reader, net, &scores, args.top, "betweenness")?;
             out["sampled_sources"] = json!(sample.filter(|&k| k < n));
-            out
+            (out, floats(&scores))
         }
-        Algorithm::Closeness => scored(reader, net, &analysis::closeness(net, directed, weighted), args.top, "closeness")?,
+        Algorithm::Closeness => {
+            let scores = analysis::closeness(net, directed, weighted);
+            (scored(reader, net, &scores, args.top, "closeness")?, floats(&scores))
+        }
         Algorithm::Kcore => {
-            let core: Vec<f64> = analysis::core_number(net).into_iter().map(|c| c as f64).collect();
-            scored(reader, net, &core, args.top, "core")?
+            let core = analysis::core_number(net);
+            let scores: Vec<f64> = core.iter().map(|&c| c as f64).collect();
+            (scored(reader, net, &scores, args.top, "core")?, Some(core.iter().map(|&c| json!(c)).collect()))
         }
         Algorithm::Clustering => {
             let (triangles, coefficient) = analysis::clustering(net);
@@ -178,19 +200,20 @@ fn run(args: &AnalyzeArgs, net: &Network, directed: bool, weighted: bool, reader
                 })
                 .collect::<Vec<_>>();
             let average = if n > 0 { coefficient.iter().sum::<f64>() / n as f64 } else { 0.0 };
-            json!({ "rows": rows, "average_clustering": average, "triangles": triangles.iter().sum::<usize>() / 3 })
+            let out = json!({ "rows": rows, "average_clustering": average, "triangles": triangles.iter().sum::<usize>() / 3 });
+            (out, floats(&coefficient))
         }
         Algorithm::Components => {
             let partition = if args.strong { analysis::strong_components(net) } else { analysis::weak_components(net) };
             let mut out = groups(reader, net, &partition, args.top, "component")?;
             out["kind"] = json!(if args.strong { "strong" } else { "weak" });
-            out
+            (out, Some(partition.of.iter().map(|&g| json!(g)).collect()))
         }
         Algorithm::Communities => {
             let (partition, modularity) = analysis::louvain(net, args.resolution, args.seed);
             let mut out = groups(reader, net, &partition, args.top, "community")?;
             out["modularity"] = json!(modularity);
-            out
+            (out, Some(partition.of.iter().map(|&g| json!(g)).collect()))
         }
         Algorithm::Path => {
             let (from, to) = (args.from.unwrap_or_default(), args.to.unwrap_or_default());
@@ -199,14 +222,15 @@ fn run(args: &AnalyzeArgs, net: &Network, directed: bool, weighted: bool, reader
                     .ok_or_else(|| CliError::new("not_found", format!("node {id} is not in the analyzed graph")))
             };
             let (s, t) = (index(from)?, index(to)?);
-            match analysis::shortest_path(net, s, t, directed, weighted) {
+            let out = match analysis::shortest_path(net, s, t, directed, weighted) {
                 None => json!({ "found": false, "rows": [] }),
                 Some((path, length)) => {
                     let info = describe(reader, net, &path)?;
                     let rows = path.iter().map(|&v| node_row(net, &info, v)).collect::<Vec<_>>();
                     json!({ "found": true, "hops": path.len() - 1, "length": length, "rows": rows })
                 }
-            }
+            };
+            (out, None)
         }
     })
 }
@@ -262,6 +286,21 @@ fn node_row(net: &Network, info: &HashMap<i64, NodeInfo>, v: usize) -> Value {
     let id = net.id(v);
     let node = info.get(&id).cloned().unwrap_or_default();
     json!({ "id": id, "labels": node.labels, "name": node.name })
+}
+
+/// Where the analysis reads: the graph, open here, or the window holding it.
+enum Reader {
+    Graph(Graph),
+    Window(WindowReader),
+}
+
+impl CypherReader for Reader {
+    fn cypher(&mut self, text: &str) -> Result<QueryResult, QueryError> {
+        match self {
+            Self::Graph(graph) => graph.cypher(text),
+            Self::Window(window) => window.cypher(text),
+        }
+    }
 }
 
 /// Reads through the running window, which holds the graph.

@@ -1,0 +1,118 @@
+# Communities in the trust network, and who sits at their center.
+#
+# Graph: the audit story (examples/datasets, story "audit"). The `community`
+# and `pagerank` properties come from KhonsuGraph's graph analysis, written
+# back onto the accounts; run these once after a sync:
+#
+#   khonsu analyze communities --db graphs/audit --write community
+#   khonsu analyze pagerank --db graphs/audit --type TRUSTS --write pagerank
+
+plot "intro" {
+  type  = "text"
+  title = "Trust communities"
+  text  = <<TEXT
+    Louvain communities of who rates whom, and PageRank over trust: the accounts most trusted by trusted accounts.
+    Pick a community to see its members, the warnings it received, and how its accounts trust each other.
+  TEXT
+}
+
+query "community_count" {
+  cypher = "MATCH (a:Account) RETURN count(DISTINCT a.community) AS communities"
+}
+
+query "flagged_in_communities" {
+  cypher = "MATCH (a:Account) WHERE a.flagged = true RETURN count(DISTINCT a.community) AS communities"
+}
+
+query "sizes" {
+  cypher = <<CYPHER
+    MATCH (a:Account)
+    RETURN a.community AS community, count(a) AS accounts
+    ORDER BY accounts DESC
+    LIMIT 15
+  CYPHER
+}
+
+query "warnings" {
+  cypher = <<CYPHER
+    MATCH (x:Account)-[d:DISTRUSTS]->(a:Account)
+    WHERE $community
+    RETURN a.community AS community, count(d) AS warnings
+    ORDER BY warnings DESC
+    LIMIT 15
+  CYPHER
+}
+
+query "central" {
+  cypher = <<CYPHER
+    MATCH (a:Account)
+    WHERE $community
+    RETURN a.name AS account, a.community AS community, a.pagerank AS pagerank, a.flagged AS flagged
+    ORDER BY pagerank DESC
+    LIMIT 50
+  CYPHER
+}
+
+query "trust" {
+  cypher = <<CYPHER
+    MATCH (a:Account)-[r:TRUSTS]->(b:Account)
+    WHERE $community AND b.community = a.community AND a.pagerank > 0.0003 AND b.pagerank > 0.0003
+    RETURN a, r, b
+    LIMIT 400
+  CYPHER
+}
+
+plot "count" {
+  type  = "card"
+  query = query.community_count
+  title = "Communities"
+  width = 6
+}
+
+plot "flagged" {
+  type  = "card"
+  query = query.flagged_in_communities
+  title = "Communities with a flagged account"
+  tone  = "warning"
+  width = 6
+}
+
+plot "sizes" {
+  type  = "bar"
+  query = query.sizes
+  title = "Accounts per community"
+  x     = community
+  y     = accounts
+  width = 6
+}
+
+plot "warnings" {
+  type  = "bar"
+  query = query.warnings
+  title = "Warnings received, by community"
+  x     = community
+  y     = warnings
+  width = 6
+}
+
+plot "central" {
+  type  = "table"
+  query = query.central
+  title = "Most central accounts (PageRank over trust)"
+  width = 5
+}
+
+plot "trust" {
+  type    = "graph"
+  query   = query.trust
+  title   = "Trust among central accounts"
+  caption = name
+  group   = community
+  width   = 7
+}
+
+filter "community" {
+  plot   = plot.sizes
+  column = community
+  match  = "a.community"
+}

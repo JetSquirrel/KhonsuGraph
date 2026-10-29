@@ -470,6 +470,29 @@ impl Graph {
         Ok(())
     }
 
+    /// Sets one property on nodes given by label and internal ID, in kernel
+    /// write batches: thousands of nodes in the time a few Cypher `SET`s
+    /// take. A `Null` value removes nothing; it is written as null.
+    pub fn set_node_property(&mut self, property: &str, nodes: &[(String, i64, Value)]) -> Result<(), QueryError> {
+        self.ensure_writable()?;
+        for chunk in nodes.chunks(KERNEL_BATCH) {
+            let graph = chunk
+                .iter()
+                .map(|(label, id, value)| GraphMutation::SetNodeProperty {
+                    label: label.clone(),
+                    filter: Some(PropertyFilter::IdEq { value: Value::Int(*id) }),
+                    property: property.to_string(),
+                    value: value.clone(),
+                })
+                .collect();
+            self.db.commit_kernel_write_batch(KernelWriteBatch {
+                graph,
+                ..KernelWriteBatch::default()
+            })?;
+        }
+        Ok(())
+    }
+
     fn ensure_writable(&self) -> Result<(), QueryError> {
         if self.mode == AccessMode::ReadOnly {
             return Err(QueryError::new("read_only", "the graph is open read-only"));
