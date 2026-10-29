@@ -82,10 +82,64 @@ impl Render for StatusBarView {
             }
             bar = bar.right(Separator::vertical()).right(div().font_family(mono.clone()).child(text));
         }
-        bar.right(Separator::vertical()).right(
+        bar.right(Separator::vertical()).right(update_status(cx))
+    }
+}
+
+/// KhonsuGraph's version, which checks for a newer one when clicked — and,
+/// once one is found, the way to it instead. As in DuckLocal.
+fn update_status(cx: &App) -> AnyElement {
+    use crate::ui::update::{self, Status, CURRENT};
+    let version = format!("KhonsuGraph {CURRENT} · HawDB {}", khonsu_core::HAWDB_VERSION);
+    let tooltip = |text: String| {
+        move |window: &mut Window, cx: &mut App| gpui_kit::component::tooltip::Tooltip::new(text.clone()).build(window, cx)
+    };
+    match update::status(cx) {
+        Status::Checking => h_flex()
+            .gap_1p5()
+            .items_center()
+            .child(Spinner::new().xsmall())
+            .child(tr("status_bar.update.checking"))
+            .into_any_element(),
+        Status::Downloading(tag) => h_flex()
+            .gap_1p5()
+            .items_center()
+            .child(Spinner::new().xsmall())
+            .child(trf("status_bar.update.downloading", &[&tag]))
+            .into_any_element(),
+        Status::Ready(tag) => div()
+            .id("update-ready")
+            .cursor_pointer()
+            .text_color(cx.theme().primary)
+            .font_weight(FontWeight::MEDIUM)
+            .child(trf("status_bar.update.restart", &[&tag]))
+            .tooltip(tooltip(tr("status_bar.update.restart_hint").to_string()))
+            .on_click(|_, _, cx| update::restart(cx))
+            .into_any_element(),
+        Status::Available { tag, url } => div()
+            .id("update-available")
+            .cursor_pointer()
+            .text_color(cx.theme().primary)
+            .font_weight(FontWeight::MEDIUM)
+            .child(trf("status_bar.update.available", &[&tag]))
+            .tooltip(tooltip(url.clone()))
+            .on_click(move |_, _, cx| cx.open_url(&url))
+            .into_any_element(),
+        status => {
+            let (label, hint) = match status {
+                Status::UpToDate => (format!("{version} · {}", tr("status_bar.update.latest")), tr("status_bar.update.check").to_string()),
+                Status::Failed(error) => (format!("{version} · {}", tr("status_bar.update.failed")), error),
+                _ => (version, tr("status_bar.update.check").to_string()),
+            };
             div()
+                .id("update-check")
+                .cursor_pointer()
                 .text_color(cx.theme().muted_foreground)
-                .child(format!("KhonsuGraph {} · HawDB {}", env!("CARGO_PKG_VERSION"), khonsu_core::HAWDB_VERSION)),
-        )
+                .hover(|s| s.text_color(cx.theme().foreground))
+                .child(label)
+                .tooltip(tooltip(hint))
+                .on_click(|_, _, cx| update::check(cx))
+                .into_any_element()
+        }
     }
 }

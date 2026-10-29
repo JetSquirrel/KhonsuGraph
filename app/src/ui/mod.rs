@@ -15,6 +15,7 @@ pub mod status_bar;
 pub mod theme;
 pub mod tiles;
 pub mod title_bar;
+pub mod update;
 pub mod workspace;
 
 use std::path::PathBuf;
@@ -48,6 +49,8 @@ gpui_kit::actions!(
         NewGraph,
         AddSource,
         OpenLogs,
+        CheckForUpdates,
+        ToggleUpdateCheck,
         ToggleBaseMap,
         Quit
     ]
@@ -115,7 +118,13 @@ pub fn init(cx: &mut App) {
             cx.open_with_system(&dir);
         }
     });
+    cx.on_action(|_: &CheckForUpdates, cx| update::check(cx));
+    cx.on_action(|_: &ToggleUpdateCheck, cx| {
+        update::toggle_at_launch(cx);
+        set_menus(cx);
+    });
     set_menus(cx);
+    update::on_launch(cx);
 }
 
 /// The menu bar, rebuilt when the language changes.
@@ -123,6 +132,7 @@ pub fn set_menus(cx: &mut App) {
     use gpui_kit::component::input;
     use gpui_kit::{Menu, MenuItem};
     let base_map = tiles::enabled(cx);
+    let update_at_launch = update::at_launch(cx);
     let menu = |name: &'static str, items: Vec<MenuItem>| Menu {
         name: tr(name).into(),
         items,
@@ -132,6 +142,9 @@ pub fn set_menus(cx: &mut App) {
         Menu {
             name: "KhonsuGraph".into(),
             items: vec![
+                MenuItem::action(tr("menu.check_updates"), CheckForUpdates),
+                MenuItem::action(tr("menu.check_updates_at_launch"), ToggleUpdateCheck).checked(update_at_launch),
+                MenuItem::Separator,
                 MenuItem::action(tr("menu.open_logs"), OpenLogs),
                 MenuItem::Separator,
                 MenuItem::action(tr("menu.quit"), Quit),
