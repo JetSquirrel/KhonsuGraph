@@ -4,7 +4,6 @@
 
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::input::{Editor, EditorState, InputEvent, TabSize};
-use gpui_kit::component::kbd::Kbd;
 use gpui_kit::component::menu::{DropdownMenu, PopupMenuItem};
 use gpui_kit::component::resizable::{resizable_panel, v_resizable};
 use gpui_kit::component::tab::{Tab, TabBar};
@@ -25,7 +24,7 @@ use crate::i18n::{tr, trf};
 use crate::spec::view::{Dashboard, DashboardEvent};
 use crate::state::{AppState, GraphChanged, QueryStats};
 use crate::ui::results::ResultsPanel;
-use crate::ui::{ExplainQuery, RunQuery, SaveSpec, RUN_QUERY_KEYSTROKE, WORKSPACE_KEY_CONTEXT};
+use crate::ui::{ExplainQuery, RunQuery, SaveSpec, WORKSPACE_KEY_CONTEXT};
 
 const RESULTS_PANEL_DEFAULT: f32 = 540.;
 /// Statements that may change labels, types or tables: the sidebar reloads
@@ -657,7 +656,6 @@ impl Workspace {
                     .outline()
                     .small()
                     .icon(AssetIcon::Save)
-                    .label(tr("dashboard.save"))
                     .tooltip_with_action(tr("dashboard.save.tooltip"), &SaveSpec, Some(WORKSPACE_KEY_CONTEXT))
                     .disabled(!dirty)
                     .on_click(cx.listener(|this, _, window, cx| this.save_active_dashboard(window, cx))),
@@ -667,8 +665,9 @@ impl Workspace {
                     .outline()
                     .small()
                     .icon(if showing_source { AssetIcon::ChartNoAxesColumn } else { AssetIcon::Code })
-                    .label(if showing_source { tr("dashboard.source.back") } else { tr("dashboard.source.show") })
-                    .tooltip(tr("dashboard.source.tooltip"))
+                    // The icon is the button's only word: the tooltip says
+                    // which way it goes.
+                    .tooltip(if showing_source { tr("dashboard.source.back") } else { tr("dashboard.source.tooltip") })
                     .on_click(move |_, _, cx| source_host.update(cx, |dashboard, cx| dashboard.toggle_source(cx))),
             )
             .child(
@@ -676,7 +675,6 @@ impl Workspace {
                     .outline()
                     .small()
                     .icon(IconName::RotateCw)
-                    .label(tr("dashboard.reload"))
                     .loading(running)
                     .tooltip(tr("dashboard.reload.tooltip"))
                     .on_click(move |_, _, cx| reload_host.update(cx, |dashboard, cx| dashboard.reload(cx))),
@@ -684,7 +682,6 @@ impl Workspace {
     }
 
     fn render_toolbar(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let run_keystroke = Keystroke::parse_with_os(RUN_QUERY_KEYSTROKE, cx.platform_info().os).ok();
         let empty = self
             .tabs
             .get(self.active)
@@ -707,8 +704,9 @@ impl Workspace {
                     .icon(IconName::Play)
                     .label(tr("workspace.run"))
                     .loading(self.running)
+                    // The shortcut lives in the tooltip, as in DuckLocal.
+                    .tooltip_with_action(tr("workspace.run.tooltip"), &RunQuery, Some(WORKSPACE_KEY_CONTEXT))
                     .disabled(disabled)
-                    .when_some(run_keystroke, |this, keystroke| this.child(Kbd::new(keystroke)))
                     .on_click(cx.listener(|this, _, window, cx| this.run_active(window, cx))),
             )
             .child(
@@ -716,7 +714,6 @@ impl Workspace {
                     .ghost()
                     .small()
                     .icon(gpui_kit::assets::IconName::ListTree)
-                    .label(tr("workspace.explain"))
                     .tooltip(tr("workspace.explain.tooltip"))
                     .disabled(disabled)
                     .on_click(cx.listener(|this, _, window, cx| this.explain_active(window, cx))),

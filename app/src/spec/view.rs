@@ -1346,7 +1346,7 @@ impl Dashboard {
                             .xsmall()
                             .ghost()
                             .icon(IconName::Copy)
-                            .label(tr("dashboard.sql.copy"))
+                            .tooltip(tr("dashboard.sql.copy"))
                             .on_click(move |_, _, cx: &mut App| {
                                 cx.write_to_clipboard(ClipboardItem::new_string(copied.clone()))
                             }),
