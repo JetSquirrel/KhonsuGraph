@@ -244,7 +244,7 @@ static STRINGS: &[(&str, &str, &str)] = &[
     ("workspace.add_tab", "新建查询", "New query"),
     ("workspace.new_cypher", "新建 Cypher 查询", "New Cypher Query"),
     ("workspace.new_sql", "新建 SQL 查询", "New SQL Query"),
-    ("workspace.untitled", "未命名", "Untitled"),
+    ("workspace.tab.default_title", "查询 {}", "Query {}"),
 
     // ── results ─────────────────────────────────────────────────────────
     ("results.table", "表格", "Table"),

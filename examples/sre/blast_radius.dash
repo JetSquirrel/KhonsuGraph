@@ -57,12 +57,14 @@ plot "count" {
   type  = "card"
   query = query.count
   title = "Services"
+  width = 6
 }
 
 plot "edges" {
   type  = "card"
   query = query.edges
   title = "Call paths"
+  width = 6
 }
 
 plot "services" {

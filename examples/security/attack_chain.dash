@@ -87,6 +87,7 @@ plot "processes" {
   type  = "card"
   query = query.processes
   title = "Processes in the logs"
+  width = 4
 }
 
 plot "indicated" {
@@ -94,6 +95,7 @@ plot "indicated" {
   query = query.indicated
   title = "ATT&CK techniques indicated"
   tone  = "warning"
+  width = 4
 }
 
 plot "lsass" {
@@ -101,6 +103,7 @@ plot "lsass" {
   query = query.lsass
   title = "Handles opened on lsass.exe"
   tone  = "critical"
+  width = 4
 }
 
 plot "hits" {

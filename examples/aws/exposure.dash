@@ -5,6 +5,7 @@ plot "intro" {
   type  = "text"
   title = "Internet exposure"
   text  = "Security groups that let an address range in, the instances behind them, and the roles those instances can use. Pick a security group to narrow the graph."
+  width = 9
 }
 
 query "open_groups" {

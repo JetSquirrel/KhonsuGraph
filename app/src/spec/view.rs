@@ -88,6 +88,10 @@ use crate::ui::grid::{fit_column_width, sorted_rows};
 const PLOT_DEFAULT: f32 = 300.;
 const PLOT_MIN: f32 = 160.;
 const PLOT_MAX: f32 = 800.;
+/// A row with a graph starts taller: a force layout spreads about as far
+/// down as across, so a chart's short, wide row drew it small, with the
+/// sides of the panel empty.
+const GRAPH_DEFAULT: f32 = 440.;
 /// A row of nothing but cards holds one number each: it starts short.
 const CARD_DEFAULT: f32 = 104.;
 /// A card with a note under its value needs a line more.
@@ -2235,6 +2239,8 @@ impl Render for Dashboard {
                         let noted = row.iter().any(|&ix| self.plots[ix].note.is_some());
                         let default = if noted { CARD_NOTED } else { CARD_DEFAULT };
                         (default, CARD_MIN, CARD_MAX)
+                    } else if row.iter().any(|&ix| self.plots[ix].kind == "graph") {
+                        (GRAPH_DEFAULT, PLOT_MIN, PLOT_MAX)
                     } else if let Some(height) = self.table_row_height(row) {
                         // A row of short tables is as tall as its rows, not
                         // a chart's height of empty space under them.

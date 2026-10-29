@@ -9,6 +9,7 @@ plot "intro" {
   type  = "text"
   title = "A place near the MTR"
   text  = "Pick a station to see the listings within walking distance, cheapest first."
+  width = 9
 }
 
 query "stations" {

@@ -33,6 +33,8 @@ const WRITE_WORDS: &[&str] = &["CREATE", "MERGE", "DELETE", "SET", "INSERT", "DR
 
 pub struct QueryTab {
     pub id: u64,
+    /// "Query N" in the tab bar, as in DuckLocal: one past the highest open.
+    pub number: usize,
     pub language: Language,
     pub editor: Entity<EditorState>,
     pub results: Entity<ResultsPanel>,
@@ -133,6 +135,7 @@ impl Workspace {
     fn new_tab(&mut self, language: Language, text: &str, window: &mut Window, cx: &mut Context<Self>) -> QueryTab {
         let id = self.next_tab_id;
         self.next_tab_id += 1;
+        let number = self.tabs.iter().filter_map(WorkspaceTab::as_query).map(|tab| tab.number).max().unwrap_or(0) + 1;
         let editor = cx.new(|cx| {
             EditorState::new(window, cx)
                 // HawDB's Cypher shares most of its keywords with SQL; the SQL
@@ -164,6 +167,7 @@ impl Workspace {
         let results = cx.new(|cx| ResultsPanel::new(self.state.clone(), window, cx));
         QueryTab {
             id,
+            number,
             language,
             editor,
             results,
@@ -556,12 +560,7 @@ impl Workspace {
                 let closable = self.tabs.len() > 1 && (tab.as_query().is_none() || queries > 1);
                 let (glyph, title, marked) = match tab {
                     WorkspaceTab::Query(tab) => {
-                        let first_line = tab.editor.read(cx).value().lines().next().unwrap_or("").trim().to_string();
-                        let title = if first_line.is_empty() {
-                            tr("workspace.untitled").to_string()
-                        } else {
-                            first_line.chars().take(28).collect()
-                        };
+                        let title = trf("workspace.tab.default_title", &[&tab.number.to_string()]);
                         // A graph query wears a graph's glyph, a table query
                         // DuckLocal's terminal: the two read apart at a glance.
                         let glyph = match tab.language {
