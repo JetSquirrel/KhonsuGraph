@@ -37,6 +37,30 @@ khonsu explain --db DIR --cypher "MATCH (n:Host) RETURN n"
 
 `{node_count, relationship_count, labels: [{name, count, properties}], relationship_types: [{name, count, properties, patterns: [[source, target]]}], tables: [{name, columns}]}`. Counts are exact; properties come from HawDB's statistics.
 
+## Graph analysis
+
+HawDB's Cypher has no shortest paths, centrality or communities; `khonsu analyze` computes them in memory, after networkx's definitions (results match networkx on the same graph).
+
+```bash
+khonsu analyze summary     --db DIR                        # size, density, components, clustering, max core, diameter
+khonsu analyze degree      --db DIR --top 20
+khonsu analyze pagerank    --db DIR --type TRUSTS          # --alpha 0.85, --weight PROP
+khonsu analyze betweenness --db DIR --label Service        # --sample K (default: all ≤ 5,000 nodes, else 500)
+khonsu analyze closeness   --db DIR --type NEXT_TO --undirected
+khonsu analyze components  --db DIR [--strong]
+khonsu analyze communities --db DIR                        # Louvain; --resolution 1.0, --seed 42
+khonsu analyze clustering  --db DIR
+khonsu analyze kcore       --db DIR
+khonsu analyze path        --db DIR --from 8 --to 11       # node IDs: RETURN id(n), or _id in a result
+khonsu analyze pagerank    --db DIR --cypher "MATCH (a:Process)-[r:SPAWNED]->(b:Process) RETURN a, r, b"
+```
+
+Which graph: the whole graph by default; `--label` keeps nodes with those labels and the relationships between them; `--type` keeps those relationships and (without `--label`) only the nodes they join; `--cypher` analyzes exactly the nodes and relationships a query returns, whole. Relationships are directed unless `--undirected`; clustering, cores and communities always read them both ways. `--weight PROP` reads a numeric relationship property as weight (PageRank) or length (paths, betweenness, closeness); missing is 1.
+
+### analyze output
+
+`{algorithm, graph: {nodes, relationships, directed, weighted}, load_ms, elapsed_ms, rows, ...}`. Node rows are `{id, labels, name, <score>}`, best first, `--top` of them (`name` is the first of `name`, `title`, `label`, `external_id`, `id`). `degree` adds `in`, `out`, `centrality`; `pagerank` adds `converged`; `betweenness` adds `sampled_sources` (null when exact); `clustering` rows carry `triangles` and `clustering`, plus `average_clustering`. `components` and `communities` rows are groups `{component|community, size, members}` (first 10 members), with `count`, `singletons`, and `modularity` for communities. `path` gives `found`, `hops`, `length` and the path's nodes as `rows`. `summary` gives `summary: {nodes, relationships, density, self_loops, weak_components, largest_weak_component, strong_components, isolated_nodes, average_degree, average_clustering, max_core, diameter, diameter_estimated}`.
+
 ## Data sources
 
 ```bash

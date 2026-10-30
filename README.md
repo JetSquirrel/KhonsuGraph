@@ -50,6 +50,22 @@ Claude Code.
 Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds the
 packages and publishes a GitHub release.
 
+## Graph analysis
+
+`khonsu analyze` adds what HawDB's Cypher lacks, after networkx: `summary`,
+`degree`, `pagerank`, `betweenness`, `closeness`, `components` (weak or
+`--strong`), `communities` (Louvain), `clustering`, `kcore` and shortest
+`path`, over the whole graph, `--label`/`--type`, or a `--cypher` subgraph.
+Results match networkx on the same graph; on the audit story (5,881
+accounts, 35,592 ratings) the summary, components, clustering, cores,
+diameter and PageRank equal networkx's exactly.
+
+```sh
+khonsu analyze summary --db graphs/audit
+khonsu analyze pagerank --db graphs/audit --type TRUSTS --top 10
+khonsu analyze communities --db graphs/investigation
+```
+
 ## HawDB 0.19.0 notes
 
 KhonsuGraph pins HawDB to 0.19.0. See [upgrade validation](docs/hawdb-0.19-upgrade.md)

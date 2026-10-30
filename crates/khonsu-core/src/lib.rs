@@ -2,6 +2,7 @@
 //! plugin host and per-user settings. The desktop app and the `khonsu` CLI are
 //! thin layers over this crate.
 
+pub mod analysis;
 mod cypher_columns;
 pub mod engine;
 pub mod lock;
