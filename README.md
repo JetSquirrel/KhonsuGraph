@@ -67,6 +67,11 @@ khonsu analyze communities --db graphs/investigation
 khonsu analyze communities --db graphs/audit --write community   # a property dashboards can group by
 ```
 
+In the window, a graph result's **Analyze** menu does the same over the
+graph on the canvas: node size by degree, PageRank or betweenness, or
+groups by Louvain community or connected component, recomputed as
+neighbors are expanded.
+
 `--write PROP` stores each node's result (community number, score, degree,
 core) as a node property; `examples/audit/communities.dash` groups the trust
 network by it.
