@@ -117,8 +117,56 @@ plot "monthly" {
   title = "Negative ratings per month"
 }
 
+query "ring" {
+  cypher = <<CYPHER
+    MATCH (a:Account)-[r:TRUSTS]->(b:Account)
+    WHERE $member AND a.flagged = true AND b.flagged = true
+    RETURN a, r, b
+  CYPHER
+}
+
+query "ring_members" {
+  cypher = <<CYPHER
+    MATCH (a:Account)-[r:TRUSTS]->(b:Account)
+    WHERE a.flagged = true AND b.flagged = true AND r.rating = 10
+    RETURN a.name AS member, count(r) AS tens_given, a.negative_received AS warnings
+    ORDER BY tens_given DESC
+  CYPHER
+}
+
+plot "ring_intro" {
+  type  = "text"
+  title = "Flagged accounts vouching for each other"
+  text  = <<TEXT
+    Trust given by one flagged account to another. A tight cluster of
+    mutual 10s among accounts others warn about is the collusion pattern.
+    Pick a member on the left to see only the trust it gave.
+  TEXT
+}
+
+plot "ring_members" {
+  type  = "table"
+  query = query.ring_members
+  title = "Flagged accounts giving 10s to flagged accounts"
+  width = 4
+}
+
+plot "ring" {
+  type    = "graph"
+  query   = query.ring
+  title   = "Trust among flagged accounts"
+  caption = name
+  width   = 8
+}
+
 filter "account" {
   plot   = plot.flagged
   column = account
+  match  = "a.name"
+}
+
+filter "member" {
+  plot   = plot.ring_members
+  column = member
   match  = "a.name"
 }
