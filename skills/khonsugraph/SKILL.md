@@ -33,7 +33,7 @@ Use the real `khonsu` executable, never GUI automation or a replacement script. 
 
 ## Graph analysis
 
-For what Cypher cannot say — who is most central, which groups form, how two nodes connect — use `khonsu analyze ALGORITHM --db DIR` (`summary`, `degree`, `pagerank`, `betweenness`, `closeness`, `components`, `communities`, `clustering`, `kcore`, `path`). It reads the whole graph, or `--label`/`--type`, or a `--cypher` subgraph, and returns the `--top` nodes with their labels and names; algorithms follow networkx. Start with `summary` on an unfamiliar graph. Name the algorithm and the subgraph when you report a result, and say when betweenness was sampled (`sampled_sources`). See [the CLI reference](references/cli.md#graph-analysis).
+For what Cypher cannot say — who is most central, which groups form, how two nodes connect — use `khonsu analyze ALGORITHM --db DIR` (`summary`, `degree`, `pagerank`, `betweenness`, `closeness`, `components`, `communities`, `clustering`, `kcore`, `path`). It reads the whole graph, or `--label`/`--type`, or a `--cypher` subgraph, and returns the `--top` nodes with their labels and names; algorithms follow networkx. Start with `summary` on an unfamiliar graph. `--write PROP` stores each node's result as a property that dashboards can sort, filter and group by (`group = community` on a graph plot) — it changes the graph, so ask first. Name the algorithm and the subgraph when you report a result, and say when betweenness was sampled (`sampled_sources`). See [the CLI reference](references/cli.md#graph-analysis).
 
 ## The window and the graph lease
 

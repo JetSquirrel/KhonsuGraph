@@ -11,6 +11,10 @@ comes from public datasets, downloaded and converted by `datasets/`:
 | Auditor looks for accounts others warn about | `audit/trust_network.dash` | SNAP Bitcoin OTC trust network | 5,881 accounts, 35,592 ratings |
 | A renter looks for a place near the MTR | `renting/near_mtr.dash` | OpenStreetMap MTR lines and stations; Inside Airbnb Hong Kong | 5,730 nodes, 17,119 relationships |
 
+`audit/communities.dash` groups the audit story's accounts by Louvain
+community and ranks them by PageRank over trust; it reads properties that
+`khonsu analyze ... --write` stores (see the file's header).
+
 `infra/blast_radius.dash` runs on the small CSV demo in `csv/` (12 nodes,
 14 relationships), the quickest one to try:
 

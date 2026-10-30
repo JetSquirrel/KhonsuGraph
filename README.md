@@ -64,7 +64,12 @@ diameter and PageRank equal networkx's exactly.
 khonsu analyze summary --db graphs/audit
 khonsu analyze pagerank --db graphs/audit --type TRUSTS --top 10
 khonsu analyze communities --db graphs/investigation
+khonsu analyze communities --db graphs/audit --write community   # a property dashboards can group by
 ```
+
+`--write PROP` stores each node's result (community number, score, degree,
+core) as a node property; `examples/audit/communities.dash` groups the trust
+network by it.
 
 ## HawDB 0.19.0 notes
 

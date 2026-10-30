@@ -143,6 +143,31 @@ fn ident(name: &str) -> String {
     }
 }
 
+/// Write `values[v]` to property `property` of every node in `net`, so
+/// dashboards and the canvas can sort, color and group by a result — as
+/// networkx's `set_node_attributes` does. Nodes are found by label and ID
+/// (HawDB writes by label); a node in several labels is written once,
+/// through the first. Returns the number of nodes written.
+pub fn write_back(graph: &mut Graph, net: &Network, property: &str, values: &[Json]) -> Result<usize, QueryError> {
+    let wanted: HashSet<i64> = net.ids().iter().copied().collect();
+    let mut label_of: HashMap<i64, String> = HashMap::new();
+    for label in graph.schema()?.labels {
+        for id in paged_ids(graph, &format!("MATCH (n:{}) RETURN id(n) AS id", ident(&label.name)))? {
+            if wanted.contains(&id) {
+                label_of.entry(id).or_insert_with(|| label.name.clone());
+            }
+        }
+    }
+    let nodes: Vec<(String, i64, hawdb::Value)> = net
+        .ids()
+        .iter()
+        .zip(values)
+        .filter_map(|(id, value)| Some((label_of.get(id)?.clone(), *id, crate::result::json_to_value(value))))
+        .collect();
+    graph.set_node_property(property, &nodes)?;
+    Ok(nodes.len())
+}
+
 /// What a result row says of a node besides its ID.
 #[derive(Debug, Clone, Default, Serialize, PartialEq)]
 pub struct NodeInfo {

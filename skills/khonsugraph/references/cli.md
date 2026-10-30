@@ -53,9 +53,12 @@ khonsu analyze clustering  --db DIR
 khonsu analyze kcore       --db DIR
 khonsu analyze path        --db DIR --from 8 --to 11       # node IDs: RETURN id(n), or _id in a result
 khonsu analyze pagerank    --db DIR --cypher "MATCH (a:Process)-[r:SPAWNED]->(b:Process) RETURN a, r, b"
+khonsu analyze communities --db DIR --write community      # store each node's result as a property
 ```
 
 Which graph: the whole graph by default; `--label` keeps nodes with those labels and the relationships between them; `--type` keeps those relationships and (without `--label`) only the nodes they join; `--cypher` analyzes exactly the nodes and relationships a query returns, whole. Relationships are directed unless `--undirected`; clustering, cores and communities always read them both ways. `--weight PROP` reads a numeric relationship property as weight (PageRank) or length (paths, betweenness, closeness); missing is 1.
+
+`--write PROP` stores every analyzed node's result as node property `PROP` — the community or component number, the PageRank/betweenness/closeness/clustering score, the degree or the core number — so a dashboard can `ORDER BY n.pagerank`, filter `WHERE n.community = 3`, or draw a graph plot with `group = community`. It opens the graph for writing (the window must not hold it), writes in kernel batches (thousands of nodes in well under a second), and adds `written: {property, nodes}`. A node outside the analyzed graph keeps its old value; rerun after a sync.
 
 ### analyze output
 
