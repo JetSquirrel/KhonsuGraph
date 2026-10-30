@@ -32,6 +32,7 @@ fn main() {
     }
 
     crash::init();
+    ui::update::clean_up();
     i18n::set_current(i18n::initial_language());
     ui::scale::load();
 
