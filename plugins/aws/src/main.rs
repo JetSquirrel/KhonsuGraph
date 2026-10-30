@@ -162,17 +162,20 @@ impl Source {
     }
 }
 
+/// `regions` as comma-separated text, or as the JSON list `-c regions=[...]`
+/// parses to; anything else falls back to us-east-1.
 fn regions(request: &Request) -> Vec<String> {
-    request
-        .config
-        .get("regions")
-        .and_then(Value::as_str)
-        .unwrap_or("us-east-1")
-        .split(',')
-        .map(str::trim)
-        .filter(|r| !r.is_empty())
-        .map(str::to_string)
-        .collect()
+    let names: Vec<String> = match request.config.get("regions") {
+        Some(Value::String(text)) => text.split(',').map(str::to_string).collect(),
+        Some(Value::Array(items)) => items.iter().filter_map(Value::as_str).map(str::to_string).collect(),
+        _ => Vec::new(),
+    };
+    let names: Vec<String> = names.iter().map(|r| r.trim()).filter(|r| !r.is_empty()).map(str::to_string).collect();
+    if names.is_empty() {
+        vec!["us-east-1".to_string()]
+    } else {
+        names
+    }
 }
 
 fn items<'a>(value: &'a Value, key: &str) -> impl Iterator<Item = &'a Value> {
@@ -485,6 +488,19 @@ fn main() -> ExitCode {
 mod tests {
     use super::*;
     use khonsu_plugin_protocol::{parse_line, PROTOCOL_VERSION};
+
+    #[test]
+    fn regions_accept_text_and_lists() {
+        let with = |value: Value| {
+            let mut config = Map::new();
+            config.insert("regions".into(), value);
+            regions(&Request { config, ..Request::default() })
+        };
+        assert_eq!(with(json!("us-east-1, eu-west-1")), ["us-east-1", "eu-west-1"]);
+        assert_eq!(with(json!(["eu-west-1", "ap-east-1"])), ["eu-west-1", "ap-east-1"]);
+        assert_eq!(with(json!([])), ["us-east-1"]);
+        assert_eq!(with(json!(" ")), ["us-east-1"]);
+    }
 
     fn fixture_request() -> Request {
         let dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture");

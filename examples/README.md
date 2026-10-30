@@ -28,7 +28,7 @@ it on the saved responses that ship with the AWS plugin:
 
 ```sh
 khonsu init graphs/aws
-khonsu source add --db graphs/aws --plugin aws --name "shop account"   -c "fixture_dir=\"$PWD/plugins/aws/tests/fixture\"" -c 'regions=["us-east-1"]'
+khonsu source add --db graphs/aws --plugin aws --name "shop account"   -c "fixture_dir=\"$PWD/plugins/aws/tests/fixture\"" -c regions=us-east-1
 khonsu plugin sync --source shop-account
 khonsu check examples/aws/exposure.dash --db graphs/aws
 ```
@@ -44,16 +44,16 @@ node examples/datasets/build.mjs security scratch/datasets/raw scratch/datasets/
 
 khonsu init graphs/security
 khonsu source add --db graphs/security --plugin csv --name "security data" \
-  -c 'nodes=[{"path":"scratch/datasets/security/nodes.csv","label_column":"label","id_column":"id"}]' \
-  -c 'edges=[{"path":"scratch/datasets/security/edges.csv","type_column":"type","source_column":"source","target_column":"target","id_column":"id"}]'
+  -c 'nodes=[{"path":"'"$PWD"'/scratch/datasets/security/nodes.csv","label_column":"label","id_column":"id"}]' \
+  -c 'edges=[{"path":"'"$PWD"'/scratch/datasets/security/edges.csv","type_column":"type","source_column":"source","target_column":"target","id_column":"id"}]'
 khonsu plugin sync --source security-data
 khonsu check examples/security/attack_chain.dash --db graphs/security
 khonsu open graphs/security && khonsu open examples/security/attack_chain.dash
 ```
 
-Swap `security` for `sre`, `investigation`, `audit` or `renting`. Paths in
-`source add` are stored as given, so use absolute ones if you will sync from
-another folder. Every imported graph's node and relationship counts equal the
+Swap `security` for `sre`, `investigation`, `audit` or `renting`. Paths inside
+`nodes` and `edges` are stored as given and read from the plugin's own folder,
+so keep them absolute (`$PWD` above). Every imported graph's node and relationship counts equal the
 rows of its CSVs.
 
 ## Working with an agent
