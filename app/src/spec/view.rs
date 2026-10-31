@@ -1476,9 +1476,10 @@ impl Dashboard {
                 }
             }
         });
-        // One muted line under the title: what is plotted, then what a click
-        // does. A key that already names the series says the first half
-        // better, so a keyed line or bar plot leaves it out.
+        // What is plotted, then what a click does, behind an info mark beside
+        // the title, so a grid of plots does not spend a line on each. A key
+        // that already names the series says the first half better, so a
+        // keyed line or bar plot leaves it out.
         let keyed_xy = !legend.is_empty() && !matches!(self.plots[ix].kind.as_str(), "pie" | "map");
         let subtitle = match (axes.filter(|_| !keyed_xy), notice) {
             (Some(axes), Some(notice)) => Some(crate::i18n::join(&axes, &notice)),
@@ -1565,23 +1566,24 @@ impl Dashboard {
                     .pb_2()
                     .gap_1()
                     .child(
-                        div()
-                            .text_base()
-                            .font_weight(FontWeight::MEDIUM)
-                            .text_ellipsis()
+                        h_flex()
+                            .w_full()
+                            .min_w_0()
+                            .gap_1p5()
                             // Clear of the SQL and comment buttons.
                             .pr_16()
-                            .child(title),
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .text_base()
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .text_ellipsis()
+                                    .child(title),
+                            )
+                            .when_some(subtitle, |this, subtitle| {
+                                this.child(plot_info(ix, subtitle, cx))
+                            }),
                     )
-                    .when_some(subtitle, |this, subtitle| {
-                        this.child(
-                            div()
-                                .text_xs()
-                                .text_color(cx.theme().muted_foreground)
-                                .text_ellipsis()
-                                .child(subtitle),
-                        )
-                    })
                     .when(!legend.is_empty(), |this| {
                         this.child(legend_row(legend, cx))
                     }),
@@ -2896,6 +2898,17 @@ fn render_text(plot: &PreparedPlot, cx: &App) -> AnyElement {
             )
         })
         .into_any_element()
+}
+
+/// The info mark beside a plot's title, as in a Grafana panel: what is plotted
+/// and what a click does, shown when the pointer rests on it. A button, so its
+/// tooltip shows and looks like the SQL and comment buttons' beside it.
+fn plot_info(ix: usize, text: String, cx: &App) -> impl IntoElement {
+    Button::new(("dashboard-plot-info", ix))
+        .xsmall()
+        .ghost()
+        .icon(Icon::new(IconName::Info).text_color(cx.theme().muted_foreground))
+        .tooltip(text)
 }
 
 /// The plot body when nothing parsed: the same medium-over-muted message the
