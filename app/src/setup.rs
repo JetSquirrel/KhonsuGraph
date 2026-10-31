@@ -310,7 +310,7 @@ pub fn agent_prompt() -> String {
          - To see what I have open in the KhonsuGraph window: `{command} open --state`.\n\
          - Read the labels, relationship types and properties before writing a query: \
          `{command} schema --db <graph>`.\n\
-         - HawDB's Cypher has no sum(), labels() or path variables; \
+         - HawDB's Cypher has no labels(), path variables or shortestPath; \
          return whole nodes and relationships to get a graph back.\n\
          - Validate a dashboard with `{command} check <file.dash> --db <graph>`; \
          answer my comments on it with `{command} comments <file.dash>`.\n\
