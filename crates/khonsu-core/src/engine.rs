@@ -6,7 +6,7 @@ use crate::lock::{self, LockError, LockOwner, WriterLock};
 use crate::result::{json_params, value_to_json, GraphCollector, GraphData, QueryResult};
 use crate::schema::{self, GraphSchema};
 use hawdb::store::{GraphMutation, KernelWriteBatch, MatchedRelationshipCreate, NodeSetAssignment, NodeSetValue, PropertyFilter};
-use hawdb::{Database, DatabaseConfig, HawDBError, Value};
+use hawdb::{Database, DatabaseConfig, HawDBError, RecoveryMode, Value};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value as Json};
 use std::collections::BTreeMap;
@@ -251,6 +251,12 @@ impl Graph {
         };
         let config = DatabaseConfig {
             read_only: mode == AccessMode::ReadOnly,
+            // HawDB 0.20+ repairs a torn WAL tail on open by default, which
+            // needs a writer; a read-only open must ask for strict replay.
+            recovery_mode: match mode {
+                AccessMode::ReadOnly => RecoveryMode::Strict,
+                AccessMode::ReadWrite => RecoveryMode::default(),
+            },
             max_read_result_rows: Some(MAX_READ_RESULT_ROWS),
             ..DatabaseConfig::default()
         };

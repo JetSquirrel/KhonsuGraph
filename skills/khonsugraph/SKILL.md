@@ -16,14 +16,15 @@ Use the real `khonsu` executable, never GUI automation or a replacement script. 
 5. Write one statement using observed names, within HawDB's Cypher (below). Read [the CLI reference](references/cli.md) for options and output.
 6. Parse the JSON: `columns`, `rows`, `row_count`, `truncated`, and `graph` (`nodes`, `edges`) when the result holds nodes or relationships. `truncated: true` means `rows` is a prefix; say so. Answer from returned values and name the graph and query.
 
-## HawDB's Cypher (0.19.0) — what works
+## HawDB's Cypher (0.22.0) — what works
 
-- `MATCH`, `OPTIONAL MATCH`, `WHERE` (comparisons, `IN [...]`, `STARTS WITH`, `IS NULL`), `RETURN [DISTINCT]`, `ORDER BY`, `SKIP`, `LIMIT`, `WITH`, `UNWIND`, `CREATE`, `MERGE`, `SET`, `DELETE`, `DETACH DELETE`; parameters `$name` (`-p name=value`). `UNWIND` requires a following write clause; it is not a standalone read pipeline.
+- `MATCH`, `OPTIONAL MATCH` (not as the first clause), `WHERE` (comparisons, `IN [...]`, `STARTS WITH`, `IS NULL`), `RETURN [DISTINCT]`, `ORDER BY`, `SKIP`, `LIMIT`, `WITH`, `UNWIND`, `CREATE`, `MERGE`, `SET`, `DELETE`, `DETACH DELETE`, `CASE WHEN … END`, `coalesce()`; parameters `$name` (`-p name=value`). A read starts with `MATCH`: a bare `RETURN 1` does not parse. `UNWIND` requires a following write clause; it is not a standalone read pipeline.
 - Return whole nodes and relationships (`RETURN a, r, b`) to get them under `graph`; nodes come back as `{_id, labels, ...properties}`, relationships as `{_id, type, source_id, target_id, ...properties}`.
-- `id(n)` and `type(r)` work. Aggregates: `count`, `collect`, `min`, `max`, `avg` — **there is no `sum()`**: use `avg(x) * count(x)` only when a number is enough, or SQL over a table.
-- No `labels()`, `keys()`, `properties()`, `shortestPath`, path variables (`p = …`), `CALL db.*`, or `SHOW`; the schema command replaces them.
+- `id(n)` and `type(r)` work, but not on both sides of a comparison: `WHERE id(a) < id(b)` does not parse; compare a property instead. Aggregates: `count`, `sum`, `collect`, `min`, `max`, `avg`, also over expressions (`sum(r.weight * 2)`).
+- Lists: `collect(...)`, indexing `xs[0]` and `xs[-1]`, slices `xs[1..3]`, `size`, `head`, `tail`, `last`, `reverse`, `range(a, b)`, and comprehensions `[x IN xs WHERE x > 5]` or `[m IN nodes | m.name]` — the part after `|` must be a variable or a property, not arithmetic. No `reduce`, `any`/`all` or `toString`.
+- No `labels()`, `keys()`, `properties()`, `shortestPath`, path variables (`p = …`), `CALL db.*`, or `SHOW`; the schema command replaces them. No string concatenation: `a.name + '!'` fails.
 - Variable-length patterns need a relationship type and no variable (`(a)-[:CALLS*1..4]->(b)`, not `-[r:CALLS*1..4]->`); an untyped relationship pattern works only for one hop. Return the endpoints, then fetch the hops with one-hop queries when you need them.
-- Result columns come back in RETURN order (KhonsuGraph restores it; HawDB itself sorts them by name). Still read them by name.
+- Result columns come back in RETURN order. Still read them by name.
 - Vector values are returned as JSON number arrays, including vector properties in nodes.
 - A boolean literal (`WHERE true`) is not a predicate; write a real comparison.
 - `CREATE` takes one pattern per statement: `CREATE (a:N), (b:N)` does not parse; create each, then `MATCH` them to create a relationship.

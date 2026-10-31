@@ -66,15 +66,15 @@ khonsu analyze pagerank --db graphs/audit --type TRUSTS --top 10
 khonsu analyze communities --db graphs/investigation
 ```
 
-## HawDB 0.19.0 notes
+## HawDB 0.22.0 notes
 
-KhonsuGraph pins HawDB to 0.19.0. See [upgrade validation](docs/hawdb-0.19-upgrade.md)
-for compatibility checks and their scope, and the [0.15](docs/hawdb-0.15-upgrade.md), [0.12](docs/hawdb-0.12-upgrade.md) and [0.11 validation](docs/hawdb-0.11-upgrade.md)
+KhonsuGraph pins HawDB to 0.22.0. See [upgrade validation](docs/hawdb-0.22-upgrade.md)
+for compatibility checks and their scope, and the [0.19](docs/hawdb-0.19-upgrade.md), [0.15](docs/hawdb-0.15-upgrade.md), [0.12](docs/hawdb-0.12-upgrade.md) and [0.11 validation](docs/hawdb-0.11-upgrade.md)
 for earlier database compatibility checks.
 
 - Graphs written by HawDB 0.8–0.15, including the first v0.1.0 build, cannot
   be read and report `old_format`; `khonsu rebuild` makes them again from
-  their data sources.
+  their data sources. Graphs written by 0.19 open in 0.22 as they are.
 
 - One process per graph directory, readers included. While the app has a
   graph open, `khonsu query` and `khonsu check` run through the app.
@@ -85,8 +85,10 @@ for earlier database compatibility checks.
 - `OPTIONAL MATCH`, scalar `IN` expressions and `json_value()` on JSON text
   are supported. Relationship properties can now be updated with `SET`;
   the importer retains its existing delete/recreate strategy.
-- Cypher `sum()`, `labels()` and `WHERE true` still fail to parse in the
-  checked queries. Dashboard filters remove an unpicked condition instead.
+- Cypher `sum()`, list functions (`size`, `head`, `range`, indexing, slices)
+  and list comprehensions work since 0.21–0.22. `labels()`, path variables,
+  string concatenation and `WHERE true` still fail. Dashboard filters remove
+  an unpicked condition instead.
 - KhonsuGraph explicitly limits reads to 100,000 result rows, preserving
   its previous behavior after HawDB removed the default row limit in 0.10.
   The result display limit is separate and does not lower execution cost.
