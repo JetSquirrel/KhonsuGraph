@@ -8,7 +8,7 @@ license.workspace = true
 [dependencies]
 # Pinned to the release gpui-graph builds against: both must share GPUI and gpui-base theme types.
 gpui-kit = { version = "=0.8.1", features = ["tree-sitter-sql"] }
-gpui-graph = "=0.1.6"
+gpui-graph = "=0.2.0"
 khonsu-core.workspace = true
 # The `khonsu` command, run by this executable (see main.rs).
 khonsu-cli.workspace = true
