@@ -95,6 +95,10 @@ pub fn value_to_json(value: &Value) -> Json {
         Value::Uuid(uuid) => Json::String(uuid.to_string()),
         Value::List(items) => Json::Array(items.iter().map(value_to_json).collect()),
         Value::Map(map) => Json::Object(map.iter().map(|(k, v)| (k.clone(), value_to_json(v))).collect()),
+        // JSON has no temporal type; HawDB prints these in ISO 8601.
+        Value::Date(_) | Value::LocalTime(_) | Value::LocalDateTime(_) | Value::DateTime(_) | Value::Duration(_) => {
+            Json::String(value.to_string())
+        }
     }
 }
 
@@ -221,5 +225,21 @@ mod tests {
         ]));
         assert_eq!(json_to_value(&value_to_json(&value)), value);
         assert_eq!(value_to_json(&Value::Binary(vec![0xab, 1])), json!("\\xab01"));
+    }
+
+    #[test]
+    fn temporal_values_are_iso_8601_strings() {
+        use hawdb::temporal::{DateTime, Duration, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta};
+
+        let date: NaiveDate = "2026-10-30".parse().unwrap();
+        let time: NaiveTime = "12:34:56".parse().unwrap();
+        let local: NaiveDateTime = "2026-10-30T12:34:56".parse().unwrap();
+        let zoned = DateTime::parse_from_rfc3339("2026-10-30T12:34:56+01:00").unwrap();
+        assert_eq!(value_to_json(&Value::Date(date)), json!("2026-10-30"));
+        assert_eq!(value_to_json(&Value::LocalTime(time)), json!("12:34:56"));
+        assert_eq!(value_to_json(&Value::LocalDateTime(local)), json!("2026-10-30T12:34:56"));
+        assert_eq!(value_to_json(&Value::DateTime(zoned)), json!("2026-10-30T12:34:56+01:00"));
+        let duration = Value::duration(Duration::new(14, 3, TimeDelta::hours(5)));
+        assert_eq!(value_to_json(&duration), json!("P1Y2M3DT5H"));
     }
 }

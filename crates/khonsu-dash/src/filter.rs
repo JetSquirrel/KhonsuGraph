@@ -12,9 +12,8 @@
 //! ```
 //!
 //! `$host` is a predicate. In SQL it is `("name" = 'web-1')` while a value
-//! is picked and `TRUE` while none is, as in DuckLocal. HawDB's Cypher has no
-//! boolean literal, so in Cypher a picked filter is `(h.name = 'web-1')` and
-//! an unpicked one is taken out of its `WHERE` together with the `AND` that
+//! is picked and `TRUE` while none is, as in DuckLocal. In Cypher a picked
+//! filter is `(h.name = 'web-1')` and an unpicked one is taken out of its `WHERE` together with the `AND` that
 //! joins it — and the `WHERE` itself when it was the only condition. For that
 //! to stay well formed a Cypher placeholder must be one whole condition of a
 //! `WHERE`, joined by `AND` (`cypher_placement_problems` says where not).
@@ -154,8 +153,8 @@ pub fn placeholders(sql: &str) -> Vec<Placeholder> {
 
 /// `text` with each `$name` replaced by the picked value's predicate when
 /// `picks` has one for that name. An unpicked one is taken out with the
-/// `AND` that joins it, and a `WHERE` left with no condition goes too: HawDB
-/// accepts no `TRUE` in a predicate, in Cypher or in SQL.
+/// `AND` that joins it, and a `WHERE` left with no condition goes too: HawDB's
+/// SQL accepts no `TRUE` in a predicate (its Cypher does as of 0.24).
 pub fn apply(text: &str, language: Language, picks: &HashMap<String, Pick>) -> String {
     // Work from the last placeholder back, so earlier ranges stay valid.
     let mut out = text.to_string();
@@ -243,7 +242,7 @@ pub fn placement_problems(text: &str, language: Language) -> Vec<String> {
         if !(before_ok && after_ok) {
             let name = &placeholder.name;
             problems.push(format!(
-                "${name} must be a whole condition of a WHERE, joined by AND (WHERE ${name} AND x > 1): while nothing is picked it is taken out, since HawDB has no TRUE to stand in"
+                "${name} must be a whole condition of a WHERE, joined by AND (WHERE ${name} AND x > 1): while nothing is picked it is taken out"
             ));
         }
     }
