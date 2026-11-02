@@ -5,6 +5,7 @@
 pub mod analysis;
 mod cypher_columns;
 pub mod engine;
+pub mod evidence;
 pub mod explore;
 pub mod lock;
 pub mod merge;

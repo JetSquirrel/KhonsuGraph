@@ -1044,6 +1044,79 @@
       }
     ]
   },
+  "evidence": {
+    "web_1": {
+      "evidence": [
+        {
+          "evidence_id": "node:shop/123456789012:us-east-1:i-web1",
+          "stable": true,
+          "kind": "node",
+          "internal_id": 1,
+          "types": [
+            "Instance"
+          ],
+          "source": {
+            "status": "known",
+            "value": "shop"
+          },
+          "source_snapshot": {
+            "status": "unknown"
+          },
+          "assertion": "explicit",
+          "rule_id": {
+            "status": "unknown"
+          },
+          "properties": {
+            "image_id": "ami-web",
+            "instance_id": "i-web1",
+            "launched_at": "2026-09-01T08:00:00+00:00",
+            "name": "web-1",
+            "private_ip": "10.0.1.10",
+            "public_ip": "198.51.100.10",
+            "state": "running",
+            "type": "t3.small"
+          }
+        }
+      ]
+    },
+    "internet_to_web_group": {
+      "evidence": [
+        {
+          "evidence_id": "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-web|\"\\\"tcp\\\":\\\"443\\\"\"",
+          "stable": true,
+          "kind": "relationship",
+          "internal_id": 21,
+          "types": [
+            "ALLOWS"
+          ],
+          "from": {
+            "status": "known",
+            "value": "node:shop/cidr:internet"
+          },
+          "to": {
+            "status": "known",
+            "value": "node:shop/123456789012:us-east-1:sg-web"
+          },
+          "source": {
+            "status": "known",
+            "value": "shop"
+          },
+          "source_snapshot": {
+            "status": "unknown"
+          },
+          "assertion": "explicit",
+          "rule_id": {
+            "status": "unknown"
+          },
+          "properties": {
+            "ports": "443",
+            "protocol": "tcp",
+            "rule": "\"tcp\":\"443\""
+          }
+        }
+      ]
+    }
+  },
   "explore": {
     "exposure_of_web_1": {
       "complete": true,
@@ -1102,7 +1175,6 @@
               "image_id": "ami-web",
               "instance_id": "i-web1",
               "khonsu_id": "shop/123456789012:us-east-1:i-web1",
-              "khonsu_plugin": "aws@0.2.0",
               "khonsu_source": "shop",
               "launched_at": "2026-09-01T08:00:00+00:00",
               "name": "web-1",
@@ -1119,7 +1191,6 @@
             ],
             "properties": {
               "khonsu_id": "shop/123456789012:us-east-1:igw-shop",
-              "khonsu_plugin": "aws@0.2.0",
               "khonsu_source": "shop",
               "name": "igw-shop"
             }
@@ -1132,7 +1203,6 @@
             "properties": {
               "dns_name": "shop-123.us-east-1.elb.amazonaws.com",
               "khonsu_id": "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
-              "khonsu_plugin": "aws@0.2.0",
               "khonsu_source": "shop",
               "name": "shop",
               "scheme": "internet-facing",
@@ -1146,7 +1216,6 @@
             ],
             "properties": {
               "khonsu_id": "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/def",
-              "khonsu_plugin": "aws@0.2.0",
               "khonsu_source": "shop",
               "name": "web",
               "port": 8080,
@@ -1161,7 +1230,6 @@
             "properties": {
               "cidr": "0.0.0.0/0",
               "khonsu_id": "shop/cidr:internet",
-              "khonsu_plugin": "aws@0.2.0",
               "khonsu_source": "shop",
               "name": "Internet"
             }
@@ -1176,7 +1244,6 @@
             "properties": {
               "khonsu_hash": "08f44b07b5901a25",
               "khonsu_id": "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc|FORWARDS_TO|arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/def",
-              "khonsu_plugin": "aws@0.2.0",
               "khonsu_source": "shop"
             }
           },
@@ -1189,7 +1256,6 @@
               "health": "healthy",
               "khonsu_hash": "a7a7247ee928e602",
               "khonsu_id": "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/def|ROUTES_TO|123456789012:us-east-1:i-web1",
-              "khonsu_plugin": "aws@0.2.0",
               "khonsu_source": "shop"
             }
           },
@@ -1201,7 +1267,6 @@
             "properties": {
               "khonsu_hash": "08f44b07b5901a25",
               "khonsu_id": "shop/cidr:internet|ROUTES_TO|123456789012:us-east-1:igw-shop",
-              "khonsu_plugin": "aws@0.2.0",
               "khonsu_source": "shop"
             }
           },
@@ -1213,7 +1278,6 @@
             "properties": {
               "khonsu_hash": "08f44b07b5901a25",
               "khonsu_id": "shop/cidr:internet|ROUTES_TO|arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
-              "khonsu_plugin": "aws@0.2.0",
               "khonsu_source": "shop"
             }
           }
@@ -1250,7 +1314,228 @@
             "along": true,
             "text": "web -[ROUTES_TO]-> web-1"
           }
-        ]
+        ],
+        "evidence": {
+          "evidence_id": "path:7e78c5aff0fd2860",
+          "stable": true,
+          "kind": "path",
+          "assertion": "derived",
+          "derivation": "fewest hops in a bounded walk",
+          "rule_id": {
+            "status": "unknown"
+          },
+          "claim": "These records connect in the data. This is not proof that anything can reach anything.",
+          "hops": [
+            "Internet -[ROUTES_TO]-> shop",
+            "shop -[FORWARDS_TO]-> web",
+            "web -[ROUTES_TO]-> web-1"
+          ],
+          "supporting": [
+            "node:shop/cidr:internet",
+            "rel:shop/cidr:internet|ROUTES_TO|arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
+            "node:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
+            "rel:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc|FORWARDS_TO|arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/def",
+            "node:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/def",
+            "rel:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/def|ROUTES_TO|123456789012:us-east-1:i-web1",
+            "node:shop/123456789012:us-east-1:i-web1"
+          ],
+          "evidence": [
+            {
+              "evidence_id": "node:shop/cidr:internet",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 14,
+              "types": [
+                "Cidr"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "cidr": "0.0.0.0/0",
+                "name": "Internet"
+              }
+            },
+            {
+              "evidence_id": "rel:shop/cidr:internet|ROUTES_TO|arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
+              "stable": true,
+              "kind": "relationship",
+              "internal_id": 23,
+              "types": [
+                "ROUTES_TO"
+              ],
+              "from": {
+                "status": "known",
+                "value": "node:shop/cidr:internet"
+              },
+              "to": {
+                "status": "known",
+                "value": "node:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc"
+              },
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {}
+            },
+            {
+              "evidence_id": "node:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 9,
+              "types": [
+                "LoadBalancer"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "dns_name": "shop-123.us-east-1.elb.amazonaws.com",
+                "name": "shop",
+                "scheme": "internet-facing",
+                "type": "application"
+              }
+            },
+            {
+              "evidence_id": "rel:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc|FORWARDS_TO|arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/def",
+              "stable": true,
+              "kind": "relationship",
+              "internal_id": 16,
+              "types": [
+                "FORWARDS_TO"
+              ],
+              "from": {
+                "status": "known",
+                "value": "node:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc"
+              },
+              "to": {
+                "status": "known",
+                "value": "node:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/def"
+              },
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {}
+            },
+            {
+              "evidence_id": "node:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/def",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 10,
+              "types": [
+                "TargetGroup"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "name": "web",
+                "port": 8080,
+                "protocol": "HTTP"
+              }
+            },
+            {
+              "evidence_id": "rel:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/def|ROUTES_TO|123456789012:us-east-1:i-web1",
+              "stable": true,
+              "kind": "relationship",
+              "internal_id": 19,
+              "types": [
+                "ROUTES_TO"
+              ],
+              "from": {
+                "status": "known",
+                "value": "node:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/def"
+              },
+              "to": {
+                "status": "known",
+                "value": "node:shop/123456789012:us-east-1:i-web1"
+              },
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "health": "healthy"
+              }
+            },
+            {
+              "evidence_id": "node:shop/123456789012:us-east-1:i-web1",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 1,
+              "types": [
+                "Instance"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "image_id": "ami-web",
+                "instance_id": "i-web1",
+                "launched_at": "2026-09-01T08:00:00+00:00",
+                "name": "web-1",
+                "private_ip": "10.0.1.10",
+                "public_ip": "198.51.100.10",
+                "state": "running",
+                "type": "t3.small"
+              }
+            }
+          ]
+        }
       }
     },
     "what_points_at_web_1": {
@@ -1285,7 +1570,6 @@
               "image_id": "ami-web",
               "instance_id": "i-web1",
               "khonsu_id": "shop/123456789012:us-east-1:i-web1",
-              "khonsu_plugin": "aws@0.2.0",
               "khonsu_source": "shop",
               "launched_at": "2026-09-01T08:00:00+00:00",
               "name": "web-1",
@@ -1302,7 +1586,6 @@
             ],
             "properties": {
               "khonsu_id": "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/def",
-              "khonsu_plugin": "aws@0.2.0",
               "khonsu_source": "shop",
               "name": "web",
               "port": 8080,
@@ -1320,7 +1603,6 @@
               "health": "healthy",
               "khonsu_hash": "a7a7247ee928e602",
               "khonsu_id": "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/def|ROUTES_TO|123456789012:us-east-1:i-web1",
-              "khonsu_plugin": "aws@0.2.0",
               "khonsu_source": "shop"
             }
           }

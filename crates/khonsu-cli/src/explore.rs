@@ -5,6 +5,7 @@ use std::sync::atomic::AtomicBool;
 
 use clap::{Args, ValueEnum};
 use khonsu_core::explore::{self, Direction, ExploreRequest};
+use khonsu_core::{evidence, settings};
 use khonsu_core::{AccessMode, Graph, Language, QueryOptions};
 use serde_json::{json, Map, Value};
 
@@ -85,6 +86,7 @@ pub fn explore(args: ExploreArgs) -> Result<Value, CliError> {
             "to": target,
             "found": found.is_some(),
             "hops": found.unwrap_or_default().into_iter().map(explained).collect::<Vec<_>>(),
+            "evidence": evidence::for_path(&result, target, &settings::load_sources()),
         });
     }
     Ok(out)

@@ -20,9 +20,11 @@ cargo test --locked --workspace --test investigation
 | Cancellation | A sync cancelled partway reports it, and the graph keeps its answers |
 | Corrupt input | A malformed response, a missing folder, a bad dashboard and a damaged graph each fail with a reason |
 | Cycles | A shortest path and a variable-length pattern both end on a cycle |
+| Evidence | `khonsu evidence` and `explore --to` give stable IDs, state what is unknown, and mask secrets; the golden file holds a node and a relationship |
 | HawDB upgrades | `app/tests/fixtures/graph-hawdb-*.zip` must still give the golden answers and accept a write |
 
-Timings, sync times, paths and line numbers are left out of the comparison.
+Timings, sync times, paths, line numbers and plugin versions are left out of the
+comparison.
 Floats are rounded to nine decimal places.
 
 ## After a change
@@ -60,8 +62,15 @@ These are written down so that nobody reads an empty result as proof:
   Syncs can be cancelled, and a walk stops at its next query, so one slow step
   still finishes first.
 
-Evidence provenance and rule names are not in the golden file yet, because they
-arrive with #33 and #35.
+- **`record_written_at` is when a record last changed.** A sync does not rewrite
+  an unchanged relationship, so this can be older than the sync that last saw it.
+  `source_last_successful_sync` is the source's own, and is unknown once its last
+  sync failed.
+- **Evidence shows what is stored, not the raw response.** The AWS plugin stores
+  chosen fields, not the API call each came from.
+
+Rule names are not in the golden file yet, because they arrive with #35. Source
+snapshots are always unknown until #37.
 
 ## Baselines
 

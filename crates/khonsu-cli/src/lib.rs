@@ -10,6 +10,7 @@
 
 mod analyze;
 mod dash;
+mod evidence;
 mod explore;
 
 use clap::{Args, CommandFactory, Parser, Subcommand};
@@ -121,6 +122,8 @@ enum Command {
     Analyze(analyze::AnalyzeArgs),
     /// Follow relationships from chosen nodes, within caps, and say when a cap or a filter limited the answer.
     Explore(explore::ExploreArgs),
+    /// What supports a node or relationship: its source, plugin and times, with unknowns stated and secrets masked.
+    Evidence(evidence::EvidenceArgs),
 }
 
 #[derive(Subcommand)]
@@ -372,6 +375,7 @@ fn execute(command: Command) -> Result<Value, CliError> {
         Command::Open(args) => dash::open(args),
         Command::Analyze(args) => analyze::analyze(args),
         Command::Explore(args) => explore::explore(args),
+        Command::Evidence(args) => evidence::evidence(args),
     }
 }
 

@@ -5,7 +5,9 @@ use std::collections::BTreeSet;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
+use khonsu_core::evidence::{Assertion, Evidence, Field};
 use khonsu_core::explore::{Direction, Exploration, ExploreRequest, Limit, DEFAULT_MAX_HOPS, MAX_HOPS};
+use khonsu_core::util::format_unix_time;
 use khonsu_core::{GraphData, GraphEdge, GraphNode};
 
 use crate::i18n::{tr, trf};
@@ -161,6 +163,27 @@ pub fn explained_path(walk: &Exploration, target: i64) -> Vec<String> {
     walk.path_to(target).unwrap_or_default().into_iter().map(|hop| walk.explain(hop)).collect()
 }
 
+/// The evidence for a record, as the rows the inspector shows.
+pub fn evidence_rows(record: &Evidence) -> Vec<(&'static str, String)> {
+    let unknown = || tr("evidence.unknown").to_string();
+    let text = |field: &Field<String>| field.known().cloned().unwrap_or_else(unknown);
+    let time = |field: &Field<u64>| field.known().map(|at| format_unix_time(*at)).unwrap_or_else(unknown);
+    let assertion = match record.assertion {
+        Assertion::Explicit => tr("evidence.explicit"),
+        Assertion::Derived => tr("evidence.derived"),
+        Assertion::Unknown => tr("evidence.unknown"),
+    };
+    vec![
+        ("evidence.id", record.evidence_id.clone()),
+        ("evidence.source", text(&record.source)),
+        ("evidence.plugin", text(&record.plugin)),
+        ("evidence.written", time(&record.record_written_at)),
+        ("evidence.last_sync", time(&record.source_last_successful_sync)),
+        ("evidence.snapshot", text(&record.source_snapshot)),
+        ("evidence.assertion", assertion.to_string()),
+    ]
+}
+
 /// Only the nodes and relationships on the path to `target`.
 pub fn path_graph(walk: &Exploration, target: i64) -> Option<GraphData> {
     let path = walk.path_to(target).filter(|path| !path.is_empty())?;
@@ -219,6 +242,17 @@ mod tests {
             hops: vec![hop(1, 1, 2, 10), hop(1, 1, 4, 12), hop(2, 2, 3, 11)],
             depth_reached: 2,
             ..Exploration::default()
+        }
+    }
+
+    #[test]
+    fn evidence_rows_say_not_supplied_for_what_is_missing() {
+        let record = khonsu_core::evidence::for_node(&node(1, "by hand"), &[]);
+        let rows = evidence_rows(&record);
+        let value = |key: &str| rows.iter().find(|(row, _)| *row == key).unwrap().1.clone();
+        assert_eq!(value("evidence.id"), "node-internal:1");
+        for key in ["evidence.source", "evidence.plugin", "evidence.written", "evidence.last_sync", "evidence.snapshot", "evidence.assertion"] {
+            assert_eq!(value(key), tr("evidence.unknown"), "{key}");
         }
     }
 
