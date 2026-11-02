@@ -199,6 +199,57 @@ fn vector_results_are_json_arrays_after_reopen() {
 }
 
 #[test]
+fn temporal_properties_read_back_as_iso_strings_after_reopen() {
+    let dir = TestDir::new();
+    {
+        let mut graph = Graph::create(dir.graph(), "test").unwrap();
+        run(
+            &mut graph,
+            Language::Cypher,
+            "CREATE (:Event {day: date('2026-10-30'), at: datetime('2026-10-30T12:34:56+01:00'), took: duration('PT5H')})",
+        );
+    }
+    let mut graph = Graph::open(dir.graph(), AccessMode::ReadOnly, "test").unwrap();
+    let result = run(&mut graph, Language::Cypher, "MATCH (e:Event) RETURN e.day AS day, e.at AS at, e.took AS took, e");
+    assert_eq!(result.rows[0][..3], [json!("2026-10-30"), json!("2026-10-30T12:34:56+01:00"), json!("PT5H")]);
+    assert_eq!(result.graph.unwrap().nodes[0].properties["day"], json!("2026-10-30"));
+}
+
+#[test]
+fn a_shortest_path_comes_back_as_graph_elements() {
+    let dir = TestDir::new();
+    let mut graph = Graph::create(dir.graph(), "test").unwrap();
+    run(&mut graph, Language::Cypher, "CREATE (:Hop {name: 'a'})-[:NEXT]->(:Hop {name: 'b'})");
+    run(&mut graph, Language::Cypher, "CREATE (:Hop {name: 'c'})");
+    run(&mut graph, Language::Cypher, "MATCH (b:Hop {name: 'b'}), (c:Hop {name: 'c'}) CREATE (b)-[:NEXT]->(c)");
+
+    let result = run(
+        &mut graph,
+        Language::Cypher,
+        "MATCH p = shortestPath((a:Hop {name: 'a'})-[:NEXT*..5]->(c:Hop {name: 'c'})) RETURN p, length(p) AS hops",
+    );
+    assert_eq!(result.rows[0][1], json!(2));
+    let data = result.graph.expect("the path's nodes and relationships");
+    assert_eq!((data.nodes.len(), data.edges.len()), (3, 2));
+    assert!(data.dangling_endpoints().is_empty());
+}
+
+/// A dashboard or a read-only query must not be able to read files off the
+/// person's disk: `LOAD CSV` stays off, and data comes in through sources.
+#[test]
+fn load_csv_cannot_read_local_files() {
+    let dir = TestDir::new();
+    let csv = dir.0.path().join("secret.csv");
+    std::fs::write(&csv, "a,b\n1,2\n").unwrap();
+    let mut graph = Graph::create(dir.graph(), "test").unwrap();
+    let params = Map::from_iter([("file".to_string(), json!(csv.to_str().unwrap()))]);
+    let error = graph
+        .run(Language::Cypher, "LOAD CSV WITH HEADERS FROM $file AS row RETURN row", &params, QueryOptions::default())
+        .unwrap_err();
+    assert!(error.message.contains("LOAD CSV is disabled"), "{}", error.message);
+}
+
+#[test]
 fn read_row_ceiling_is_enforced_before_display_truncation() {
     let dir = TestDir::new();
     let mut graph = Graph::create(dir.graph(), "test").unwrap();
