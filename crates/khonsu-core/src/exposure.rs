@@ -13,10 +13,11 @@
 //! security groups or a subnet with no route table gives "unknown".
 
 use crate::engine::{Graph, QueryError};
-use crate::evidence::{self, Evidence, Field, PathEvidence};
+use crate::evidence::{self, Evidence, Field, PathEvidence, SourceCoverage};
 use crate::explore::{node_name, Direction, Exploration, Hop};
 use crate::result::{value_to_json, GraphCollector, GraphData, GraphEdge, GraphNode};
-use crate::settings::Source;
+use crate::merge::SOURCE_PROPERTY;
+use crate::settings::{RunStatus, Source};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as Json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -90,7 +91,8 @@ pub fn rules() -> Vec<Rule> {
 pub enum Verdict {
     /// Every condition is met by configuration.
     PotentialExposure,
-    /// None ruled it out, and at least one could not be evaluated.
+    /// None ruled it out and at least one could not be evaluated, or a source
+    /// behind its records was not read completely.
     InsufficientData,
     /// A condition is not met, so this rule does not point at it.
     NotIndicated,
@@ -160,6 +162,9 @@ pub struct Finding {
     /// The finding this one rests on, for a lateral step.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub depends_on: Option<String>,
+    /// Sources behind its records whose last sync was not complete.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub incomplete_sources: Vec<String>,
     /// The evidence IDs of every record the conditions read or the path crosses.
     pub contributing: Vec<String>,
     pub evidence: Vec<Evidence>,
@@ -181,9 +186,11 @@ pub struct Report {
     pub instances: usize,
     /// Counts every finding, including any cut by a cap.
     pub summary: Summary,
-    /// False when the graph was too large to read whole: a missing finding
-    /// then means nothing.
+    /// False when the graph was too large to read whole, or a source's last
+    /// sync was not complete: a missing finding then means nothing.
     pub complete: bool,
+    /// How much of each source its last sync covered.
+    pub sources: BTreeMap<String, Field<SourceCoverage>>,
     pub findings: Vec<Finding>,
 }
 
@@ -215,7 +222,15 @@ impl Graph {
     /// Reads what the rules need and evaluates them.
     pub fn exposure(&mut self, sources: &[Source]) -> Result<Report, QueryError> {
         let (data, complete) = self.read_exposure_records()?;
-        Ok(evaluate(&data, sources, complete))
+        let mut report = evaluate(&data, sources, complete);
+        // A source with nothing in the graph may be why: its sync can have
+        // failed before writing anything.
+        let here = crate::engine::normalize_path(self.path());
+        for source in sources.iter().filter(|source| crate::engine::normalize_path(&source.graph) == here) {
+            report.sources.entry(source.id.clone()).or_insert_with(|| evidence::coverage_of(&source.id, sources));
+        }
+        report.complete &= report.sources.values().all(|coverage| !is_incomplete(coverage));
+        Ok(report)
     }
 
     fn read_exposure_records(&mut self) -> Result<(GraphData, bool), QueryError> {
@@ -255,6 +270,15 @@ pub fn evaluate(data: &GraphData, sources: &[Source], complete: bool) -> Report 
     findings.sort_by(|a, b| (a.verdict, &a.rule_id, &a.resource, &a.finding_id).cmp(&(b.verdict, &b.rule_id, &b.resource, &b.finding_id)));
 
     let count = |verdict: Verdict| findings.iter().filter(|finding| finding.verdict == verdict).count();
+    let named: BTreeSet<&str> = data
+        .nodes
+        .iter()
+        .map(|node| &node.properties)
+        .chain(data.edges.iter().map(|edge| &edge.properties))
+        .filter_map(|properties| properties.get(SOURCE_PROPERTY).and_then(Json::as_str))
+        .collect();
+    let coverage: BTreeMap<String, Field<SourceCoverage>> = named.into_iter().map(|source| (source.to_string(), evidence::coverage_of(source, sources))).collect();
+    let complete = complete && coverage.values().all(|coverage| !is_incomplete(coverage));
     Report {
         claim: CLAIM.into(),
         order: ORDER.into(),
@@ -266,8 +290,15 @@ pub fn evaluate(data: &GraphData, sources: &[Source], complete: bool) -> Report 
             not_indicated: count(Verdict::NotIndicated),
         },
         complete,
+        sources: coverage,
         findings,
     }
+}
+
+/// A last sync known to have missed something. Unknown is not counted: a source
+/// synced before runs were kept says nothing either way.
+fn is_incomplete(coverage: &Field<SourceCoverage>) -> bool {
+    coverage.known().is_some_and(|coverage| coverage.status != RunStatus::Complete)
 }
 
 /// Stable lookups over the records, sorted so that every choice is repeatable.
@@ -746,8 +777,8 @@ fn walk_hint(index: &Index, hops: &[Hop], instance: &GraphNode) -> Option<WalkHi
 #[allow(clippy::too_many_arguments)]
 fn build(index: &Index, instance: &GraphNode, rule_id: &str, conditions: Vec<Condition>, hops: Vec<Hop>, records: Vec<String>, subject: Option<String>, sources: &[Source]) -> Finding {
     let resource = record_id(instance);
-    let verdict = verdict_of(&conditions);
-    let unknowns = conditions.iter().filter(|condition| condition.status == Status::Unknown).map(|condition| condition.statement.clone()).collect();
+    let mut verdict = verdict_of(&conditions);
+    let mut unknowns: Vec<String> = conditions.iter().filter(|condition| condition.status == Status::Unknown).map(|condition| condition.statement.clone()).collect();
     let path = (!hops.is_empty()).then(|| {
         evidence::for_hops(&hops, index.data, sources, "the rule's candidate path", Field::Known(rule_id.to_string()))
     });
@@ -758,7 +789,22 @@ fn build(index: &Index, instance: &GraphNode, rule_id: &str, conditions: Vec<Con
     let mut contributing: Vec<String> = path.as_ref().map(|path| path.supporting.clone()).unwrap_or_default();
     let rest: BTreeSet<String> = records.into_iter().filter(|id| !contributing.contains(id)).collect();
     contributing.extend(rest);
-    let evidence = contributing.iter().filter_map(|id| record_for(index, id, sources)).collect();
+    let evidence: Vec<Evidence> = contributing.iter().filter_map(|id| record_for(index, id, sources)).collect();
+
+    // What a partial source left out can be what would have met a condition,
+    // so it cannot rule anything out. What it did report still stands.
+    let behind: BTreeSet<&str> = evidence.iter().filter_map(|record| record.source.known().map(String::as_str)).collect();
+    let mut incomplete_sources = Vec::new();
+    for source in behind {
+        let coverage = evidence::coverage_of(source, sources);
+        if let (true, Some(coverage)) = (is_incomplete(&coverage), coverage.known()) {
+            incomplete_sources.push(source.to_string());
+            unknowns.push(format!("Source {source}'s last sync ({}) was {}, so records may be missing or out of date.", coverage.run_id, coverage.status.word()));
+        }
+    }
+    if !incomplete_sources.is_empty() && verdict == Verdict::NotIndicated {
+        verdict = Verdict::InsufficientData;
+    }
 
     let id_text = [Some(rule_id.to_string()), Some(resource.clone()), subject].into_iter().flatten().collect::<Vec<_>>().join("\n");
     let assumptions = rules().into_iter().find(|rule| rule.rule_id == rule_id).map(|rule| rule.assumptions).unwrap_or_default();
@@ -776,6 +822,7 @@ fn build(index: &Index, instance: &GraphNode, rule_id: &str, conditions: Vec<Con
         path_graph,
         walk,
         depends_on: None,
+        incomplete_sources,
         contributing,
         evidence,
     }
@@ -1130,6 +1177,62 @@ mod tests {
         let (narrow, cut) = with_database(exposed()).report().narrowed(|_| true, 1);
         assert_eq!((narrow.findings.len(), cut), (1, 2));
         assert_eq!(narrow.summary.potential_exposure, 2, "the summary still counts everything");
+    }
+
+    fn tagged(mut builder: Builder) -> Builder {
+        for node in &mut builder.data.nodes {
+            node.properties.insert("khonsu_source".into(), json!("shop"));
+        }
+        for edge in &mut builder.data.edges {
+            edge.properties.insert("khonsu_source".into(), json!("shop"));
+        }
+        builder
+    }
+
+    fn source_with(status: RunStatus) -> Source {
+        serde_json::from_value(json!({
+            "id": "shop", "name": "shop", "plugin": "aws", "graph": "g",
+            "runs": [{
+                "run_id": "shop#1", "number": 1, "mode": "full", "started_at": 1, "ended_at": 2,
+                "status": status, "plugin": "aws@0", "received_nodes": 0, "received_edges": 0,
+                "removals_applied": false, "cursor_advanced": false,
+            }],
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_partial_source_cannot_clear_anything() {
+        // No public address, so the rule would not point here on complete data.
+        let builder = tagged(set(exposed(), "web", "public_ip", None));
+        let whole = evaluate(&builder.data, &[source_with(RunStatus::Complete)], true);
+        assert_eq!(only(&whole, RULE_DIRECT, "web").verdict, Verdict::NotIndicated);
+        assert!(whole.complete);
+
+        for status in [RunStatus::Partial, RunStatus::Failed, RunStatus::Cancelled] {
+            let report = evaluate(&builder.data, &[source_with(status)], true);
+            let finding = only(&report, RULE_DIRECT, "web");
+            assert_eq!(finding.verdict, Verdict::InsufficientData, "{status:?}");
+            assert_eq!(finding.incomplete_sources, ["shop"]);
+            assert!(finding.unknowns.iter().any(|text| text.contains("shop#1") && text.contains(status.word())), "{:?}", finding.unknowns);
+            assert!(!report.complete, "{status:?}");
+        }
+    }
+
+    #[test]
+    fn what_a_partial_source_did_report_still_counts() {
+        let report = evaluate(&tagged(exposed()).data, &[source_with(RunStatus::Partial)], true);
+        let finding = only(&report, RULE_DIRECT, "web");
+        assert_eq!(finding.verdict, Verdict::PotentialExposure);
+        assert_eq!(finding.incomplete_sources, ["shop"], "and it says what that rests on");
+    }
+
+    #[test]
+    fn a_source_with_no_record_of_its_runs_is_not_called_incomplete() {
+        let report = evaluate(&tagged(set(exposed(), "web", "public_ip", None)).data, &[], true);
+        assert_eq!(only(&report, RULE_DIRECT, "web").verdict, Verdict::NotIndicated);
+        assert!(report.complete);
+        assert_eq!(report.sources["shop"], Field::Unknown);
     }
 
     #[test]

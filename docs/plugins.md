@@ -127,6 +127,19 @@ A sync that ends without `done` is reported as failed. Records already
 written are kept and the next sync reconciles them. To fail on purpose, send
 `{"type": "error", "message": "..."}`; the person sees the message.
 
+A full sync removes records it did not see, so only finish with a plain `done`
+when you enumerated the whole source. If part of it could not be read and you
+still have something useful to send, say so:
+
+```json
+{"type": "done", "nodes": 2, "edges": 1, "complete": false, "gaps": ["page 3 timed out"]}
+```
+
+The sync is then recorded as `partial`: nothing is removed, the cursor doesn't
+move, and exposure findings can't read the absence of a record as a clear result.
+Leaving out `complete` means complete. Don't put secrets in `gaps` or in messages;
+values from the source's secret fields are masked before they are kept.
+
 ## Stable IDs and merging
 
 Every node and relationship carries an `id` that must stay the same from one

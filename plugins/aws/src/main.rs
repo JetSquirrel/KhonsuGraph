@@ -22,8 +22,11 @@
 //! reads saved `aws ... --output json` responses instead of calling AWS, for
 //! offline imports and tests: `<dir>/<region>/<service>-<operation>.json`,
 //! and `<dir>/iam-list-roles.json`, `<dir>/iam-list-instance-profiles.json`,
-//! `<dir>/sts-get-caller-identity.json`.
+//! `<dir>/sts-get-caller-identity.json`. A response that is not there makes the
+//! sync partial, so that it removes nothing; a service with nothing to report
+//! has a file with an empty list.
 
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::path::PathBuf;
@@ -84,7 +87,11 @@ enum Source {
         profile: Option<String>,
         env: Vec<(String, String)>,
     },
-    Fixture(PathBuf),
+    Fixture {
+        dir: PathBuf,
+        /// Responses asked for and not saved: what this sync could not see.
+        gaps: RefCell<Vec<String>>,
+    },
 }
 
 impl Source {
@@ -99,7 +106,7 @@ impl Source {
             if !dir.is_dir() {
                 return Err(format!("saved responses folder not found: {}", dir.display()));
             }
-            return Ok(Source::Fixture(dir));
+            return Ok(Source::Fixture { dir, gaps: RefCell::default() });
         }
         let mut env = Vec::new();
         for (key, var) in [
@@ -118,10 +125,18 @@ impl Source {
         Ok(Source::Cli { profile, env })
     }
 
+    /// What this sync could not see. A real account either answers or fails.
+    fn gaps(&self) -> Vec<String> {
+        match self {
+            Source::Fixture { gaps, .. } => gaps.borrow().clone(),
+            Source::Cli { .. } => Vec::new(),
+        }
+    }
+
     /// One read-only call, as JSON. `region` is `None` for global services.
     fn call(&self, region: Option<&str>, service: &str, operation: &str, extra: &[&str]) -> Result<Value, String> {
         match self {
-            Source::Fixture(dir) => {
+            Source::Fixture { dir, gaps } => {
                 let file = format!("{service}-{operation}.json");
                 let path = match region {
                     Some(region) => dir.join(region).join(file),
@@ -129,8 +144,12 @@ impl Source {
                 };
                 match std::fs::read_to_string(&path) {
                     Ok(text) => serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display())),
-                    // A response not saved is an empty one: the fixture did not use that service.
-                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(json!({})),
+                    // Not a fact about the account: the sync goes on, and says it
+                    // did not see this. A service with nothing has an empty file.
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                        gaps.borrow_mut().push(format!("no saved response for {service} {operation}{}", region.map(|r| format!(" in {r}")).unwrap_or_default()));
+                        Ok(json!({}))
+                    }
                     Err(e) => Err(format!("{}: {e}", path.display())),
                 }
             }
@@ -468,7 +487,7 @@ fn collect<W: Write>(source: &Source, regions: &[String], out: &mut Emitter<W>) 
             }
             let health = match source {
                 // Saved responses keep each group's health under its name.
-                Source::Fixture(_) => source.call(Some(region), "elbv2", &format!("describe-target-health-{}", s(tg, "TargetGroupName").unwrap_or_default()), &[])?,
+                Source::Fixture { .. } => source.call(Some(region), "elbv2", &format!("describe-target-health-{}", s(tg, "TargetGroupName").unwrap_or_default()), &[])?,
                 Source::Cli { .. } => source.call(Some(region), "elbv2", "describe-target-health", &["--target-group-arn", arn])?,
             };
             for description in items(&health, "TargetHealthDescriptions") {
@@ -517,7 +536,8 @@ fn run<W: Write>(command: &str, out: &mut Emitter<W>, request: Option<Request>) 
             })
             .map_err(io)?;
             let (nodes, edges) = graph.emit(out).map_err(io)?;
-            out.emit(&Message::Done { nodes, edges }).map_err(io)
+            let gaps = source.gaps();
+            out.emit(&Message::Done { nodes, edges, complete: gaps.is_empty(), gaps }).map_err(io)
         }
         other => Err(format!("unknown command {other:?}; expected describe, test or sync")),
     }
@@ -641,6 +661,32 @@ mod tests {
         assert_eq!(table.properties["is_main"], json!(true));
         assert_eq!(table.properties["ipv4_default_target"], json!("nat-1"));
         assert_eq!(g.edges.values().filter(|e| e.rel_type == "ROUTES_VIA" && e.source == "a:r:rtb-2").count(), 0);
+    }
+
+    #[test]
+    fn a_response_that_is_not_saved_makes_the_sync_partial_and_says_which() {
+        let finish = |dir: PathBuf| {
+            let mut config = Map::new();
+            config.insert("fixture_dir".into(), json!(dir.display().to_string()));
+            let request = Request { protocol: PROTOCOL_VERSION, config, ..Request::default() };
+            let mut out = Emitter::new(Vec::new());
+            run("sync", &mut out, Some(request)).unwrap();
+            let text = String::from_utf8(out.into_inner()).unwrap();
+            text.lines().filter_map(|l| parse_line(l).map(|m| m.unwrap())).find_map(|message| match message {
+                Message::Done { complete, gaps, .. } => Some((complete, gaps)),
+                _ => None,
+            })
+        };
+        let whole = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixture");
+        assert_eq!(finish(whole), Some((true, vec![])), "every response is saved, some of them empty");
+
+        let scratch = std::env::temp_dir().join(format!("aws-gaps-{}", std::process::id()));
+        std::fs::create_dir_all(&scratch).unwrap();
+        let (complete, gaps) = finish(scratch.clone()).unwrap();
+        std::fs::remove_dir_all(&scratch).unwrap();
+        assert!(!complete);
+        assert!(gaps.iter().any(|gap| gap == "no saved response for ec2 describe-instances in us-east-1"), "{gaps:?}");
+        assert!(gaps.iter().any(|gap| gap == "no saved response for iam list-roles"), "{gaps:?}");
     }
 
     #[test]

@@ -253,7 +253,9 @@ impl Sidebar {
             .gap_2()
             .when(sources.is_empty(), |this| this.child(div().px_1().text_sm().text_color(muted).child(tr("sources.empty"))))
             .children(sources.into_iter().enumerate().map(|(ix, source)| {
+                let partial = source.last_run().is_some_and(|run| run.status == khonsu_core::settings::RunStatus::Partial);
                 let last = match &source.last_sync {
+                    Some(last) if partial => trf("sources.last_partial", &[&time_ago(last.at), &last.message]),
                     Some(last) if last.ok => trf("sources.last_ok", &[&time_ago(last.at), &last.nodes.to_string(), &last.edges.to_string()]),
                     Some(last) => trf("sources.last_failed", &[&time_ago(last.at), &last.message]),
                     None => tr("sources.never").to_string(),

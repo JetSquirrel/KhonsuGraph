@@ -16,8 +16,8 @@ no score.
 | Verdict | When | How to read it |
 |---|---|---|
 | `potential_exposure` | Every condition is met | Check it: the configuration allows this path |
-| `insufficient_data` | None is unmet, and at least one is unknown | `unknowns` says what could not be read; get that data |
-| `not_indicated` | At least one is unmet | This rule does not point here. Another route may exist |
+| `insufficient_data` | None is unmet and at least one is unknown, or a source behind it was not read completely | `unknowns` says what could not be read; get that data |
+| `not_indicated` | At least one is unmet, and every source behind it was read completely as far as is known | This rule does not point here. Another route may exist |
 
 Findings are ordered by verdict, then rule ID, then resource ID, so the same
 graph always gives the same order.
@@ -75,16 +75,24 @@ address space, such as `0.0.0.0/1` and `128.0.0.0/1`, are not recognized.
 
 ## A missing response is not a clear result
 
-A saved response that is missing reads as empty (#38), and a real sync can't tell
-either. So a record that should exist and doesn't makes a condition `unknown`,
-not `not_met`. A graph synced before route tables were read gives
-`insufficient_data` on the direct rule until it is synced again.
+A record that should exist and doesn't makes a condition `unknown`, not `not_met`.
+A graph synced before route tables were read gives `insufficient_data` on the direct
+rule until it is synced again.
+
+A source's last sync can also be incomplete, because a saved response was missing,
+the plugin reported a gap, or the sync failed or was cancelled. Then:
+
+- Each finding that rests on it names it in `incomplete_sources` and in `unknowns`.
+- A finding that would be `not_indicated` becomes `insufficient_data`, because what
+  the sync missed could be what would have met a condition.
+- A `potential_exposure` stays, because what the source did report still stands.
+- The report's `complete` is false, and `sources` gives each source's last run.
 
 A security group that is one of several on an instance and is missing from the
 responses can't be detected this way, because the instance's other groups are
 still there.
 
-`complete` is false when the graph held more than 50,000 records of one type. A
+`complete` is also false when the graph held more than 50,000 records of one type. A
 missing finding then means nothing.
 
 ## Walkthrough

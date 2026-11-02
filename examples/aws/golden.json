@@ -14,6 +14,16 @@
       "stale_edges_removed": 0,
       "unchanged_edges": 0,
       "warnings": []
+    },
+    "run": {
+      "run_id": "shop#1",
+      "number": 1,
+      "mode": "full",
+      "status": "complete",
+      "received_nodes": 16,
+      "received_edges": 24,
+      "removals_applied": true,
+      "cursor_advanced": false
     }
   },
   "resync": {
@@ -31,6 +41,16 @@
       "stale_edges_removed": 0,
       "unchanged_edges": 24,
       "warnings": []
+    },
+    "run": {
+      "run_id": "shop#2",
+      "number": 2,
+      "mode": "full",
+      "status": "complete",
+      "received_nodes": 16,
+      "received_edges": 24,
+      "removals_applied": true,
+      "cursor_advanced": false
     }
   },
   "schema": {
@@ -1059,6 +1079,13 @@
             "status": "known",
             "value": "shop"
           },
+          "source_coverage": {
+            "status": "known",
+            "value": {
+              "run_id": "shop#2",
+              "status": "complete"
+            }
+          },
           "source_snapshot": {
             "status": "unknown"
           },
@@ -1100,6 +1127,13 @@
           "source": {
             "status": "known",
             "value": "shop"
+          },
+          "source_coverage": {
+            "status": "known",
+            "value": {
+              "run_id": "shop#2",
+              "status": "complete"
+            }
           },
           "source_snapshot": {
             "status": "unknown"
@@ -1352,6 +1386,13 @@
                 "status": "known",
                 "value": "shop"
               },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#2",
+                  "status": "complete"
+                }
+              },
               "source_snapshot": {
                 "status": "unknown"
               },
@@ -1384,6 +1425,13 @@
                 "status": "known",
                 "value": "shop"
               },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#2",
+                  "status": "complete"
+                }
+              },
               "source_snapshot": {
                 "status": "unknown"
               },
@@ -1404,6 +1452,13 @@
               "source": {
                 "status": "known",
                 "value": "shop"
+              },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#2",
+                  "status": "complete"
+                }
               },
               "source_snapshot": {
                 "status": "unknown"
@@ -1439,6 +1494,13 @@
                 "status": "known",
                 "value": "shop"
               },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#2",
+                  "status": "complete"
+                }
+              },
               "source_snapshot": {
                 "status": "unknown"
               },
@@ -1459,6 +1521,13 @@
               "source": {
                 "status": "known",
                 "value": "shop"
+              },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#2",
+                  "status": "complete"
+                }
               },
               "source_snapshot": {
                 "status": "unknown"
@@ -1493,6 +1562,13 @@
                 "status": "known",
                 "value": "shop"
               },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#2",
+                  "status": "complete"
+                }
+              },
               "source_snapshot": {
                 "status": "unknown"
               },
@@ -1515,6 +1591,13 @@
               "source": {
                 "status": "known",
                 "value": "shop"
+              },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#2",
+                  "status": "complete"
+                }
               },
               "source_snapshot": {
                 "status": "unknown"
@@ -1822,6 +1905,13 @@
             "status": "known",
             "value": "shop"
           },
+          "source_coverage": {
+            "status": "known",
+            "value": {
+              "run_id": "shop#2",
+              "status": "complete"
+            }
+          },
           "source_snapshot": {
             "status": "unknown"
           },
@@ -1854,6 +1944,13 @@
             "status": "known",
             "value": "shop"
           },
+          "source_coverage": {
+            "status": "known",
+            "value": {
+              "run_id": "shop#2",
+              "status": "complete"
+            }
+          },
           "source_snapshot": {
             "status": "unknown"
           },
@@ -1874,6 +1971,13 @@
           "source": {
             "status": "known",
             "value": "shop"
+          },
+          "source_coverage": {
+            "status": "known",
+            "value": {
+              "run_id": "shop#2",
+              "status": "complete"
+            }
           },
           "source_snapshot": {
             "status": "unknown"
@@ -1909,6 +2013,13 @@
             "status": "known",
             "value": "shop"
           },
+          "source_coverage": {
+            "status": "known",
+            "value": {
+              "run_id": "shop#2",
+              "status": "complete"
+            }
+          },
           "source_snapshot": {
             "status": "unknown"
           },
@@ -1929,6 +2040,13 @@
           "source": {
             "status": "known",
             "value": "shop"
+          },
+          "source_coverage": {
+            "status": "known",
+            "value": {
+              "run_id": "shop#2",
+              "status": "complete"
+            }
           },
           "source_snapshot": {
             "status": "unknown"
@@ -1963,6 +2081,13 @@
             "status": "known",
             "value": "shop"
           },
+          "source_coverage": {
+            "status": "known",
+            "value": {
+              "run_id": "shop#2",
+              "status": "complete"
+            }
+          },
           "source_snapshot": {
             "status": "unknown"
           },
@@ -1985,6 +2110,13 @@
           "source": {
             "status": "known",
             "value": "shop"
+          },
+          "source_coverage": {
+            "status": "known",
+            "value": {
+              "run_id": "shop#2",
+              "status": "complete"
+            }
           },
           "source_snapshot": {
             "status": "unknown"
@@ -2074,6 +2206,15 @@
         "not_indicated": 3
       },
       "complete": true,
+      "sources": {
+        "shop": {
+          "status": "known",
+          "value": {
+            "run_id": "shop#1",
+            "status": "complete"
+          }
+        }
+      },
       "findings": [
         {
           "finding_id": "finding:f2dfac00f69ee196",
@@ -2244,6 +2385,13 @@
                   "status": "known",
                   "value": "shop"
                 },
+                "source_coverage": {
+                  "status": "known",
+                  "value": {
+                    "run_id": "shop#1",
+                    "status": "complete"
+                  }
+                },
                 "source_snapshot": {
                   "status": "unknown"
                 },
@@ -2276,6 +2424,13 @@
                   "status": "known",
                   "value": "shop"
                 },
+                "source_coverage": {
+                  "status": "known",
+                  "value": {
+                    "run_id": "shop#1",
+                    "status": "complete"
+                  }
+                },
                 "source_snapshot": {
                   "status": "unknown"
                 },
@@ -2300,6 +2455,13 @@
                 "source": {
                   "status": "known",
                   "value": "shop"
+                },
+                "source_coverage": {
+                  "status": "known",
+                  "value": {
+                    "run_id": "shop#1",
+                    "status": "complete"
+                  }
                 },
                 "source_snapshot": {
                   "status": "unknown"
@@ -2334,6 +2496,13 @@
                   "status": "known",
                   "value": "shop"
                 },
+                "source_coverage": {
+                  "status": "known",
+                  "value": {
+                    "run_id": "shop#1",
+                    "status": "complete"
+                  }
+                },
                 "source_snapshot": {
                   "status": "unknown"
                 },
@@ -2354,6 +2523,13 @@
                 "source": {
                   "status": "known",
                   "value": "shop"
+                },
+                "source_coverage": {
+                  "status": "known",
+                  "value": {
+                    "run_id": "shop#1",
+                    "status": "complete"
+                  }
                 },
                 "source_snapshot": {
                   "status": "unknown"
@@ -2408,6 +2584,13 @@
                 "status": "known",
                 "value": "shop"
               },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
+              },
               "source_snapshot": {
                 "status": "unknown"
               },
@@ -2440,6 +2623,13 @@
                 "status": "known",
                 "value": "shop"
               },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
+              },
               "source_snapshot": {
                 "status": "unknown"
               },
@@ -2464,6 +2654,13 @@
               "source": {
                 "status": "known",
                 "value": "shop"
+              },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
               },
               "source_snapshot": {
                 "status": "unknown"
@@ -2498,6 +2695,13 @@
                 "status": "known",
                 "value": "shop"
               },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
+              },
               "source_snapshot": {
                 "status": "unknown"
               },
@@ -2518,6 +2722,13 @@
               "source": {
                 "status": "known",
                 "value": "shop"
+              },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
               },
               "source_snapshot": {
                 "status": "unknown"
@@ -2549,6 +2760,13 @@
                 "status": "known",
                 "value": "shop"
               },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
+              },
               "source_snapshot": {
                 "status": "unknown"
               },
@@ -2574,6 +2792,13 @@
               "source": {
                 "status": "known",
                 "value": "shop"
+              },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
               },
               "source_snapshot": {
                 "status": "unknown"
@@ -2609,6 +2834,13 @@
               "source": {
                 "status": "known",
                 "value": "shop"
+              },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
               },
               "source_snapshot": {
                 "status": "unknown"
@@ -2790,6 +3022,13 @@
                   "status": "known",
                   "value": "shop"
                 },
+                "source_coverage": {
+                  "status": "known",
+                  "value": {
+                    "run_id": "shop#1",
+                    "status": "complete"
+                  }
+                },
                 "source_snapshot": {
                   "status": "unknown"
                 },
@@ -2822,6 +3061,13 @@
                   "status": "known",
                   "value": "shop"
                 },
+                "source_coverage": {
+                  "status": "known",
+                  "value": {
+                    "run_id": "shop#1",
+                    "status": "complete"
+                  }
+                },
                 "source_snapshot": {
                   "status": "unknown"
                 },
@@ -2842,6 +3088,13 @@
                 "source": {
                   "status": "known",
                   "value": "shop"
+                },
+                "source_coverage": {
+                  "status": "known",
+                  "value": {
+                    "run_id": "shop#1",
+                    "status": "complete"
+                  }
                 },
                 "source_snapshot": {
                   "status": "unknown"
@@ -2877,6 +3130,13 @@
                   "status": "known",
                   "value": "shop"
                 },
+                "source_coverage": {
+                  "status": "known",
+                  "value": {
+                    "run_id": "shop#1",
+                    "status": "complete"
+                  }
+                },
                 "source_snapshot": {
                   "status": "unknown"
                 },
@@ -2897,6 +3157,13 @@
                 "source": {
                   "status": "known",
                   "value": "shop"
+                },
+                "source_coverage": {
+                  "status": "known",
+                  "value": {
+                    "run_id": "shop#1",
+                    "status": "complete"
+                  }
                 },
                 "source_snapshot": {
                   "status": "unknown"
@@ -2931,6 +3198,13 @@
                   "status": "known",
                   "value": "shop"
                 },
+                "source_coverage": {
+                  "status": "known",
+                  "value": {
+                    "run_id": "shop#1",
+                    "status": "complete"
+                  }
+                },
                 "source_snapshot": {
                   "status": "unknown"
                 },
@@ -2953,6 +3227,13 @@
                 "source": {
                   "status": "known",
                   "value": "shop"
+                },
+                "source_coverage": {
+                  "status": "known",
+                  "value": {
+                    "run_id": "shop#1",
+                    "status": "complete"
+                  }
                 },
                 "source_snapshot": {
                   "status": "unknown"
@@ -3008,6 +3289,13 @@
                 "status": "known",
                 "value": "shop"
               },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
+              },
               "source_snapshot": {
                 "status": "unknown"
               },
@@ -3040,6 +3328,13 @@
                 "status": "known",
                 "value": "shop"
               },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
+              },
               "source_snapshot": {
                 "status": "unknown"
               },
@@ -3060,6 +3355,13 @@
               "source": {
                 "status": "known",
                 "value": "shop"
+              },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
               },
               "source_snapshot": {
                 "status": "unknown"
@@ -3095,6 +3397,13 @@
                 "status": "known",
                 "value": "shop"
               },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
+              },
               "source_snapshot": {
                 "status": "unknown"
               },
@@ -3115,6 +3424,13 @@
               "source": {
                 "status": "known",
                 "value": "shop"
+              },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
               },
               "source_snapshot": {
                 "status": "unknown"
@@ -3149,6 +3465,13 @@
                 "status": "known",
                 "value": "shop"
               },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
+              },
               "source_snapshot": {
                 "status": "unknown"
               },
@@ -3171,6 +3494,13 @@
               "source": {
                 "status": "known",
                 "value": "shop"
+              },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
               },
               "source_snapshot": {
                 "status": "unknown"
@@ -3209,6 +3539,13 @@
                 "status": "known",
                 "value": "shop"
               },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
+              },
               "source_snapshot": {
                 "status": "unknown"
               },
@@ -3242,6 +3579,13 @@
                 "status": "known",
                 "value": "shop"
               },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
+              },
               "source_snapshot": {
                 "status": "unknown"
               },
@@ -3270,6 +3614,13 @@
               "source": {
                 "status": "known",
                 "value": "shop"
+              },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
               },
               "source_snapshot": {
                 "status": "unknown"
@@ -3392,6 +3743,13 @@
                   "status": "known",
                   "value": "shop"
                 },
+                "source_coverage": {
+                  "status": "known",
+                  "value": {
+                    "run_id": "shop#1",
+                    "status": "complete"
+                  }
+                },
                 "source_snapshot": {
                   "status": "unknown"
                 },
@@ -3424,6 +3782,13 @@
                   "status": "known",
                   "value": "shop"
                 },
+                "source_coverage": {
+                  "status": "known",
+                  "value": {
+                    "run_id": "shop#1",
+                    "status": "complete"
+                  }
+                },
                 "source_snapshot": {
                   "status": "unknown"
                 },
@@ -3448,6 +3813,13 @@
                 "source": {
                   "status": "known",
                   "value": "shop"
+                },
+                "source_coverage": {
+                  "status": "known",
+                  "value": {
+                    "run_id": "shop#1",
+                    "status": "complete"
+                  }
                 },
                 "source_snapshot": {
                   "status": "unknown"
@@ -3482,6 +3854,13 @@
                   "status": "known",
                   "value": "shop"
                 },
+                "source_coverage": {
+                  "status": "known",
+                  "value": {
+                    "run_id": "shop#1",
+                    "status": "complete"
+                  }
+                },
                 "source_snapshot": {
                   "status": "unknown"
                 },
@@ -3502,6 +3881,13 @@
                 "source": {
                   "status": "known",
                   "value": "shop"
+                },
+                "source_coverage": {
+                  "status": "known",
+                  "value": {
+                    "run_id": "shop#1",
+                    "status": "complete"
+                  }
                 },
                 "source_snapshot": {
                   "status": "unknown"
@@ -3541,6 +3927,13 @@
                   "status": "known",
                   "value": "shop"
                 },
+                "source_coverage": {
+                  "status": "known",
+                  "value": {
+                    "run_id": "shop#1",
+                    "status": "complete"
+                  }
+                },
                 "source_snapshot": {
                   "status": "unknown"
                 },
@@ -3565,6 +3958,13 @@
                 "source": {
                   "status": "known",
                   "value": "shop"
+                },
+                "source_coverage": {
+                  "status": "known",
+                  "value": {
+                    "run_id": "shop#1",
+                    "status": "complete"
+                  }
                 },
                 "source_snapshot": {
                   "status": "unknown"
@@ -3599,6 +3999,13 @@
                   "status": "known",
                   "value": "shop"
                 },
+                "source_coverage": {
+                  "status": "known",
+                  "value": {
+                    "run_id": "shop#1",
+                    "status": "complete"
+                  }
+                },
                 "source_snapshot": {
                   "status": "unknown"
                 },
@@ -3619,6 +4026,13 @@
                 "source": {
                   "status": "known",
                   "value": "shop"
+                },
+                "source_coverage": {
+                  "status": "known",
+                  "value": {
+                    "run_id": "shop#1",
+                    "status": "complete"
+                  }
                 },
                 "source_snapshot": {
                   "status": "unknown"
@@ -3674,6 +4088,13 @@
                 "status": "known",
                 "value": "shop"
               },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
+              },
               "source_snapshot": {
                 "status": "unknown"
               },
@@ -3706,6 +4127,13 @@
                 "status": "known",
                 "value": "shop"
               },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
+              },
               "source_snapshot": {
                 "status": "unknown"
               },
@@ -3730,6 +4158,13 @@
               "source": {
                 "status": "known",
                 "value": "shop"
+              },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
               },
               "source_snapshot": {
                 "status": "unknown"
@@ -3764,6 +4199,13 @@
                 "status": "known",
                 "value": "shop"
               },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
+              },
               "source_snapshot": {
                 "status": "unknown"
               },
@@ -3784,6 +4226,13 @@
               "source": {
                 "status": "known",
                 "value": "shop"
+              },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
               },
               "source_snapshot": {
                 "status": "unknown"
@@ -3823,6 +4272,13 @@
                 "status": "known",
                 "value": "shop"
               },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
+              },
               "source_snapshot": {
                 "status": "unknown"
               },
@@ -3847,6 +4303,13 @@
               "source": {
                 "status": "known",
                 "value": "shop"
+              },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
               },
               "source_snapshot": {
                 "status": "unknown"
@@ -3881,6 +4344,13 @@
                 "status": "known",
                 "value": "shop"
               },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
+              },
               "source_snapshot": {
                 "status": "unknown"
               },
@@ -3901,6 +4371,13 @@
               "source": {
                 "status": "known",
                 "value": "shop"
+              },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
               },
               "source_snapshot": {
                 "status": "unknown"
@@ -4056,6 +4533,13 @@
                   "status": "known",
                   "value": "shop"
                 },
+                "source_coverage": {
+                  "status": "known",
+                  "value": {
+                    "run_id": "shop#1",
+                    "status": "complete"
+                  }
+                },
                 "source_snapshot": {
                   "status": "unknown"
                 },
@@ -4088,6 +4572,13 @@
                   "status": "known",
                   "value": "shop"
                 },
+                "source_coverage": {
+                  "status": "known",
+                  "value": {
+                    "run_id": "shop#1",
+                    "status": "complete"
+                  }
+                },
                 "source_snapshot": {
                   "status": "unknown"
                 },
@@ -4112,6 +4603,13 @@
                 "source": {
                   "status": "known",
                   "value": "shop"
+                },
+                "source_coverage": {
+                  "status": "known",
+                  "value": {
+                    "run_id": "shop#1",
+                    "status": "complete"
+                  }
                 },
                 "source_snapshot": {
                   "status": "unknown"
@@ -4146,6 +4644,13 @@
                   "status": "known",
                   "value": "shop"
                 },
+                "source_coverage": {
+                  "status": "known",
+                  "value": {
+                    "run_id": "shop#1",
+                    "status": "complete"
+                  }
+                },
                 "source_snapshot": {
                   "status": "unknown"
                 },
@@ -4166,6 +4671,13 @@
                 "source": {
                   "status": "known",
                   "value": "shop"
+                },
+                "source_coverage": {
+                  "status": "known",
+                  "value": {
+                    "run_id": "shop#1",
+                    "status": "complete"
+                  }
                 },
                 "source_snapshot": {
                   "status": "unknown"
@@ -4218,6 +4730,13 @@
                 "status": "known",
                 "value": "shop"
               },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
+              },
               "source_snapshot": {
                 "status": "unknown"
               },
@@ -4250,6 +4769,13 @@
                 "status": "known",
                 "value": "shop"
               },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
+              },
               "source_snapshot": {
                 "status": "unknown"
               },
@@ -4274,6 +4800,13 @@
               "source": {
                 "status": "known",
                 "value": "shop"
+              },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
               },
               "source_snapshot": {
                 "status": "unknown"
@@ -4308,6 +4841,13 @@
                 "status": "known",
                 "value": "shop"
               },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
+              },
               "source_snapshot": {
                 "status": "unknown"
               },
@@ -4328,6 +4868,13 @@
               "source": {
                 "status": "known",
                 "value": "shop"
+              },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
               },
               "source_snapshot": {
                 "status": "unknown"
@@ -4358,6 +4905,13 @@
               "source": {
                 "status": "known",
                 "value": "shop"
+              },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
               },
               "source_snapshot": {
                 "status": "unknown"
@@ -4494,6 +5048,13 @@
                 "status": "known",
                 "value": "shop"
               },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
+              },
               "source_snapshot": {
                 "status": "unknown"
               },
@@ -4523,6 +5084,13 @@
                 "status": "known",
                 "value": "shop"
               },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
+              },
               "source_snapshot": {
                 "status": "unknown"
               },
@@ -4548,6 +5116,13 @@
               "source": {
                 "status": "known",
                 "value": "shop"
+              },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
               },
               "source_snapshot": {
                 "status": "unknown"
@@ -4583,6 +5158,13 @@
               "source": {
                 "status": "known",
                 "value": "shop"
+              },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
               },
               "source_snapshot": {
                 "status": "unknown"
@@ -4745,6 +5327,13 @@
                   "status": "known",
                   "value": "shop"
                 },
+                "source_coverage": {
+                  "status": "known",
+                  "value": {
+                    "run_id": "shop#1",
+                    "status": "complete"
+                  }
+                },
                 "source_snapshot": {
                   "status": "unknown"
                 },
@@ -4777,6 +5366,13 @@
                   "status": "known",
                   "value": "shop"
                 },
+                "source_coverage": {
+                  "status": "known",
+                  "value": {
+                    "run_id": "shop#1",
+                    "status": "complete"
+                  }
+                },
                 "source_snapshot": {
                   "status": "unknown"
                 },
@@ -4801,6 +5397,13 @@
                 "source": {
                   "status": "known",
                   "value": "shop"
+                },
+                "source_coverage": {
+                  "status": "known",
+                  "value": {
+                    "run_id": "shop#1",
+                    "status": "complete"
+                  }
                 },
                 "source_snapshot": {
                   "status": "unknown"
@@ -4835,6 +5438,13 @@
                   "status": "known",
                   "value": "shop"
                 },
+                "source_coverage": {
+                  "status": "known",
+                  "value": {
+                    "run_id": "shop#1",
+                    "status": "complete"
+                  }
+                },
                 "source_snapshot": {
                   "status": "unknown"
                 },
@@ -4855,6 +5465,13 @@
                 "source": {
                   "status": "known",
                   "value": "shop"
+                },
+                "source_coverage": {
+                  "status": "known",
+                  "value": {
+                    "run_id": "shop#1",
+                    "status": "complete"
+                  }
                 },
                 "source_snapshot": {
                   "status": "unknown"
@@ -4907,6 +5524,13 @@
                 "status": "known",
                 "value": "shop"
               },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
+              },
               "source_snapshot": {
                 "status": "unknown"
               },
@@ -4939,6 +5563,13 @@
                 "status": "known",
                 "value": "shop"
               },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
+              },
               "source_snapshot": {
                 "status": "unknown"
               },
@@ -4963,6 +5594,13 @@
               "source": {
                 "status": "known",
                 "value": "shop"
+              },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
               },
               "source_snapshot": {
                 "status": "unknown"
@@ -4997,6 +5635,13 @@
                 "status": "known",
                 "value": "shop"
               },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
+              },
               "source_snapshot": {
                 "status": "unknown"
               },
@@ -5017,6 +5662,13 @@
               "source": {
                 "status": "known",
                 "value": "shop"
+              },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
               },
               "source_snapshot": {
                 "status": "unknown"
@@ -5047,6 +5699,13 @@
                 "status": "known",
                 "value": "shop"
               },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
+              },
               "source_snapshot": {
                 "status": "unknown"
               },
@@ -5072,6 +5731,13 @@
               "source": {
                 "status": "known",
                 "value": "shop"
+              },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
               },
               "source_snapshot": {
                 "status": "unknown"
@@ -5208,6 +5874,13 @@
                 "status": "known",
                 "value": "shop"
               },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
+              },
               "source_snapshot": {
                 "status": "unknown"
               },
@@ -5237,6 +5910,13 @@
                 "status": "known",
                 "value": "shop"
               },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
+              },
               "source_snapshot": {
                 "status": "unknown"
               },
@@ -5262,6 +5942,13 @@
               "source": {
                 "status": "known",
                 "value": "shop"
+              },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
               },
               "source_snapshot": {
                 "status": "unknown"
@@ -5297,6 +5984,13 @@
               "source": {
                 "status": "known",
                 "value": "shop"
+              },
+              "source_coverage": {
+                "status": "known",
+                "value": {
+                  "run_id": "shop#1",
+                  "status": "complete"
+                }
               },
               "source_snapshot": {
                 "status": "unknown"

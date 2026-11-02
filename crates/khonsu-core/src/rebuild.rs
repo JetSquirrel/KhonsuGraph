@@ -160,6 +160,7 @@ mod tests {
             cursor: None,
             patterns: Vec::new(),
             last_sync: None,
+            runs: Vec::new(),
         };
         let sources = [source("a", "no-such-plugin"), source("b", "no-such-plugin")];
         assert_eq!(missing_plugins(&sources), ["no-such-plugin"]);

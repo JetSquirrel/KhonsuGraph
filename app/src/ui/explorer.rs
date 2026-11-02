@@ -5,7 +5,8 @@ use std::collections::BTreeSet;
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use khonsu_core::evidence::{Assertion, Evidence, Field};
+use khonsu_core::evidence::{Assertion, Evidence, Field, SourceCoverage};
+use khonsu_core::settings::RunStatus;
 use khonsu_core::explore::{Direction, Exploration, ExploreRequest, Limit, DEFAULT_MAX_HOPS, MAX_HOPS};
 use khonsu_core::exposure::{Finding, Report, Status, Verdict, RULE_BALANCER, RULE_DIRECT, RULE_LATERAL};
 use khonsu_core::investigation::{GraphState, Investigation, RecordRef, Reopened};
@@ -35,6 +36,7 @@ pub struct Restored {
     pub target_missing: bool,
     pub unsure: Vec<RecordRef>,
     pub path_same: Option<bool>,
+    pub incomplete_sources: Vec<String>,
 }
 
 impl Restored {
@@ -48,6 +50,7 @@ impl Restored {
             target_missing: reopened.target_missing,
             unsure: reopened.unsure.clone(),
             path_same: reopened.path_same,
+            incomplete_sources: reopened.incomplete_sources.clone(),
         }
     }
 
@@ -63,6 +66,7 @@ impl Restored {
             GraphState::NotCompared => lines.push((tr("investigation.not_compared").to_string(), true)),
         }
         lines.extend(self.differences.iter().map(|text| (text.clone(), true)));
+        lines.extend(self.incomplete_sources.iter().map(|text| (text.clone(), true)));
         if !self.missing_seeds.is_empty() {
             lines.push((trf("investigation.missing_seeds", &[&names(&self.missing_seeds)]), true));
         }
@@ -238,6 +242,17 @@ pub fn explained_path(walk: &Exploration, target: i64) -> Vec<String> {
     walk.path_to(target).unwrap_or_default().into_iter().map(|hop| walk.explain(hop)).collect()
 }
 
+/// A source's last run in words, for the inspector.
+pub fn coverage_text(coverage: &SourceCoverage) -> String {
+    let status = match coverage.status {
+        RunStatus::Complete => tr("evidence.coverage.complete"),
+        RunStatus::Partial => tr("evidence.coverage.partial"),
+        RunStatus::Failed => tr("evidence.coverage.failed"),
+        RunStatus::Cancelled => tr("evidence.coverage.cancelled"),
+    };
+    format!("{status} ({})", coverage.run_id)
+}
+
 /// The evidence for a record, as the rows the inspector shows.
 pub fn evidence_rows(record: &Evidence) -> Vec<(&'static str, String)> {
     let unknown = || tr("evidence.unknown").to_string();
@@ -254,6 +269,7 @@ pub fn evidence_rows(record: &Evidence) -> Vec<(&'static str, String)> {
         ("evidence.plugin", text(&record.plugin)),
         ("evidence.written", time(&record.record_written_at)),
         ("evidence.last_sync", time(&record.source_last_successful_sync)),
+        ("evidence.coverage", record.source_coverage.known().map_or_else(unknown, |coverage| coverage_text(coverage))),
         ("evidence.snapshot", text(&record.source_snapshot)),
         ("evidence.assertion", assertion.to_string()),
     ]
@@ -464,6 +480,7 @@ mod tests {
             target_missing: false,
             unsure: vec![],
             path_same: Some(true),
+            incomplete_sources: vec![],
         }
     }
 

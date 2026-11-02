@@ -522,6 +522,7 @@ fn run_source(command: SourceCommand) -> Result<Value, CliError> {
                 cursor: None,
                 patterns: Vec::new(),
                 last_sync: None,
+                runs: Vec::new(),
             };
             let mut tested = Value::Null;
             if test {

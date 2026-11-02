@@ -169,6 +169,7 @@ fn reopen(args: ReopenArgs) -> Result<Value, CliError> {
         "missing_seeds": result.missing_seeds,
         "target_missing": result.target_missing,
         "unsure": result.unsure,
+        "incomplete_sources": result.incomplete_sources,
         "saved_walk": saved.walk,
         "walk": walk,
         "path": result.path,

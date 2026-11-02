@@ -72,6 +72,7 @@ khonsu evidence --db graphs/aws --node shop/123456789012:us-east-1:i-web1
 | `record_written_at` | When it last changed, in Unix seconds; can predate the last sync |
 | `source_last_successful_sync` | From the source's settings; unknown when its last sync failed |
 | `source_snapshot` | Unknown for now |
+| `source_coverage` | The source's last sync: `run_id`, `status` (`complete`, `partial`, `failed`, `cancelled`) and any `gaps`. Unknown when the source isn't configured or predates runs |
 | `rule_id` | Unknown on a record; known on an exposure finding's `path` |
 | `assertion` | `explicit` (a source reported it), `derived`, or `unknown` |
 | `properties`, `redacted` | Its own properties, and the names masked as possible secrets |
@@ -94,6 +95,7 @@ khonsu exposure --db graphs/aws --verdict potential-exposure --pretty
 | `path` | The candidate path as a derived evidence record, or null when its records do not exist |
 | `walk` | `from`, `to`, `direction`, `types`, `max_hops` for `khonsu explore`, or null |
 | `depends_on` | The finding a lateral step rests on |
+| `incomplete_sources` | Sources behind it whose last sync wasn't complete. A verdict that would be `not_indicated` becomes `insufficient_data` |
 | `contributing`, `evidence` | Evidence IDs of every record used, and those records |
 
 See `docs/exposure-rules.md` for the rules and a walkthrough.
@@ -113,6 +115,7 @@ khonsu investigation reopen web.investigation
 | `differences` | What changed, in words. Not exhaustive |
 | `missing_seeds`, `target_missing` | Saved records that are not in the graph now |
 | `unsure` | Records found by an internal ID on a changed graph, which may now be something else |
+| `incomplete_sources` | Sources whose last sync wasn't complete, in words |
 | `walk`, `path` | The walk run again now, and the path to the saved node |
 | `path_same` | Whether the path rests on the saved records; null when none was saved |
 | `saved_walk`, `query`, `dashboard` | The saved filters, query and dashboard. A saved query is returned, not run |

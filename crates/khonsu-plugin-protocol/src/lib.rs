@@ -181,8 +181,24 @@ pub enum Message {
         nodes: u64,
         #[serde(default)]
         edges: u64,
+        /// False when part of the source could not be enumerated, so what is
+        /// absent from this sync may still exist. A full sync then removes
+        /// nothing. Absent means complete, as for plugins older than this.
+        #[serde(default = "default_complete", skip_serializing_if = "is_true")]
+        complete: bool,
+        /// What was not enumerated, in words, when `complete` is false.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        gaps: Vec<String>,
     },
     Error { message: String },
+}
+
+fn default_complete() -> bool {
+    true
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
 }
 
 /// Helper for plugin authors: writes messages as JSON lines to stdout.

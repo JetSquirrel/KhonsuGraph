@@ -23,6 +23,7 @@ cargo test --locked --workspace --test investigation
 | Evidence | `khonsu evidence` and `explore --to` give stable IDs, state what is unknown, and mask secrets; the golden file holds a node and a relationship |
 | Exposure rules | `plugins/aws/tests/fixture-exposure` has a positive, a negative and an undecided case; the golden file holds its whole report, and rule IDs and verdicts for the shop fixture. See [the rules](exposure-rules.md) |
 | Saved investigations | Reopening restores a walk and path on unchanged data, and flags a changed source, a missing record, a missing graph and a bad file; the golden file holds a reopened walk and the fixture's fingerprint. See [saved investigations](investigations.md) |
+| Sync coverage | A scripted plugin fails midway, stops without `done`, reports gaps, sends duplicates and missing endpoints, and moves its cursor; none of it removes records or moves the cursor unless the sync was complete |
 | HawDB upgrades | `app/tests/fixtures/graph-hawdb-*.zip` must still give the golden answers and fingerprint, and accept a write |
 
 Timings, sync times, paths, line numbers and plugin versions are left out of the
@@ -52,9 +53,14 @@ These are written down so that nobody reads an empty result as proof:
   `db-1` exists as rules, while the directed path query finds nothing, because
   `PROTECTED_BY` points from the instance to its group. The two queries ask
   different questions.
-- **A missing saved response reads as an empty one (#38).** A partial export
-  syncs without a warning, and a re-sync removes what the missing file used to
-  describe. A test records this behaviour, so fixing it has to change the test.
+- **A partial sync removes nothing, so its records can be out of date.** A saved
+  response that is missing makes the sync `partial`. What the graph already held
+  stays until a complete sync. Evidence, exposure findings and reopened
+  investigations say which sources this applies to.
+- **A real account's sync is complete or failed, never partial.** The AWS plugin
+  stops at the first call that fails. Records from before that are kept.
+- **Runs aren't recorded for older syncs.** A source last synced before runs were
+  kept has unknown coverage, and isn't treated as incomplete.
 - **HawDB's variable-length patterns take one relationship type.**
   `[:A|B*..6]` does not parse. Use explicit hops for a typed chain, or an untyped
   `shortestPath`.
@@ -66,8 +72,8 @@ These are written down so that nobody reads an empty result as proof:
 
 - **`record_written_at` is when a record last changed.** A sync does not rewrite
   an unchanged relationship, so this can be older than the sync that last saw it.
-  `source_last_successful_sync` is the source's own, and is unknown once its last
-  sync failed.
+  `source_last_successful_sync` is the source's last complete sync, and
+  `source_coverage` says how its latest one ended.
 - **Evidence shows what is stored, not the raw response.** The AWS plugin stores
   chosen fields, not the API call each came from.
 
