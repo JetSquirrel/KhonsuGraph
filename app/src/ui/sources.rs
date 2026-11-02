@@ -76,7 +76,7 @@ fn permission_lines(permissions: &Permissions) -> Vec<String> {
 }
 
 fn approved(info: &PluginInfo) -> bool {
-    info.builtin || settings::is_approved(info.id(), &info.manifest.version, &info.manifest.permissions)
+    khonsu_core::plugin::approval_state(info) == khonsu_core::plugin::ApprovalState::Approved
 }
 
 /// Pick a plugin, then configure a new source with it.
@@ -210,6 +210,7 @@ fn begin_configure(
         return;
     }
     let lines = permission_lines(&info.manifest.permissions);
+    let changed = khonsu_core::plugin::approval_state(&info) == khonsu_core::plugin::ApprovalState::Changed;
     window.open_dialog(cx, move |dialog, _, cx| {
         let (state, info, describe, existing) = (state.clone(), info.clone(), describe.clone(), existing.clone());
         dialog
@@ -219,6 +220,7 @@ fn begin_configure(
                 v_flex()
                     .gap_2()
                     .child(div().font_weight(FontWeight::SEMIBOLD).child(format!("{} {}", info.manifest.name, info.manifest.version)))
+                    .when(changed, |this| this.child(div().text_sm().text_color(cx.theme().warning).whitespace_normal().child(tr("permissions.changed"))))
                     .child(div().text_sm().text_color(cx.theme().muted_foreground).whitespace_normal().child(tr("permissions.body")))
                     .children(lines.iter().map(|l| div().text_sm().child(format!("• {l}"))))
                     .child(
@@ -235,7 +237,7 @@ fn begin_configure(
                     .child(Button::new("cancel").outline().label(tr("common.cancel")).on_click(|_, window, cx| window.close_dialog(cx)))
                     .child(Button::new("approve").primary().label(tr("permissions.approve")).on_click(move |_, window, cx| {
                         window.close_dialog(cx);
-                        if let Err(e) = settings::approve(info.id(), &info.manifest.version, &info.manifest.permissions) {
+                        if let Err(e) = khonsu_core::plugin::approve(&info) {
                             window.push_notification(Notification::error(e.to_string()), cx);
                             return;
                         }

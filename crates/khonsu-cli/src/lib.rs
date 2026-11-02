@@ -28,6 +28,7 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 const PROGRAM: &str = "khonsu CLI";
+const NOT_ENFORCED: &str = "A plugin runs as you and is not sandboxed: its declared permissions are not enforced.";
 
 #[derive(Parser)]
 #[command(name = "khonsu", version, about = "KhonsuGraph command line: query HawDB graphs and sync data sources, with JSON output")]
@@ -147,13 +148,15 @@ enum PluginCommand {
     List,
     /// A plugin's configuration fields, permissions and output types.
     Describe { id: String },
-    /// Install a plugin from a local directory or .zip containing khonsu-plugin.json.
+    /// Install a plugin from a local directory or .zip containing khonsu-plugin.json. It is third-party code, and is not sandboxed.
     Install {
         dir: PathBuf,
         /// Approve the permissions the plugin declares (required to sync with it).
         #[arg(long)]
         yes: bool,
     },
+    /// Approve an installed plugin as it is now, after reading what it declares. It is not sandboxed: it runs with your access.
+    Approve { id: String },
     /// Remove an installed plugin.
     Uninstall { id: String },
     /// Sync a configured source into its graph (or preview with --dry-run).
@@ -255,7 +258,7 @@ impl From<QueryError> for CliError {
 impl From<plugin::PluginError> for CliError {
     fn from(err: plugin::PluginError) -> Self {
         let detail = match &err {
-            plugin::PluginError::NotApproved { permissions, .. } => json!({ "permissions": permissions }),
+            plugin::PluginError::NotApproved { permissions, reason, .. } => json!({ "permissions": permissions, "reason": reason }),
             _ => Value::Null,
         };
         Self {
@@ -403,13 +406,16 @@ fn run_plugin(command: PluginCommand) -> Result<Value, CliError> {
             let plugins: Vec<Value> = plugin::list()
                 .into_iter()
                 .map(|p| {
-                    let approved = p.builtin || settings::is_approved(p.id(), &p.manifest.version, &p.manifest.permissions);
+                    let approval = plugin::approval_state(&p);
+                    let approved = approval == plugin::ApprovalState::Approved;
                     json!({
                         "id": p.manifest.id,
                         "name": p.manifest.name,
                         "version": p.manifest.version,
                         "builtin": p.builtin,
                         "approved": approved,
+                        "approval": approval,
+                        "sandboxed": false,
                         "description": p.manifest.description,
                         "permissions": p.manifest.permissions,
                         "dir": p.dir,
@@ -425,7 +431,7 @@ fn run_plugin(command: PluginCommand) -> Result<Value, CliError> {
         PluginCommand::Install { dir, yes } => {
             let info = plugin::install(&dir)?;
             if yes {
-                settings::approve(info.id(), &info.manifest.version, &info.manifest.permissions)?;
+                plugin::approve(&info)?;
             }
             Ok(json!({
                 "installed": info.manifest.id,
@@ -433,7 +439,23 @@ fn run_plugin(command: PluginCommand) -> Result<Value, CliError> {
                 "dir": info.dir,
                 "permissions": info.manifest.permissions,
                 "approved": yes,
-                "note": if yes { "" } else { "re-run with --yes to approve these permissions before syncing" },
+                "sandboxed": false,
+                "note": if yes { NOT_ENFORCED.to_string() } else { format!("Run `khonsu plugin approve {}` before syncing. {NOT_ENFORCED}", info.manifest.id) },
+            }))
+        }
+        PluginCommand::Approve { id } => {
+            let info = plugin::find(&id)?;
+            if info.builtin {
+                return Err(CliError::usage(format!("{id} is built in and needs no approval")));
+            }
+            plugin::approve(&info)?;
+            Ok(json!({
+                "approved": info.manifest.id,
+                "version": info.manifest.version,
+                "permissions": info.manifest.permissions,
+                "identity": plugin::identity(&info)?,
+                "sandboxed": false,
+                "note": NOT_ENFORCED,
             }))
         }
         PluginCommand::Uninstall { id } => {

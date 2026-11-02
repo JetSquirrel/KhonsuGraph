@@ -15,6 +15,7 @@ use khonsu_plugin_protocol::{
     PROTOCOL_VERSION,
 };
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, VecDeque};
 use std::fs;
 use std::io::{BufRead, BufReader, Read, Write};
@@ -23,6 +24,19 @@ use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::thread;
+
+/// The longest line a plugin may send. A longer one fails the sync rather than
+/// filling memory.
+pub const MAX_LINE_BYTES: usize = 16 * 1024 * 1024;
+/// What is kept of one stderr line, for error messages.
+const MAX_STDERR_LINE: usize = 4096;
+/// The most `describe` or `test` may print.
+const MAX_OUTPUT_BYTES: u64 = 16 * 1024 * 1024;
+/// How long `describe` may take: it says what a plugin is, and needs no network.
+const DESCRIBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+/// The most an archive may unpack to, and how many entries it may hold.
+const MAX_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
+const MAX_ARCHIVE_ENTRIES: usize = 10_000;
 
 /// IDs of plugins shipped with KhonsuGraph.
 pub const BUILTIN_PLUGINS: &[&str] = &["csv", "aws"];
@@ -79,8 +93,8 @@ pub enum PluginError {
     Failed { plugin: String, message: String },
     #[error("sync cancelled")]
     Cancelled,
-    #[error("plugin {plugin} needs approval of its permissions before it runs")]
-    NotApproved { plugin: String, permissions: Permissions },
+    #[error("plugin {plugin} needs approval before it runs: {reason}")]
+    NotApproved { plugin: String, permissions: Permissions, reason: String },
     #[error("{0}")]
     Query(#[from] QueryError),
     #[error("{0}")]
@@ -139,13 +153,102 @@ pub fn read_manifest(dir: &Path) -> Result<Manifest, PluginError> {
             message: format!("protocol {} is not supported (expected {PROTOCOL_VERSION})", manifest.protocol),
         });
     }
-    if manifest.id.is_empty() || !manifest.id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+    if !is_valid_id(&manifest.id) {
         return Err(PluginError::Invalid {
             path,
             message: "id must be letters, digits, '-' or '_'".into(),
         });
     }
+    if let Some(bad) = manifest.entry.iter().find(|part| leaves_the_folder(part)) {
+        return Err(PluginError::Invalid {
+            path,
+            message: format!("entry {bad:?} points outside the plugin folder"),
+        });
+    }
     Ok(manifest)
+}
+
+fn is_valid_id(id: &str) -> bool {
+    !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+}
+
+/// An absolute path, a drive, or a `..` part, on any platform: a manifest is
+/// written on one machine and read on another.
+fn leaves_the_folder(part: &str) -> bool {
+    part.starts_with(['/', '\\']) || part.contains(':') || part.split(['/', '\\']).any(|piece| piece == "..")
+}
+
+/// Whether a plugin may run: built in, or approved as it is now.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ApprovalState {
+    Approved,
+    /// Never approved.
+    NotApproved,
+    /// Approved, and its version, permissions or files are different now.
+    Changed,
+}
+
+/// A hash of everything in a plugin's folder, so that a change to its files
+/// needs approval again even under the same version number. It says nothing
+/// about a program it finds on `PATH`, such as `python3`.
+pub fn identity(plugin: &PluginInfo) -> Result<String, PluginError> {
+    let mut hash = Sha256::new();
+    hash_folder(&plugin.dir, "", &mut hash)?;
+    let digest = hash.finalize();
+    Ok(digest.iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+fn hash_folder(dir: &Path, prefix: &str, hash: &mut Sha256) -> Result<(), PluginError> {
+    let mut entries: Vec<fs::DirEntry> = fs::read_dir(dir)?.collect::<Result<_, _>>()?;
+    entries.sort_by_key(fs::DirEntry::file_name);
+    for entry in entries {
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let relative = format!("{prefix}{name}");
+        let kind = entry.file_type()?;
+        // What an interpreter writes for itself as it runs.
+        if name == "__pycache__" || name.ends_with(".pyc") {
+            continue;
+        }
+        hash.update(relative.as_bytes());
+        hash.update([0]);
+        if kind.is_dir() {
+            hash_folder(&entry.path(), &format!("{relative}/"), hash)?;
+        } else if kind.is_symlink() {
+            // Installing refuses these, so one here was added since.
+            hash.update(b"symlink");
+            hash.update(fs::read_link(entry.path())?.to_string_lossy().as_bytes());
+        } else {
+            std::io::copy(&mut fs::File::open(entry.path())?, hash)?;
+        }
+        hash.update([0]);
+    }
+    Ok(())
+}
+
+pub fn approval_state(plugin: &PluginInfo) -> ApprovalState {
+    if plugin.builtin {
+        return ApprovalState::Approved;
+    }
+    let approvals = settings::load_approvals();
+    let Some(approval) = approvals.iter().find(|approval| approval.plugin == plugin.id()) else {
+        return ApprovalState::NotApproved;
+    };
+    let same = approval.version == plugin.manifest.version
+        && approval.permissions == plugin.manifest.permissions
+        && approval.identity.is_some()
+        && approval.identity == identity(plugin).ok();
+    if same {
+        ApprovalState::Approved
+    } else {
+        ApprovalState::Changed
+    }
+}
+
+/// Approves a plugin as it is now.
+pub fn approve(plugin: &PluginInfo) -> Result<(), PluginError> {
+    settings::approve(plugin.id(), &plugin.manifest.version, &plugin.manifest.permissions, &identity(plugin)?)?;
+    Ok(())
 }
 
 /// Looks a bare command name up on `PATH`, trying `PATHEXT` extensions on Windows.
@@ -252,28 +355,46 @@ pub fn install(from: &Path) -> Result<PluginInfo, PluginError> {
     if BUILTIN_PLUGINS.contains(&manifest.id.as_str()) {
         return Err(PluginError::Other(format!("{} is a built-in plugin ID", manifest.id)));
     }
-    let dest = settings::plugins_dir().join(&manifest.id);
-    if dest.exists() {
-        fs::remove_dir_all(&dest)?;
+    // Checked in a staging folder, so that a bad plugin leaves the one installed
+    // before it in place.
+    let plugins = settings::plugins_dir();
+    fs::create_dir_all(&plugins)?;
+    let staging = plugins.join(format!(".install-{}", std::process::id()));
+    if staging.exists() {
+        fs::remove_dir_all(&staging)?;
     }
-    copy_dir(from, &dest)?;
-    let info = PluginInfo {
-        manifest,
-        dir: dest,
-        builtin: false,
-    };
-    if !info.executable().is_file() {
-        let exe = info.executable();
-        fs::remove_dir_all(&info.dir)?;
-        return Err(PluginError::Invalid {
-            path: exe,
-            message: "entry executable not found".into(),
-        });
-    }
-    Ok(info)
+    let result = (|| {
+        copy_dir(from, &staging)?;
+        let staged = PluginInfo {
+            manifest: manifest.clone(),
+            dir: staging.clone(),
+            builtin: false,
+        };
+        if !staged.executable().is_file() {
+            return Err(PluginError::Invalid {
+                path: staged.executable(),
+                message: "entry executable not found".into(),
+            });
+        }
+        let dest = plugins.join(&manifest.id);
+        if dest.exists() {
+            fs::remove_dir_all(&dest)?;
+        }
+        fs::rename(&staging, &dest)?;
+        Ok(PluginInfo {
+            manifest,
+            dir: dest,
+            builtin: false,
+        })
+    })();
+    let _ = fs::remove_dir_all(&staging);
+    result
 }
 
 pub fn uninstall(id: &str) -> Result<(), PluginError> {
+    if !is_valid_id(id) {
+        return Err(PluginError::NotFound(id.to_string()));
+    }
     let dir = settings::plugins_dir().join(id);
     if !dir.exists() {
         return Err(PluginError::NotFound(id.to_string()));
@@ -296,27 +417,10 @@ fn install_archive(archive: &Path) -> Result<PluginInfo, PluginError> {
     }
     fs::create_dir_all(&staging)?;
     let result = (|| {
-        for i in 0..zip.len() {
-            let mut entry = zip.by_index(i).map_err(|e| invalid(e.to_string()))?;
-            // Entries that would land outside the folder (`../`, absolute) are refused.
-            let Some(name) = entry.enclosed_name() else {
-                return Err(invalid(format!("unsafe path in archive: {}", entry.name())));
-            };
-            let target = staging.join(name);
-            if entry.is_dir() {
-                fs::create_dir_all(&target)?;
-                continue;
-            }
-            if let Some(parent) = target.parent() {
-                fs::create_dir_all(parent)?;
-            }
-            std::io::copy(&mut entry, &mut fs::File::create(&target)?)?;
-            #[cfg(unix)]
-            if let Some(mode) = entry.unix_mode() {
-                use std::os::unix::fs::PermissionsExt;
-                fs::set_permissions(&target, fs::Permissions::from_mode(mode & 0o755))?;
-            }
-        }
+        unpack(&mut zip, &staging, MAX_ARCHIVE_BYTES, MAX_ARCHIVE_ENTRIES).map_err(|message| match message {
+            UnpackError::Refused(message) => invalid(message),
+            UnpackError::Io(error) => PluginError::Io(error),
+        })?;
         let root = if staging.join(MANIFEST_FILE).is_file() {
             staging.clone()
         } else {
@@ -332,12 +436,74 @@ fn install_archive(archive: &Path) -> Result<PluginInfo, PluginError> {
     result
 }
 
-fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
+enum UnpackError {
+    Refused(String),
+    Io(std::io::Error),
+}
+
+impl From<std::io::Error> for UnpackError {
+    fn from(error: std::io::Error) -> Self {
+        UnpackError::Io(error)
+    }
+}
+
+/// Unpacks an archive into `staging`, refusing entries that would land outside
+/// it, symbolic links, and an archive larger than it says or than the caps.
+fn unpack(zip: &mut zip::ZipArchive<fs::File>, staging: &Path, max_bytes: u64, max_entries: usize) -> Result<(), UnpackError> {
+    if zip.len() > max_entries {
+        return Err(UnpackError::Refused(format!("it holds {} entries, and at most {max_entries} are allowed", zip.len())));
+    }
+    let mut left = max_bytes;
+    {
+        for i in 0..zip.len() {
+            let mut entry = zip.by_index(i).map_err(|e| UnpackError::Refused(e.to_string()))?;
+            // Entries that would land outside the folder (`../`, absolute) are refused.
+            let Some(name) = entry.enclosed_name() else {
+                return Err(UnpackError::Refused(format!("unsafe path in archive: {}", entry.name())));
+            };
+            if entry.is_symlink() {
+                return Err(UnpackError::Refused(format!("symbolic link in archive: {}", entry.name())));
+            }
+            let target = staging.join(name);
+            if entry.is_dir() {
+                fs::create_dir_all(&target)?;
+                continue;
+            }
+            if let Some(parent) = target.parent() {
+                fs::create_dir_all(parent)?;
+            }
+            // The declared size is the archive's word for it, so count what comes out.
+            let mut limited = (&mut entry).take(left + 1);
+            let written = std::io::copy(&mut limited, &mut fs::File::create(&target)?)?;
+            if written > left {
+                return Err(UnpackError::Refused(format!("it unpacks to more than {max_bytes} bytes")));
+            }
+            left -= written;
+            #[cfg(unix)]
+            if let Some(mode) = entry.unix_mode() {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(&target, fs::Permissions::from_mode(mode & 0o755))?;
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Copies a plugin folder. A symbolic link is refused: following it would copy
+/// in whatever it points at.
+fn copy_dir(from: &Path, to: &Path) -> Result<(), PluginError> {
     fs::create_dir_all(to)?;
     for entry in fs::read_dir(from)? {
         let entry = entry?;
         let target = to.join(entry.file_name());
-        if entry.file_type()?.is_dir() {
+        let kind = entry.file_type()?;
+        if kind.is_symlink() {
+            return Err(PluginError::Invalid {
+                path: entry.path(),
+                message: "a plugin folder may not hold symbolic links".into(),
+            });
+        }
+        if kind.is_dir() {
             copy_dir(&entry.path(), &target)?;
         } else {
             fs::copy(entry.path(), target)?;
@@ -346,15 +512,58 @@ fn copy_dir(from: &Path, to: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
+/// Reads one line of at most `max` bytes without holding more than that.
+/// `Ok(None)` at the end of the stream. `Ok(Some(Err(())))` when the line was
+/// longer, with the rest skipped if `truncate` and otherwise left unread.
+#[allow(clippy::type_complexity)]
+fn read_line_capped(reader: &mut impl BufRead, max: usize, truncate: bool) -> std::io::Result<Option<Result<String, ()>>> {
+    let mut line = Vec::new();
+    let mut read_any = false;
+    let mut too_long = false;
+    loop {
+        let available = reader.fill_buf()?;
+        if available.is_empty() {
+            break;
+        }
+        read_any = true;
+        let (take, found) = match available.iter().position(|byte| *byte == b'\n') {
+            Some(at) => (at, true),
+            None => (available.len(), false),
+        };
+        let room = max.saturating_sub(line.len());
+        line.extend_from_slice(&available[..take.min(room)]);
+        too_long |= take > room;
+        reader.consume(take + usize::from(found));
+        if found {
+            break;
+        }
+        if too_long && !truncate {
+            return Ok(Some(Err(())));
+        }
+    }
+    if !read_any {
+        return Ok(None);
+    }
+    if too_long && !truncate {
+        return Ok(Some(Err(())));
+    }
+    while line.last() == Some(&b'\r') {
+        line.pop();
+    }
+    // Not valid UTF-8 is a mistake to report, not a reason to stop reading.
+    Ok(Some(Ok(String::from_utf8_lossy(&line).into_owned())))
+}
+
 /// Collects the last lines a plugin wrote to stderr, for error messages.
 fn drain_stderr(child: &mut Child) -> Arc<Mutex<VecDeque<String>>> {
     let tail = Arc::new(Mutex::new(VecDeque::new()));
     if let Some(stderr) = child.stderr.take() {
         let tail = Arc::clone(&tail);
         thread::spawn(move || {
-            for line in BufReader::new(stderr).lines().map_while(Result::ok) {
+            let mut reader = BufReader::new(stderr);
+            while let Ok(Some(line)) = read_line_capped(&mut reader, MAX_STDERR_LINE, true) {
                 let mut tail = tail.lock().unwrap();
-                tail.push_back(line);
+                tail.push_back(line.unwrap_or_default());
                 if tail.len() > 20 {
                     tail.pop_front();
                 }
@@ -379,26 +588,45 @@ fn failure(plugin: &PluginInfo, message: String, stderr: &Mutex<VecDeque<String>
 }
 
 pub fn describe(plugin: &PluginInfo) -> Result<Describe, PluginError> {
-    let output = plugin
+    describe_within(plugin, DESCRIBE_TIMEOUT)
+}
+
+fn describe_within(plugin: &PluginInfo, timeout: std::time::Duration) -> Result<Describe, PluginError> {
+    let failed = |message: String| PluginError::Failed {
+        plugin: plugin.id().to_string(),
+        message,
+    };
+    let mut child = plugin
         .command()
         .arg("describe")
         .stdin(Stdio::null())
+        .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .output()
-        .map_err(|e| PluginError::Failed {
-            plugin: plugin.id().to_string(),
-            message: format!("cannot start {}: {e}", plugin.executable().display()),
-        })?;
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    for line in stdout.lines() {
+        .spawn()
+        .map_err(|e| failed(format!("cannot start {}: {e}", plugin.executable().display())))?;
+    let stderr = drain_stderr(&mut child);
+    let stdout = child.stdout.take().expect("stdout is piped");
+    let (tx, rx) = std::sync::mpsc::channel();
+    thread::spawn(move || {
+        let mut text = Vec::new();
+        let read = stdout.take(MAX_OUTPUT_BYTES).read_to_end(&mut text);
+        let _ = tx.send(read.map(|_| text));
+    });
+    let Ok(read) = rx.recv_timeout(timeout) else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return Err(failed(format!("describe took more than {} seconds", timeout.as_secs())));
+    };
+    // Past the cap the reader has stopped, and nothing else will end the plugin.
+    let _ = child.kill();
+    let _ = child.wait();
+    let text = read?;
+    for line in String::from_utf8_lossy(&text).lines() {
         if let Some(Ok(Message::Describe(describe))) = parse_line(line) {
             return Ok(describe);
         }
     }
-    Err(PluginError::Failed {
-        plugin: plugin.id().to_string(),
-        message: format!("no describe message; stderr: {}", String::from_utf8_lossy(&output.stderr).trim()),
-    })
+    Err(failure(plugin, "no describe message".into(), &stderr))
 }
 
 fn spawn(plugin: &PluginInfo, operation: &str, request: &Request) -> Result<Child, PluginError> {
@@ -423,17 +651,18 @@ fn spawn(plugin: &PluginInfo, operation: &str, request: &Request) -> Result<Chil
 pub fn test(plugin: &PluginInfo, request: &Request) -> Result<(bool, String), PluginError> {
     let mut child = spawn(plugin, "test", request)?;
     let stderr = drain_stderr(&mut child);
-    let mut stdout = String::new();
-    child.stdout.take().expect("stdout is piped").read_to_string(&mut stdout)?;
+    let mut stdout = Vec::new();
+    child.stdout.take().expect("stdout is piped").take(MAX_OUTPUT_BYTES).read_to_end(&mut stdout)?;
+    let _ = child.kill();
     child.wait()?;
-    for line in stdout.lines() {
+    for line in String::from_utf8_lossy(&stdout).lines() {
         match parse_line(line) {
-            Some(Ok(Message::TestResult { ok, message })) => return Ok((ok, message)),
-            Some(Ok(Message::Error { message })) => return Ok((false, message)),
+            Some(Ok(Message::TestResult { ok, message })) => return Ok((ok, scrub(&message, &request.secrets))),
+            Some(Ok(Message::Error { message })) => return Ok((false, scrub(&message, &request.secrets))),
             _ => {}
         }
     }
-    Err(failure(plugin, "no test result".into(), &stderr))
+    Err(scrub_error(failure(plugin, "no test result".into(), &stderr), &request.secrets))
 }
 
 /// What happens during a sync, for progress display.
@@ -477,11 +706,14 @@ pub fn run_sync(
     let stderr = drain_stderr(&mut child);
     let stdout = child.stdout.take().expect("stdout is piped");
 
-    // Read on a thread so cancellation does not wait for the next line.
-    let (tx, rx) = std::sync::mpsc::sync_channel::<String>(1024);
+    // Read on a thread so cancellation does not wait for the next line. The queue
+    // is short because each line in it can be as long as the cap.
+    let (tx, rx) = std::sync::mpsc::sync_channel::<Result<String, ()>>(64);
     thread::spawn(move || {
-        for line in BufReader::new(stdout).lines().map_while(Result::ok) {
-            if tx.send(line).is_err() {
+        let mut reader = BufReader::new(stdout);
+        while let Ok(Some(line)) = read_line_capped(&mut reader, MAX_LINE_BYTES, false) {
+            let too_long = line.is_err();
+            if tx.send(line).is_err() || too_long {
                 break;
             }
         }
@@ -497,7 +729,11 @@ pub fn run_sync(
             break Err(PluginError::Cancelled);
         }
         let line = match rx.recv_timeout(std::time::Duration::from_millis(100)) {
-            Ok(line) => line,
+            Ok(Ok(line)) => line,
+            Ok(Err(())) => {
+                let _ = child.kill();
+                break Err(failure(plugin, format!("a line of output was longer than {MAX_LINE_BYTES} bytes"), &stderr));
+            }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break Ok(()),
         };
@@ -506,7 +742,8 @@ pub fn run_sync(
             Some(Ok(message)) => message,
             Some(Err(err)) => {
                 let _ = child.kill();
-                break Err(failure(plugin, format!("invalid output line: {err}: {line}"), &stderr));
+                let shown: String = line.chars().take(200).collect();
+                break Err(failure(plugin, format!("invalid output line: {err}: {shown}"), &stderr));
             }
         };
         let step = match message {
@@ -584,7 +821,10 @@ const SAMPLES: usize = 8;
 
 pub fn preview(plugin: &PluginInfo, request: &Request, cancel: &AtomicBool, on_event: impl FnMut(SyncEvent)) -> Result<Preview, PluginError> {
     let mut preview = Preview::default();
-    run_sync(plugin, request, cancel, on_event, |record| {
+    let secrets = request.secrets.clone();
+    let mut on_event = on_event;
+    let scrubbed_events = |event: SyncEvent| on_event(scrub_event(event, &secrets));
+    run_sync(plugin, request, cancel, scrubbed_events, |record| {
         match record {
             Record::Node(node) => {
                 preview.nodes += 1;
@@ -602,7 +842,8 @@ pub fn preview(plugin: &PluginInfo, request: &Request, cancel: &AtomicBool, on_e
             }
         }
         Ok(())
-    })?;
+    })
+    .map_err(|error| scrub_error(error, &request.secrets))?;
     Ok(preview)
 }
 
@@ -648,11 +889,20 @@ pub fn sync_source(
     } else {
         mode
     };
-    if !plugin.builtin && !settings::is_approved(plugin.id(), &plugin.manifest.version, &plugin.manifest.permissions) {
-        return Err(PluginError::NotApproved {
-            plugin: plugin.id().to_string(),
-            permissions: plugin.manifest.permissions.clone(),
-        });
+    match approval_state(&plugin) {
+        ApprovalState::Approved => {}
+        state => {
+            let reason = if state == ApprovalState::Changed {
+                "its version, permissions or files have changed since it was approved"
+            } else {
+                "it has not been approved"
+            };
+            return Err(PluginError::NotApproved {
+                plugin: plugin.id().to_string(),
+                permissions: plugin.manifest.permissions.clone(),
+                reason: reason.into(),
+            });
+        }
     }
     let request = request_for(source, mode)?;
     let started = std::time::Instant::now();
@@ -662,13 +912,7 @@ pub fn sync_source(
     let (mut received_nodes, mut received_edges) = (0, 0);
     let secret_values = request.secrets.clone();
     let mut on_event = on_event;
-    let scrubbed_events = |event: SyncEvent| {
-        on_event(match event {
-            SyncEvent::Progress { message, current, total } => SyncEvent::Progress { message: scrub(&message, &secret_values), current, total },
-            SyncEvent::Log { level, message } => SyncEvent::Log { level, message: scrub(&message, &secret_values) },
-            other => other,
-        });
-    };
+    let scrubbed_events = |event: SyncEvent| on_event(scrub_event(event, &secret_values));
     let outcome = run_sync(&plugin, &request, cancel, scrubbed_events, |record| {
         match record {
             Record::Node(node) => {
@@ -750,7 +994,7 @@ pub fn sync_source(
             });
             let status = if matches!(err, PluginError::Cancelled) { RunStatus::Cancelled } else { RunStatus::Failed };
             updated.push_run(run(status, false, false, Vec::new(), message));
-            Err(err)
+            Err(scrub_error(err, &request.secrets))
         }
     };
     settings::upsert_source(updated)?;
@@ -767,9 +1011,132 @@ fn scrub(text: &str, secrets: &serde_json::Map<String, serde_json::Value>) -> St
         .fold(text.to_string(), |text, secret| text.replace(secret, "[redacted]"))
 }
 
+fn scrub_event(event: SyncEvent, secrets: &serde_json::Map<String, serde_json::Value>) -> SyncEvent {
+    match event {
+        SyncEvent::Progress { message, current, total } => SyncEvent::Progress { message: scrub(&message, secrets), current, total },
+        SyncEvent::Log { level, message } => SyncEvent::Log { level, message: scrub(&message, secrets) },
+        other => other,
+    }
+}
+
+/// An error as it may be shown: what a plugin said can repeat a secret.
+fn scrub_error(error: PluginError, secrets: &serde_json::Map<String, serde_json::Value>) -> PluginError {
+    match error {
+        PluginError::Failed { plugin, message } => PluginError::Failed {
+            plugin,
+            message: scrub(&message, secrets),
+        },
+        PluginError::Other(message) => PluginError::Other(scrub(&message, secrets)),
+        other => other,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_error_a_plugin_caused_is_masked_too() {
+        let secrets = serde_json::json!({"key": "abc123"}).as_object().unwrap().clone();
+        let error = PluginError::Failed { plugin: "p".into(), message: "denied abc123".into() };
+        assert_eq!(scrub_error(error, &secrets).to_string(), "plugin p failed: denied [redacted]");
+        let event = scrub_event(SyncEvent::Log { level: "warn".into(), message: "abc123".into() }, &secrets);
+        assert_eq!(event, SyncEvent::Log { level: "warn".into(), message: "[redacted]".into() });
+    }
+
+    #[test]
+    fn an_entry_may_not_leave_the_plugin_folder_on_any_platform() {
+        for bad in ["../evil", "bin/../../evil", "..\\evil", "/usr/bin/evil", "\\\\host\\share", "C:\\evil", "c:evil"] {
+            assert!(leaves_the_folder(bad), "{bad}");
+        }
+        for fine in ["plugin", "bin/plugin", "bin\\plugin.exe", "python3", "plugin.py", "--flag", "a..b"] {
+            assert!(!leaves_the_folder(fine), "{fine}");
+        }
+    }
+
+    #[test]
+    fn a_long_line_is_refused_or_cut_without_being_held() {
+        use std::io::Cursor;
+        let text = format!("short\n{}\nafter\r\n", "x".repeat(100));
+
+        // Refused: the stream stops at the long line.
+        let mut reader = BufReader::with_capacity(8, Cursor::new(text.clone()));
+        assert_eq!(read_line_capped(&mut reader, 10, false).unwrap(), Some(Ok("short".to_string())));
+        assert_eq!(read_line_capped(&mut reader, 10, false).unwrap(), Some(Err(())));
+
+        // Cut: stderr keeps the start, and goes on to the next line.
+        let mut reader = BufReader::with_capacity(8, Cursor::new(text));
+        assert_eq!(read_line_capped(&mut reader, 10, true).unwrap(), Some(Ok("short".to_string())));
+        assert_eq!(read_line_capped(&mut reader, 10, true).unwrap(), Some(Ok("x".repeat(10))));
+        assert_eq!(read_line_capped(&mut reader, 10, true).unwrap(), Some(Ok("after".to_string())));
+        assert_eq!(read_line_capped(&mut reader, 10, true).unwrap(), None);
+
+        // Exactly the cap is not too long, and bytes that are not UTF-8 do not stop it.
+        let mut reader = BufReader::new(Cursor::new(b"0123456789\n\xff\n".to_vec()));
+        assert_eq!(read_line_capped(&mut reader, 10, false).unwrap(), Some(Ok("0123456789".to_string())));
+        assert_eq!(read_line_capped(&mut reader, 10, false).unwrap(), Some(Ok("\u{fffd}".to_string())));
+    }
+
+    #[test]
+    fn an_archive_over_its_caps_is_refused_and_its_declared_size_is_not_trusted() {
+        use std::io::Write;
+        let base = std::env::var_os("KHONSU_TEST_DIR").map(PathBuf::from).unwrap_or_else(|| std::env::current_dir().unwrap());
+        fs::create_dir_all(&base).unwrap();
+        let dir = tempfile::tempdir_in(base).unwrap();
+        let path = dir.path().join("big.zip");
+        let mut writer = zip::ZipWriter::new(fs::File::create(&path).unwrap());
+        let options = zip::write::SimpleFileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        for name in ["a.bin", "b.bin"] {
+            writer.start_file(name, options).unwrap();
+            writer.write_all(&vec![0u8; 100_000]).unwrap();
+        }
+        writer.finish().unwrap();
+        let open = || zip::ZipArchive::new(fs::File::open(&path).unwrap()).unwrap();
+        let refused = |result: Result<(), UnpackError>| match result {
+            Err(UnpackError::Refused(message)) => message,
+            Err(UnpackError::Io(error)) => panic!("{error}"),
+            Ok(()) => panic!("should be refused"),
+        };
+
+        let staging = dir.path().join("a");
+        fs::create_dir_all(&staging).unwrap();
+        assert!(refused(unpack(&mut open(), &staging, 150_000, 100)).contains("150000"));
+        let staging = dir.path().join("b");
+        fs::create_dir_all(&staging).unwrap();
+        assert!(refused(unpack(&mut open(), &staging, u64::MAX - 1, 1)).contains("2 entries"));
+        let staging = dir.path().join("c");
+        fs::create_dir_all(&staging).unwrap();
+        assert!(unpack(&mut open(), &staging, 200_000, 2).is_ok(), "exactly the caps fit");
+    }
+
+    #[test]
+    fn a_plugin_folder_hashes_by_what_it_holds() {
+        let base = std::env::var_os("KHONSU_TEST_DIR").map(PathBuf::from).unwrap_or_else(|| std::env::current_dir().unwrap());
+        fs::create_dir_all(&base).unwrap();
+        let dir = tempfile::tempdir_in(base).unwrap();
+        fs::create_dir_all(dir.path().join("lib")).unwrap();
+        fs::write(dir.path().join("plugin.py"), "print()").unwrap();
+        fs::write(dir.path().join("lib/util.py"), "x = 1").unwrap();
+        let info = PluginInfo { dir: dir.path().to_path_buf(), ..plugin_with_entry("python3") };
+        let first = identity(&info).unwrap();
+        assert_eq!(first.len(), 64);
+        assert_eq!(identity(&info).unwrap(), first);
+
+        // What an interpreter writes as it runs does not need approval again.
+        fs::create_dir_all(dir.path().join("__pycache__")).unwrap();
+        fs::write(dir.path().join("__pycache__/util.pyc"), "compiled").unwrap();
+        assert_eq!(identity(&info).unwrap(), first);
+
+        // A changed, added or renamed file does, however deep.
+        fs::write(dir.path().join("lib/util.py"), "x = 2").unwrap();
+        let changed = identity(&info).unwrap();
+        assert_ne!(changed, first);
+        fs::write(dir.path().join("lib/extra.py"), "").unwrap();
+        let added = identity(&info).unwrap();
+        assert_ne!(added, changed);
+        fs::rename(dir.path().join("lib/extra.py"), dir.path().join("lib/other.py")).unwrap();
+        assert_ne!(identity(&info).unwrap(), added);
+    }
 
     #[test]
     fn a_secret_a_plugin_repeats_is_masked_before_it_is_kept() {

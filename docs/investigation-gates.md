@@ -25,6 +25,7 @@ cargo test --locked --workspace --test investigation
 | Saved investigations | Reopening restores a walk and path on unchanged data, and flags a changed source, a missing record, a missing graph and a bad file; the golden file holds a reopened walk and the fixture's fingerprint. See [saved investigations](investigations.md) |
 | Sync coverage | A scripted plugin fails midway, stops without `done`, reports gaps, sends duplicates and missing endpoints, and moves its cursor; none of it removes records or moves the cursor unless the sync was complete |
 | Snapshots and diff | Two kept snapshots give a fixed diff; the AWS and CSV examples report what changed, a no-op re-sync gives none, and incomplete coverage is never called a removal. See [snapshots](snapshots.md) |
+| Plugin safety | A changed program, file or manifest needs approval again; entries and IDs can't leave the plugin folder; a bad reinstall keeps the old plugin; oversized and invalid output end a sync with records intact. See [plugin security](plugin-security.md) |
 | HawDB upgrades | `app/tests/fixtures/graph-hawdb-*.zip` must still give the golden answers and fingerprint, and accept a write |
 
 Timings, sync times, paths, line numbers and plugin versions are left out of the

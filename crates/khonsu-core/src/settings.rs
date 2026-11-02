@@ -269,12 +269,17 @@ pub fn new_source_id(name: &str) -> String {
     id
 }
 
-/// A user's confirmation of the permissions a plugin version declared.
+/// A user's confirmation of a plugin: the version and permissions it declared,
+/// and what was in its folder at the time.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Approval {
     pub plugin: String,
     pub version: String,
     pub permissions: Permissions,
+    /// A hash of the plugin's folder. Absent on approvals from before this was
+    /// kept, which count as out of date.
+    #[serde(default)]
+    pub identity: Option<String>,
     pub at: u64,
 }
 
@@ -282,20 +287,14 @@ pub fn load_approvals() -> Vec<Approval> {
     load("approvals.json")
 }
 
-/// True when this exact version and permission set was approved before.
-pub fn is_approved(plugin: &str, version: &str, permissions: &Permissions) -> bool {
-    load_approvals()
-        .iter()
-        .any(|a| a.plugin == plugin && a.version == version && &a.permissions == permissions)
-}
-
-pub fn approve(plugin: &str, version: &str, permissions: &Permissions) -> io::Result<()> {
+pub fn approve(plugin: &str, version: &str, permissions: &Permissions, identity: &str) -> io::Result<()> {
     let mut approvals = load_approvals();
     approvals.retain(|a| a.plugin != plugin);
     approvals.push(Approval {
         plugin: plugin.to_string(),
         version: version.to_string(),
         permissions: permissions.clone(),
+        identity: Some(identity.to_string()),
         at: crate::util::unix_now(),
     });
     save("approvals.json", &approvals)
