@@ -36,6 +36,10 @@ khonsu check examples/aws/exposure.dash --db graphs/aws
 For a real account, drop `fixture_dir` and set `profile` to a read-only
 profile; the plugin only calls `describe`, `list` and `get` operations.
 
+`aws/golden.json` holds the answers this walkthrough should give. See
+[the investigation gates](../docs/investigation-gates.md) for what is tested and
+what a result does not prove.
+
 ## Build a story graph
 
 ```sh
