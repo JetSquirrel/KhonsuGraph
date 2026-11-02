@@ -60,8 +60,25 @@ a later version fails with kind `too_new` rather than being read wrongly. A file
 that can't be used fails with kind `invalid`, and a graph that has moved fails with
 `graph_missing`; pass `-d` to use another one.
 
+## In the window
+
+Select a node on a graph canvas, then choose **Save investigation…** in Path
+Explorer. It keeps the current filters, the last walk's starting points, and the
+path to the selected node if that walk reached it, along with the tab's query.
+
+**File > Open investigation…** or `khonsu open web.investigation` reopens one in a
+new tab, and opens its graph first if another one is open. The query goes in the
+editor without running. The canvas shows the saved path, with **Back** leading to
+the whole walk, and Path Explorer shows the filters. Anything that differs from
+when it was saved appears as a warning on the canvas and in Path Explorer.
+
+A new query in that tab clears the warnings along with the walk. Reopening a file
+again adds another tab.
+
 ## Limits
 
-- Saving and reopening need the graph free. They fail with kind `locked` while the
-  window has it open.
-- The window doesn't save or reopen these files yet.
+- `khonsu investigation` needs the graph free. It fails with kind `locked` while
+  the window has it open, so use the window for a graph that's open there.
+- The window saves no dashboard or layout. A saved file's `dashboard` is not opened
+  on reopening, and node positions start over.
+- A file isn't reopened by itself when the app restarts.

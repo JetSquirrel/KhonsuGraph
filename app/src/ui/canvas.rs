@@ -24,6 +24,7 @@ use gpui_kit::*;
 use khonsu_core::evidence::{self, Evidence};
 use khonsu_core::explore::{Direction, Exploration};
 use khonsu_core::exposure::{Status, Verdict};
+use khonsu_core::investigation::{Capture, Investigation, Reopened, SavedQuery, EXTENSION};
 use khonsu_core::settings::{self, Source};
 use khonsu_core::{GraphData, GraphEdge, GraphNode};
 use serde_json::Value as Json;
@@ -140,6 +141,8 @@ pub struct GraphCanvas {
     sources: Vec<Source>,
     /// The canvas shows only one path of the last walk.
     path_view: bool,
+    /// The query behind this result, to keep with a saved investigation.
+    query: Option<SavedQuery>,
     /// The node property shown as each node's caption, before the usual
     /// name-like ones: a dashboard `graph`'s `caption`.
     caption_key: Option<String>,
@@ -183,6 +186,7 @@ impl GraphCanvas {
             explorer: Explorer::default(),
             sources: Vec::new(),
             path_view: false,
+            query: None,
             caption_key: None,
             group_key: None,
             label_mode: LabelMode::Auto,
@@ -507,6 +511,77 @@ impl GraphCanvas {
         self.explorer.walk = Some(walk);
     }
 
+    pub fn set_query(&mut self, query: Option<SavedQuery>) {
+        self.query = query;
+    }
+
+    /// Save the walk, filters and chosen path to a file the person picks. The
+    /// graph is not touched.
+    fn save_investigation(&mut self, node: i64, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(mut request) = self.explorer.request(Some(node)) else {
+            return;
+        };
+        // After a walk, its starts and the path to this node are what is on
+        // screen; the selection only says which path.
+        let walk = self.explorer.walk.as_ref();
+        let target = walk.filter(|walk| walk.path_to(node).is_some_and(|path| !path.is_empty())).map(|_| node);
+        if let Some(walk) = walk.filter(|walk| !walk.starts.is_empty()) {
+            request.starts = walk.starts.clone();
+        }
+        let query = self.query.clone();
+        let suggested = format!("investigation.{EXTENSION}");
+        let directory = directories::UserDirs::new().map(|dirs| dirs.home_dir().to_path_buf()).unwrap_or_else(std::env::temp_dir);
+        let rx = cx.prompt_for_new_path(&directory, Some(&suggested));
+        window
+            .spawn(cx, async move |cx| {
+                let Ok(Ok(Some(path))) = rx.await else {
+                    return;
+                };
+                let written = smol::unblock({
+                    let path = path.clone();
+                    move || {
+                        let capture = Capture {
+                            name: path.file_stem().map(|stem| stem.to_string_lossy().into_owned()).unwrap_or_default(),
+                            query,
+                            walk: Some(request),
+                            target,
+                            dashboard: None,
+                        };
+                        let saved = crate::db::capture_investigation(capture).map_err(|error| error.message)?;
+                        // The dialog has already asked about replacing a file.
+                        saved.save(&path, true).map_err(|error| error.message)
+                    }
+                })
+                .await;
+                cx.update(|window, cx| match written {
+                    Ok(()) => window.push_notification(Notification::success(trf("investigation.saved", &[&path.display().to_string()])), cx),
+                    Err(error) => window.push_notification(Notification::error(trf("investigation.save_failed", &[&error])), cx),
+                })
+                .ok();
+            })
+            .detach();
+    }
+
+    /// Show a reopened investigation: its filters, walk and chosen path, and
+    /// everything that differs from when it was saved.
+    pub fn restore_investigation(&mut self, saved: &Investigation, reopened: Reopened, window: &mut Window, cx: &mut Context<Self>) {
+        let graph = reopened.walk.as_ref().map(|walk| walk.graph.clone()).unwrap_or_default();
+        self.set_data(graph, window, cx);
+        self.query = saved.query.clone();
+        if let Some(plan) = &saved.walk {
+            self.explorer.direction = plan.direction;
+            self.explorer.types = plan.types.iter().cloned().collect();
+            self.explorer.max_hops = plan.max_hops.clamp(1, khonsu_core::explore::MAX_HOPS);
+        }
+        self.explorer.restored = Some(explorer::Restored::new(saved, &reopened));
+        self.explorer.walk = reopened.walk;
+        self.load_relationship_types(window, cx);
+        if let Some(target) = reopened.target.filter(|_| reopened.path.is_some()) {
+            self.show_path(target, cx);
+        }
+        cx.notify();
+    }
+
     /// Evaluate the exposure rules over the whole graph, not just the canvas.
     fn check_exposure(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.explorer.checking_exposure {
@@ -533,12 +608,21 @@ impl GraphCanvas {
     /// Show a finding's candidate path, as a walk Path Explorer can go on from.
     fn show_finding(&mut self, finding_id: &str, target: i64, cx: &mut Context<Self>) {
         let report = self.explorer.exposure.as_ref();
-        let Some(walk) = report.and_then(|report| report.findings.iter().find(|finding| finding.finding_id == finding_id)).and_then(|finding| finding.exploration()) else {
+        let finding = report.and_then(|report| report.findings.iter().find(|finding| finding.finding_id == finding_id));
+        let hint = finding.and_then(|finding| finding.walk.clone());
+        let Some(walk) = finding.and_then(|finding| finding.exploration()) else {
             return;
         };
         self.explorer.push_view(self.view());
         self.replace_canvas(walk.graph.nodes.clone(), walk.graph.edges.clone(), cx);
         self.explorer.walk = Some(walk);
+        // The filters that find this path again, so that saving or walking on
+        // from here means the same thing.
+        if let Some(hint) = hint {
+            self.explorer.direction = hint.direction;
+            self.explorer.types = hint.types.into_iter().collect();
+            self.explorer.max_hops = hint.max_hops.clamp(1, khonsu_core::explore::MAX_HOPS);
+        }
         self.set_path_view(true, cx);
         let id = target.to_string();
         self.graph.update(cx, |graph, cx| graph.select_node(Some(&id), false, cx));
@@ -863,6 +947,13 @@ impl GraphCanvas {
                             .label(tr("explore.run"))
                             .loading(running)
                             .on_click(cx.listener(|this, _, window, cx| this.explore(window, cx))),
+                    )
+                    .child(
+                        Button::new("investigation-save")
+                            .xsmall()
+                            .outline()
+                            .label(tr("investigation.save"))
+                            .on_click(cx.listener(move |this, _, window, cx| this.save_investigation(node, window, cx))),
                     )
                     .when_some(explorer.running.clone(), |this, cancel| {
                         this.child(

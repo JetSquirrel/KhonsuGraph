@@ -24,6 +24,7 @@ use std::path::PathBuf;
 use gpui_kit::component::notification::Notification;
 use gpui_kit::component::WindowExt;
 use gpui_kit::{Action, App, Entity, KeyBinding, KeyBindingContextPredicate, PathPromptOptions, Window};
+use khonsu_core::investigation::Investigation;
 use khonsu_core::OpenError;
 use serde::Deserialize;
 
@@ -37,6 +38,7 @@ gpui_kit::actions!(
         ExplainQuery,
         SaveSpec,
         OpenDashboard,
+        OpenInvestigation,
         ZoomIn,
         ZoomOut,
         ZoomReset,
@@ -159,6 +161,7 @@ pub fn set_menus(cx: &mut App) {
                 MenuItem::action(tr("title_bar.new_graph"), NewGraph),
                 MenuItem::action(tr("sources.add"), AddSource),
                 MenuItem::action(tr("workspace.open_dashboard"), OpenDashboard),
+                MenuItem::action(tr("investigation.open"), OpenInvestigation),
                 MenuItem::Separator,
                 MenuItem::action(tr("workspace.new_cypher"), NewQuery),
                 MenuItem::action(tr("workspace.new_sql"), NewSqlQuery),
@@ -226,6 +229,19 @@ pub fn open_graph_at(
     window: &mut Window,
     cx: &mut App,
 ) {
+    open_graph_then(state, path, create, read_only, |_, _| {}, window, cx);
+}
+
+/// Opens a graph, and calls `then` once it is open.
+fn open_graph_then(
+    state: Entity<AppState>,
+    path: PathBuf,
+    create: bool,
+    read_only: bool,
+    then: impl FnOnce(&mut Window, &mut App) + 'static,
+    window: &mut Window,
+    cx: &mut App,
+) {
     if state.read(cx).is_opening() {
         return;
     }
@@ -246,6 +262,7 @@ pub fn open_graph_at(
                     Ok(info) => {
                         state.update(cx, |state, cx| state.set_graph(Some(info), cx));
                         reload_schema(state, window, cx);
+                        then(window, cx);
                     }
                     // Written by an older HawDB: offer to make it again
                         // rather than show the engine's integrity error.
@@ -261,6 +278,77 @@ pub fn open_graph_at(
                         );
                     }
                 }
+            })
+            .ok();
+        })
+        .detach();
+}
+
+/// Ask for a saved investigation and reopen it.
+pub fn pick_investigation(state: Entity<AppState>, workspace: Entity<workspace::Workspace>, window: &mut Window, cx: &mut App) {
+    let rx = cx.prompt_for_paths(PathPromptOptions {
+        files: true,
+        directories: false,
+        multiple: false,
+        prompt: Some(tr("investigation.open").into()),
+    });
+    window
+        .spawn(cx, async move |cx| {
+            let Ok(Ok(Some(paths))) = rx.await else {
+                return;
+            };
+            let Some(path) = paths.into_iter().next() else {
+                return;
+            };
+            cx.update(move |window, cx| reopen_investigation(state, workspace, &path, window, cx)).ok();
+        })
+        .detach();
+}
+
+/// Reads a saved investigation, opens its graph unless that is already open,
+/// and shows it in a new tab. A file or graph it cannot use is reported.
+pub fn reopen_investigation(state: Entity<AppState>, workspace: Entity<workspace::Workspace>, path: &std::path::Path, window: &mut Window, cx: &mut App) {
+    // At startup the last graph is still opening, and only one can open at a
+    // time. Wait for it, or the request would be lost without a word.
+    if state.read(cx).is_opening() {
+        let path = path.to_path_buf();
+        window
+            .spawn(cx, async move |cx| {
+                cx.background_executor().timer(std::time::Duration::from_millis(100)).await;
+                cx.update(move |window, cx| reopen_investigation(state, workspace, &path, window, cx)).ok();
+            })
+            .detach();
+        return;
+    }
+    let saved = match Investigation::load(path) {
+        Ok(saved) => saved,
+        Err(error) => {
+            window.push_notification(Notification::error(trf("investigation.open_failed", &[&error.message])), cx);
+            return;
+        }
+    };
+    let open = state.read(cx).graph.as_ref().map(|graph| khonsu_core::normalize_path(&graph.path));
+    let graph = khonsu_core::normalize_path(&saved.graph);
+    if open.as_ref() == Some(&graph) {
+        show_reopened(workspace, saved, window, cx);
+    } else if !graph.is_dir() {
+        window.push_notification(Notification::error(trf("investigation.graph_missing", &[&graph.display().to_string()])), cx);
+    } else {
+        open_graph_then(state, graph, false, false, move |window, cx| show_reopened(workspace, saved, window, cx), window, cx);
+    }
+}
+
+fn show_reopened(workspace: Entity<workspace::Workspace>, saved: Investigation, window: &mut Window, cx: &mut App) {
+    window
+        .spawn(cx, async move |cx| {
+            let (saved, result) = smol::unblock(move || {
+                let result = crate::db::reopen_investigation(&saved);
+                (saved, result)
+            })
+            .await;
+            cx.update(move |window, cx| match result {
+                Ok(reopened) => workspace.update(cx, |workspace, cx| workspace.show_investigation(&saved, reopened, window, cx)),
+                Err(error) => window.push_notification(Notification::error(trf("investigation.open_failed", &[&error.message])), cx),
             })
             .ok();
         })

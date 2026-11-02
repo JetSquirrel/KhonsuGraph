@@ -20,7 +20,7 @@ use crate::ui::status_bar::StatusBarView;
 use crate::ui::title_bar::TitleBarView;
 use crate::ui::workspace::Workspace;
 use crate::ui::{
-    ActivateTab, AddSource, CloseTab, NewGraph, NewQuery, NewSqlQuery, NextTab, OpenDashboard, OpenGraph, PreviousTab,
+    ActivateTab, AddSource, CloseTab, NewGraph, NewQuery, NewSqlQuery, NextTab, OpenDashboard, OpenGraph, OpenInvestigation, PreviousTab,
     ToggleSidebar,
 };
 
@@ -136,8 +136,11 @@ impl KhonsuApp {
                     } else if crate::spec::tabs::is_spec(&path) {
                         self.workspace.update(cx, |ws, cx| ws.open_dashboard(path.clone(), window, cx));
                         opened.push(json!({"dashboard": path.display().to_string()}));
+                    } else if path.extension().is_some_and(|ext| ext.eq_ignore_ascii_case(khonsu_core::investigation::EXTENSION)) {
+                        crate::ui::reopen_investigation(self.state.clone(), self.workspace.clone(), &path, window, cx);
+                        opened.push(json!({"investigation": path.display().to_string()}));
                     } else {
-                        return json!({"error": {"kind": "not_openable", "message": format!("{} is neither a graph nor a .dash file", path.display())}});
+                        return json!({"error": {"kind": "not_openable", "message": format!("{} is not a graph, a .dash file or an investigation", path.display())}});
                     }
                 }
                 if let Some(text) = request.text {
@@ -192,6 +195,9 @@ impl Render for KhonsuApp {
             }))
             .on_action(cx.listener(|this, _: &OpenDashboard, window, cx| {
                 this.workspace.update(cx, |ws, cx| ws.pick_dashboard_file(window, cx));
+            }))
+            .on_action(cx.listener(|this, _: &OpenInvestigation, window, cx| {
+                crate::ui::pick_investigation(this.state.clone(), this.workspace.clone(), window, cx);
             }))
             .on_action(cx.listener(|this, _: &NewGraph, window, cx| {
                 crate::ui::pick_graph(this.state.clone(), true, window, cx);

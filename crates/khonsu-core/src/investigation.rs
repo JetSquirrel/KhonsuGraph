@@ -23,6 +23,8 @@ use std::sync::atomic::AtomicBool;
 
 pub const FORMAT: &str = "khonsu-investigation";
 pub const VERSION: u32 = 1;
+/// The usual file extension. A file is judged by its contents, not this.
+pub const EXTENSION: &str = "investigation";
 /// Above this many nodes or relationships a graph is counted, not hashed.
 const MAX_HASHED_RECORDS: usize = 200_000;
 
