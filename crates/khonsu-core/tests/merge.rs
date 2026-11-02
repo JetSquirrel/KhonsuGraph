@@ -1,7 +1,7 @@
 mod common;
 
 use common::TestDir;
-use khonsu_core::merge::{EdgePattern, MergeStats, Merger};
+use khonsu_core::merge::{next_sync_stamp, EdgePattern, MergeStats, Merger};
 use khonsu_core::protocol::{EdgeRecord, NodeRecord};
 use khonsu_core::{Graph, Language, QueryOptions};
 use serde_json::{json, Map};
@@ -89,4 +89,25 @@ fn resync_reads_back_in_pages_and_only_rewrites_changes() {
     assert_eq!(count(&mut graph, "MATCH ()-[r:ON_TEAM]->() WHERE r.khonsu_source = 'nfl' RETURN count(r) AS c"), 9);
     assert_eq!(count(&mut graph, "MATCH ()-[r:ON_TEAM]->() WHERE r.jersey = 40 RETURN count(r) AS c"), 1);
     assert_eq!(count(&mut graph, "MATCH ()-[r:ON_TEAM]->() WHERE r.jersey = 99 RETURN count(r) AS c"), 1);
+}
+
+/// Two full syncs in one second must not share a stamp: stale nodes are the ones
+/// stamped before the sync, so a shared stamp would keep nodes that have gone.
+#[test]
+fn a_sync_in_the_same_second_as_the_last_still_removes_stale_nodes() {
+    let dir = TestDir::new();
+    let mut graph = Graph::create(dir.graph(), "test").unwrap();
+    let now = 1000;
+    assert_eq!(next_sync_stamp(&mut graph, "nfl", now).unwrap(), now, "nothing synced yet");
+
+    let (_, patterns) = sync(&mut graph, "nfl", now, 3, |i| i as i64, &[]);
+    let stamp = next_sync_stamp(&mut graph, "nfl", now).unwrap();
+    assert_eq!(stamp, now + 1);
+    let (second, _) = sync(&mut graph, "nfl", stamp, 2, |i| i as i64, &patterns);
+    assert_eq!(second.stale_nodes_removed, 1, "{second:?}");
+    assert_eq!(count(&mut graph, "MATCH (n:Player) RETURN count(n) AS c"), 2);
+
+    // Later time wins, and another source's stamps do not count.
+    assert_eq!(next_sync_stamp(&mut graph, "nfl", 5000).unwrap(), 5000);
+    assert_eq!(next_sync_stamp(&mut graph, "other", now).unwrap(), now);
 }

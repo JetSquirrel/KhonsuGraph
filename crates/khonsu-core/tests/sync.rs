@@ -114,13 +114,11 @@ fn csv_source_syncs_counts_match_rows_and_resync_is_idempotent() {
     let source = settings::load_sources().into_iter().find(|s| s.id == "lab").unwrap();
     assert!(source.last_sync.as_ref().unwrap().ok);
     assert!(!source.patterns.is_empty());
-    std::thread::sleep(std::time::Duration::from_millis(1100));
     plugin::sync_source(&mut graph, &source, SyncMode::Full, &cancel, |_| {}).unwrap();
     assert_eq!(count(&mut graph, "MATCH (n:Asset) RETURN count(n) AS c"), 62);
     assert_eq!(count(&mut graph, "MATCH ()-[r:RUNS]->() RETURN count(r) AS c"), 60);
 
     // Rows removed from the files disappear on the next full sync.
-    std::thread::sleep(std::time::Duration::from_millis(1100));
     write_csvs(&data, 59, Some(10));
     let source = settings::load_sources().into_iter().find(|s| s.id == "lab").unwrap();
     let report = plugin::sync_source(&mut graph, &source, SyncMode::Full, &cancel, |_| {}).unwrap();

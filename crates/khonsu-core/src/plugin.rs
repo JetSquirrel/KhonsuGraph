@@ -7,7 +7,7 @@
 //! running executable (`plugins/<id>/` or a bare `khonsu-plugin-<id>` binary).
 
 use crate::engine::{Graph, QueryError};
-use crate::merge::{EdgePattern, MergeStats, Merger};
+use crate::merge::{next_sync_stamp, EdgePattern, MergeStats, Merger};
 use crate::settings::{self, LastSync, Source};
 use crate::{secrets, util};
 use khonsu_plugin_protocol::{
@@ -642,7 +642,7 @@ pub fn sync_source(
     }
     let request = request_for(source, mode)?;
     let started = std::time::Instant::now();
-    let synced_at = util::unix_now() as i64;
+    let synced_at = next_sync_stamp(graph, &source.id, util::unix_now() as i64)?;
     let plugin_tag = format!("{}@{}", plugin.id(), describe.version);
     let mut merger = Merger::new(graph, &source.id, &plugin_tag, synced_at);
     let (mut received_nodes, mut received_edges) = (0, 0);
