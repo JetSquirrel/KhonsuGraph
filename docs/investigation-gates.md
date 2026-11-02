@@ -16,6 +16,7 @@ cargo test --locked --workspace --test investigation
 | Candidate paths, direction, hop cap and type filters | Named queries in the golden file; the path answers are also written out in the test |
 | Determinism | Two separate syncs give the same answers and internal IDs; a re-sync writes no relationships |
 | Limits | `--max-rows` reports `truncated`; the 100,000-row ceiling is in `crates/khonsu-core/tests/engine.rs` |
+| Path Explorer | `crates/khonsu-core/tests/explore.rs` covers direction, cycles, zero matches, each cap and cancellation; the golden file holds two `khonsu explore` walks |
 | Cancellation | A sync cancelled partway reports it, and the graph keeps its answers |
 | Corrupt input | A malformed response, a missing folder, a bad dashboard and a damaged graph each fail with a reason |
 | Cycles | A shortest path and a variable-length pattern both end on a cycle |
@@ -55,8 +56,9 @@ These are written down so that nobody reads an empty result as proof:
   `shortestPath`.
 - **`type(r)` fails inside a comprehension over `relationships(p)`.** Use
   `[r IN relationships(p) | r.type]`.
-- **A running query cannot be cancelled.** `Graph::run` has no way to stop one;
-  only syncs can be cancelled, and only they are tested.
+- **A running query cannot be cancelled.** `Graph::run` has no way to stop one.
+  Syncs can be cancelled, and a walk stops at its next query, so one slow step
+  still finishes first.
 
 Evidence provenance and rule names are not in the golden file yet, because they
 arrive with #33 and #35.

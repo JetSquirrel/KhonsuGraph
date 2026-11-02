@@ -3,6 +3,7 @@
 pub mod agent_avatar;
 pub mod canvas;
 pub mod chart;
+pub mod explorer;
 pub mod geo;
 pub mod grid;
 pub mod palette;

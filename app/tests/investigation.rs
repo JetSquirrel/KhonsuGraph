@@ -265,6 +265,13 @@ fn investigation(env: &Env) -> Value {
             "path": path,
         },
         "dashboard": env.ok(&["check", text(&dash), "-d", text(&db)]),
+        "explore": {
+            "exposure_of_web_1": env.ok(&[
+                "explore", "-d", text(&db), "--from", INTERNET, "--to", WEB_1,
+                "--type", "ROUTES_TO,FORWARDS_TO", "--max-hops", "4",
+            ]),
+            "what_points_at_web_1": env.ok(&["explore", "-d", text(&db), "--from", WEB_1, "--direction", "in", "--max-hops", "1"]),
+        },
     }))
 }
 
@@ -300,7 +307,11 @@ fn the_offline_investigation_gives_the_golden_answers() {
         let text = serde_json::to_string_pretty(&actual).unwrap() + "\n";
         std::fs::write(golden_path(), text).unwrap();
         let name = format!("graph-hawdb-{}.zip", khonsu_core::HAWDB_VERSION);
-        write_snapshot(&env.path("graph"), &snapshots_dir().join(name));
+        // A snapshot stays what its HawDB version wrote, so only add a missing one.
+        let snapshot = snapshots_dir().join(name);
+        if !snapshot.exists() {
+            write_snapshot(&env.path("graph"), &snapshot);
+        }
         return;
     }
     let expected = golden();
@@ -343,6 +354,34 @@ fn candidate_paths_follow_the_arrows_their_hop_cap_and_their_types() {
     // not the same claim as the directed path above finding nothing.
     let rules = rows("candidate_path_through_security_groups");
     assert_eq!(rules[0][3], json!(DB_1));
+}
+
+/// The AWS acceptance case of #32: a typed walk traces the resource, explains
+/// each hop, and reports when a cap cut it short.
+#[test]
+fn explore_traces_a_resource_through_typed_hops() {
+    let env = Env::new();
+    let db = env.synced_graph("graph");
+    let trace = ["explore", "-d", text(&db), "--from", INTERNET, "--to", WEB_1, "--type", "ROUTES_TO,FORWARDS_TO"];
+
+    let out = env.ok(&trace);
+    assert_eq!(out["path"]["found"], true, "{out}");
+    let words: Vec<&str> = out["path"]["hops"].as_array().unwrap().iter().map(|hop| hop["text"].as_str().unwrap()).collect();
+    assert_eq!(words, ["Internet -[ROUTES_TO]-> shop", "shop -[FORWARDS_TO]-> web", "web -[ROUTES_TO]-> web-1"]);
+    assert_eq!(out["complete"], true, "{out}");
+
+    // Short of the hop it needs, it says the answer is cut, not that no path exists.
+    let mut short = trace.to_vec();
+    short.extend(["--max-hops", "2"]);
+    let out = env.ok(&short);
+    assert_eq!(out["path"]["found"], false, "{out}");
+    assert_eq!(out["complete"], false, "{out}");
+    assert_eq!(out["limits"], json!(["hops"]), "{out}");
+
+    let (code, out) = env.khonsu(&["explore", "-d", text(&db), "--from", "shop/no-such-resource"]);
+    assert_eq!((code, out["error"]["kind"].as_str()), (1, Some("not_found")), "{out}");
+    let (code, out) = env.khonsu(&["explore", "-d", text(&db), "--from", INTERNET, "--max-hops", "99"]);
+    assert_ne!(code, 0, "{out}");
 }
 
 #[test]
