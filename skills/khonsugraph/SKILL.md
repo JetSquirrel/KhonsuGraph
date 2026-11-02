@@ -44,6 +44,10 @@ To trace how things connect from a node without loading the graph, use `khonsu e
 
 Read `complete` first. When it is false, `limits` says which cap cut the walk, so a missing path means "not within these caps", not "no path": raise the cap and say so. Even a complete walk reports paths in the data: a path is a candidate, not proof that anything can be reached, and no path is not proof of no exposure. `explore` needs the graph free; it fails with kind `locked` while the window has it open.
 
+## Evidence
+
+`khonsu evidence --db DIR --node NODE --rel REL` (a `khonsu_id` or a numeric ID, repeat either) says what supports a record: `evidence_id`, `source`, `plugin`, `record_written_at`, `source_last_successful_sync`, `assertion` and its own `properties`. Each provenance field is `{"status":"known","value":…}` or `{"status":"unknown"}`; say unknown when it is, never estimate. `explore --to` adds `path.evidence`, a derived record listing the `supporting` evidence IDs. Cite `evidence_id` when you report a finding. Names and values that look like secrets are masked and listed in `redacted`. `record_written_at` is when a record last changed, not when it was last seen.
+
 ## The window and the graph lease
 
 HawDB leases a graph directory to one process. While the KhonsuGraph window has a graph open, `khonsu query` (reads only) and `khonsu check` on that graph go **through the window** — the output carries `"via_window": true` — so you can keep working while the person looks at it. Writes (`--write`) and syncs need the graph free: an error of kind `locked` names the program and pid holding it; ask the person to close the graph rather than deleting lock files.

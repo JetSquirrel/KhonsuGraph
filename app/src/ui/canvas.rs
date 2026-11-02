@@ -21,7 +21,9 @@ use gpui_kit::assets::IconName as AssetIcon;
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme, Icon, IconName, Sizable, StyledExt, WindowExt, TITLE_BAR_HEIGHT};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
+use khonsu_core::evidence::{self, Evidence};
 use khonsu_core::explore::{Direction, Exploration};
+use khonsu_core::settings::{self, Source};
 use khonsu_core::{GraphData, GraphEdge, GraphNode};
 use serde_json::Value as Json;
 
@@ -132,6 +134,9 @@ pub struct GraphCanvas {
     hidden: usize,
     expanding: bool,
     explorer: Explorer,
+    /// Configured sources, read when a selection changes, for the inspector's
+    /// evidence.
+    sources: Vec<Source>,
     /// The canvas shows only one path of the last walk.
     path_view: bool,
     /// The node property shown as each node's caption, before the usual
@@ -175,6 +180,7 @@ impl GraphCanvas {
             hidden: 0,
             expanding: false,
             explorer: Explorer::default(),
+            sources: Vec::new(),
             path_view: false,
             caption_key: None,
             group_key: None,
@@ -359,6 +365,7 @@ impl GraphCanvas {
     ) {
         match event {
             NetworkGraphEvent::SelectionChanged(selection) => {
+                self.sources = settings::load_sources();
                 self.selected = match selection {
                     Selection::Node(node) => node.id.parse().ok().map(Selected::Node),
                     Selection::Edge(edge) => edge_id(edge).map(Selected::Edge),
@@ -540,6 +547,62 @@ impl GraphCanvas {
         self.load(nodes, edges, cx);
     }
 
+    /// Where the selected record came from, with what is missing stated.
+    fn render_evidence(&self, record: Evidence, cx: &mut Context<Self>) -> AnyElement {
+        let muted = cx.theme().muted_foreground;
+        let warning = cx.theme().warning;
+        let mono = cx.theme().mono_font_family.clone();
+        let unknown = tr("evidence.unknown");
+        let copy = serde_json::to_string_pretty(&record).expect("evidence serializes");
+        v_flex()
+            .gap_1()
+            .child(div().text_sm().font_semibold().child(tr("evidence.title")))
+            .children(explorer::evidence_rows(&record).into_iter().map(|(key, value)| {
+                let missing = value == unknown;
+                v_flex()
+                    .child(div().text_xs().text_color(muted).child(tr(key)))
+                    .child(
+                        div()
+                            .text_xs()
+                            .font_family(mono.clone())
+                            .whitespace_normal()
+                            .when(missing, |this| this.text_color(muted))
+                            .child(value),
+                    )
+            }))
+            .when(!record.stable, |this| {
+                this.child(div().text_xs().whitespace_normal().text_color(warning).child(tr("evidence.not_stable")))
+            })
+            .when(!record.redacted.is_empty(), |this| {
+                this.child(
+                    div()
+                        .text_xs()
+                        .whitespace_normal()
+                        .text_color(warning)
+                        .child(trf("evidence.redacted", &[&record.redacted.join(", ")])),
+                )
+            })
+            .child(
+                Button::new("evidence-copy")
+                    .xsmall()
+                    .outline()
+                    .label(tr("evidence.copy"))
+                    .on_click(move |_, _, cx| cx.write_to_clipboard(ClipboardItem::new_string(copy.clone()))),
+            )
+            .into_any_element()
+    }
+
+    fn selected_evidence(&self, selected: Selected) -> Option<Evidence> {
+        match selected {
+            Selected::Node(id) => self.nodes.get(&id).map(|node| evidence::for_node(node, &self.sources)),
+            Selected::Edge(id) => {
+                let edge = self.edges.get(&id)?;
+                let ends: Vec<GraphNode> = [edge.source, edge.target].iter().filter_map(|id| self.nodes.get(id).cloned()).collect();
+                Some(evidence::for_edge(edge, &ends, &self.sources))
+            }
+        }
+    }
+
     fn render_explorer(&self, node: i64, cx: &mut Context<Self>) -> AnyElement {
         let muted = cx.theme().muted_foreground;
         let warning = cx.theme().warning;
@@ -564,6 +627,11 @@ impl GraphCanvas {
         let (available, chosen) = (explorer.available.clone(), explorer.types.clone());
         let is_start = explorer.starts.contains(&node);
         let path = explorer.walk.as_ref().map(|walk| explorer::explained_path(walk, node)).unwrap_or_default();
+        let path_evidence = explorer
+            .walk
+            .as_ref()
+            .and_then(|walk| evidence::for_path(walk, node, &self.sources))
+            .map(|record| serde_json::to_string_pretty(&record).expect("evidence serializes"));
 
         v_flex()
             .pt_2()
@@ -669,6 +737,15 @@ impl GraphCanvas {
                         div().text_xs().whitespace_normal().font_family(mono.clone()).child(hop)
                     }))
                     .child(div().text_xs().whitespace_normal().text_color(muted).child(tr("explore.candidate")))
+                    .when_some(path_evidence, |this, copy| {
+                        this.child(
+                            Button::new("evidence-copy-path")
+                                .xsmall()
+                                .outline()
+                                .label(tr("evidence.copy_path"))
+                                .on_click(move |_, _, cx| cx.write_to_clipboard(ClipboardItem::new_string(copy.clone()))),
+                        )
+                    })
                     .when(!self.path_view, |this| {
                         this.child(
                             Button::new("explore-show-path")
@@ -734,6 +811,9 @@ impl GraphCanvas {
                 // a walk's result out of sight.
                 .when_some(self.selected_node(), |this, id| {
                     this.child(self.render_explorer(id, cx)).child(div().border_b_1().border_color(cx.theme().border))
+                })
+                .when_some(self.selected_evidence(selected), |this, record| {
+                    this.child(self.render_evidence(record, cx)).child(div().border_b_1().border_color(cx.theme().border))
                 })
                 .children(rows.into_iter().map(|(key, value)| {
                     let provenance = key.starts_with("khonsu_");

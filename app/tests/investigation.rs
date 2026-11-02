@@ -24,6 +24,7 @@ use std::sync::Once;
 const INTERNET: &str = "shop/cidr:internet";
 const WEB_1: &str = "shop/123456789012:us-east-1:i-web1";
 const DB_1: &str = "shop/123456789012:us-east-1:i-db1";
+const ALLOWS_443: &str = r#"shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-web|"\"tcp\":\"443\"""#;
 
 /// Questions an investigator asks of the fixture. The name says what each
 /// result means; several are meant to find nothing.
@@ -194,14 +195,14 @@ fn build_plugins() {
     });
 }
 
-/// Drops what legitimately differs between runs and machines: timings, sync
-/// times and paths. Floats are rounded so the last bits of a platform's
+/// Drops what legitimately differs between runs and releases: timings, sync
+/// times, paths and plugin versions. Floats are rounded so the last bits of a platform's
 /// arithmetic do not count as a change of meaning.
 fn normalize(value: &Value) -> Value {
     match value {
         Value::Object(map) => Value::Object(
             map.iter()
-                .filter(|(key, _)| !matches!(key.as_str(), "elapsed_ms" | "load_ms" | "khonsu_synced_at" | "file" | "line"))
+                .filter(|(key, _)| !matches!(key.as_str(), "elapsed_ms" | "load_ms" | "khonsu_synced_at" | "khonsu_plugin" | "plugin" | "file" | "line" | "record_written_at" | "source_last_successful_sync"))
                 .map(|(key, value)| (key.clone(), normalize(value)))
                 .collect(),
         ),
@@ -265,6 +266,10 @@ fn investigation(env: &Env) -> Value {
             "path": path,
         },
         "dashboard": env.ok(&["check", text(&dash), "-d", text(&db)]),
+        "evidence": {
+            "web_1": env.ok(&["evidence", "-d", text(&db), "--node", WEB_1]),
+            "internet_to_web_group": env.ok(&["evidence", "-d", text(&db), "--rel", ALLOWS_443]),
+        },
         "explore": {
             "exposure_of_web_1": env.ok(&[
                 "explore", "-d", text(&db), "--from", INTERNET, "--to", WEB_1,
@@ -382,6 +387,69 @@ fn explore_traces_a_resource_through_typed_hops() {
     assert_eq!((code, out["error"]["kind"].as_str()), (1, Some("not_found")), "{out}");
     let (code, out) = env.khonsu(&["explore", "-d", text(&db), "--from", INTERNET, "--max-hops", "99"]);
     assert_ne!(code, 0, "{out}");
+}
+
+/// #33 on the fixture: where a relationship came from, and the path that
+/// rests on it, by IDs a script can keep.
+#[test]
+fn evidence_is_machine_readable_and_states_what_is_unknown() {
+    let env = Env::new();
+    let db = env.synced_graph("graph");
+
+    let out = env.ok(&["evidence", "-d", text(&db), "--rel", ALLOWS_443]);
+    let record = &out["evidence"][0];
+    assert_eq!(record["evidence_id"], format!("rel:{ALLOWS_443}"), "{out}");
+    assert_eq!(record["kind"], "relationship");
+    assert_eq!(record["types"], json!(["ALLOWS"]));
+    assert_eq!(record["from"]["value"], format!("node:{INTERNET}"));
+    assert_eq!(record["source"], json!({"status": "known", "value": "shop"}));
+    assert_eq!(record["assertion"], "explicit");
+    assert_eq!(record["properties"]["ports"], "443");
+    assert_eq!(record["source_snapshot"], json!({"status": "unknown"}));
+    assert_eq!(record["record_written_at"]["status"], "known");
+    assert_eq!(record["source_last_successful_sync"]["status"], "known");
+
+    // By its internal ID, the same record.
+    let internal = record["internal_id"].as_i64().unwrap().to_string();
+    let again = env.ok(&["evidence", "-d", text(&db), "--rel", &internal]);
+    assert_eq!(again["evidence"][0]["evidence_id"], record["evidence_id"]);
+
+    // Source configuration stays out of what gets copied around.
+    let everything = serde_json::to_string(&env.ok(&["evidence", "-d", text(&db), "--node", WEB_1, "--rel", ALLOWS_443])).unwrap();
+    assert!(!everything.contains("fixture_dir") && !everything.contains(text(&fixture())), "{everything}");
+
+    let walk = env.ok(&["explore", "-d", text(&db), "--from", INTERNET, "--to", WEB_1, "--type", "ROUTES_TO,FORWARDS_TO"]);
+    let path = &walk["path"]["evidence"];
+    assert_eq!(path["assertion"], "derived", "{walk}");
+    assert_eq!(path["rule_id"], json!({"status": "unknown"}));
+    assert_eq!(path["supporting"].as_array().unwrap().len(), 7, "four nodes and three relationships: {path}");
+    assert!(path["evidence_id"].as_str().unwrap().starts_with("path:"));
+
+    let (code, out) = env.khonsu(&["evidence", "-d", text(&db), "--rel", "shop/no-such-relationship"]);
+    assert_eq!((code, out["error"]["kind"].as_str()), (1, Some("not_found")), "{out}");
+    let (code, out) = env.khonsu(&["evidence", "-d", text(&db)]);
+    assert_eq!(code, 2, "naming nothing is a usage mistake: {out}");
+}
+
+/// Written by hand, a record has no provenance to report, and a secret-shaped
+/// property does not get out.
+#[test]
+fn evidence_for_a_record_written_by_hand_masks_secrets() {
+    let env = Env::new();
+    let db = env.path("graph");
+    env.ok(&["init", text(&db)]);
+    env.ok(&["query", "-d", text(&db), "--write", "--cypher", "CREATE (:Host {name: 'web', api_token: 'abc123'})"]);
+    let id = env.query(&db, "MATCH (n:Host) RETURN id(n) AS id")["rows"][0][0].as_i64().unwrap().to_string();
+
+    let out = env.ok(&["evidence", "-d", text(&db), "--node", &id]);
+    let record = &out["evidence"][0];
+    assert_eq!(record["stable"], false, "{out}");
+    assert_eq!(record["assertion"], "unknown");
+    for field in ["source", "plugin", "record_written_at", "source_last_successful_sync"] {
+        assert_eq!(record[field], json!({"status": "unknown"}), "{field}");
+    }
+    assert_eq!(record["redacted"], json!(["api_token"]));
+    assert!(!out.to_string().contains("abc123"), "{out}");
 }
 
 #[test]
