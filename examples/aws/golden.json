@@ -1043,5 +1043,289 @@
         "width": 6
       }
     ]
+  },
+  "explore": {
+    "exposure_of_web_1": {
+      "complete": true,
+      "limits": [],
+      "depth_reached": 3,
+      "missing_starts": [],
+      "starts": [
+        14
+      ],
+      "hops": [
+        {
+          "depth": 1,
+          "from": 14,
+          "to": 2,
+          "edge": 22,
+          "rel_type": "ROUTES_TO",
+          "along": true,
+          "text": "Internet -[ROUTES_TO]-> igw-shop"
+        },
+        {
+          "depth": 1,
+          "from": 14,
+          "to": 9,
+          "edge": 23,
+          "rel_type": "ROUTES_TO",
+          "along": true,
+          "text": "Internet -[ROUTES_TO]-> shop"
+        },
+        {
+          "depth": 2,
+          "from": 9,
+          "to": 10,
+          "edge": 16,
+          "rel_type": "FORWARDS_TO",
+          "along": true,
+          "text": "shop -[FORWARDS_TO]-> web"
+        },
+        {
+          "depth": 3,
+          "from": 10,
+          "to": 1,
+          "edge": 19,
+          "rel_type": "ROUTES_TO",
+          "along": true,
+          "text": "web -[ROUTES_TO]-> web-1"
+        }
+      ],
+      "graph": {
+        "nodes": [
+          {
+            "id": 1,
+            "labels": [
+              "Instance"
+            ],
+            "properties": {
+              "image_id": "ami-web",
+              "instance_id": "i-web1",
+              "khonsu_id": "shop/123456789012:us-east-1:i-web1",
+              "khonsu_plugin": "aws@0.2.0",
+              "khonsu_source": "shop",
+              "launched_at": "2026-09-01T08:00:00+00:00",
+              "name": "web-1",
+              "private_ip": "10.0.1.10",
+              "public_ip": "198.51.100.10",
+              "state": "running",
+              "type": "t3.small"
+            }
+          },
+          {
+            "id": 2,
+            "labels": [
+              "InternetGateway"
+            ],
+            "properties": {
+              "khonsu_id": "shop/123456789012:us-east-1:igw-shop",
+              "khonsu_plugin": "aws@0.2.0",
+              "khonsu_source": "shop",
+              "name": "igw-shop"
+            }
+          },
+          {
+            "id": 9,
+            "labels": [
+              "LoadBalancer"
+            ],
+            "properties": {
+              "dns_name": "shop-123.us-east-1.elb.amazonaws.com",
+              "khonsu_id": "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
+              "khonsu_plugin": "aws@0.2.0",
+              "khonsu_source": "shop",
+              "name": "shop",
+              "scheme": "internet-facing",
+              "type": "application"
+            }
+          },
+          {
+            "id": 10,
+            "labels": [
+              "TargetGroup"
+            ],
+            "properties": {
+              "khonsu_id": "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/def",
+              "khonsu_plugin": "aws@0.2.0",
+              "khonsu_source": "shop",
+              "name": "web",
+              "port": 8080,
+              "protocol": "HTTP"
+            }
+          },
+          {
+            "id": 14,
+            "labels": [
+              "Cidr"
+            ],
+            "properties": {
+              "cidr": "0.0.0.0/0",
+              "khonsu_id": "shop/cidr:internet",
+              "khonsu_plugin": "aws@0.2.0",
+              "khonsu_source": "shop",
+              "name": "Internet"
+            }
+          }
+        ],
+        "edges": [
+          {
+            "id": 16,
+            "source": 9,
+            "target": 10,
+            "rel_type": "FORWARDS_TO",
+            "properties": {
+              "khonsu_hash": "08f44b07b5901a25",
+              "khonsu_id": "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc|FORWARDS_TO|arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/def",
+              "khonsu_plugin": "aws@0.2.0",
+              "khonsu_source": "shop"
+            }
+          },
+          {
+            "id": 19,
+            "source": 10,
+            "target": 1,
+            "rel_type": "ROUTES_TO",
+            "properties": {
+              "health": "healthy",
+              "khonsu_hash": "a7a7247ee928e602",
+              "khonsu_id": "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/def|ROUTES_TO|123456789012:us-east-1:i-web1",
+              "khonsu_plugin": "aws@0.2.0",
+              "khonsu_source": "shop"
+            }
+          },
+          {
+            "id": 22,
+            "source": 14,
+            "target": 2,
+            "rel_type": "ROUTES_TO",
+            "properties": {
+              "khonsu_hash": "08f44b07b5901a25",
+              "khonsu_id": "shop/cidr:internet|ROUTES_TO|123456789012:us-east-1:igw-shop",
+              "khonsu_plugin": "aws@0.2.0",
+              "khonsu_source": "shop"
+            }
+          },
+          {
+            "id": 23,
+            "source": 14,
+            "target": 9,
+            "rel_type": "ROUTES_TO",
+            "properties": {
+              "khonsu_hash": "08f44b07b5901a25",
+              "khonsu_id": "shop/cidr:internet|ROUTES_TO|arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
+              "khonsu_plugin": "aws@0.2.0",
+              "khonsu_source": "shop"
+            }
+          }
+        ]
+      },
+      "path": {
+        "to": 1,
+        "found": true,
+        "hops": [
+          {
+            "depth": 1,
+            "from": 14,
+            "to": 9,
+            "edge": 23,
+            "rel_type": "ROUTES_TO",
+            "along": true,
+            "text": "Internet -[ROUTES_TO]-> shop"
+          },
+          {
+            "depth": 2,
+            "from": 9,
+            "to": 10,
+            "edge": 16,
+            "rel_type": "FORWARDS_TO",
+            "along": true,
+            "text": "shop -[FORWARDS_TO]-> web"
+          },
+          {
+            "depth": 3,
+            "from": 10,
+            "to": 1,
+            "edge": 19,
+            "rel_type": "ROUTES_TO",
+            "along": true,
+            "text": "web -[ROUTES_TO]-> web-1"
+          }
+        ]
+      }
+    },
+    "what_points_at_web_1": {
+      "complete": false,
+      "limits": [
+        "hops"
+      ],
+      "depth_reached": 1,
+      "missing_starts": [],
+      "starts": [
+        1
+      ],
+      "hops": [
+        {
+          "depth": 1,
+          "from": 1,
+          "to": 10,
+          "edge": 19,
+          "rel_type": "ROUTES_TO",
+          "along": false,
+          "text": "web-1 <-[ROUTES_TO]- web"
+        }
+      ],
+      "graph": {
+        "nodes": [
+          {
+            "id": 1,
+            "labels": [
+              "Instance"
+            ],
+            "properties": {
+              "image_id": "ami-web",
+              "instance_id": "i-web1",
+              "khonsu_id": "shop/123456789012:us-east-1:i-web1",
+              "khonsu_plugin": "aws@0.2.0",
+              "khonsu_source": "shop",
+              "launched_at": "2026-09-01T08:00:00+00:00",
+              "name": "web-1",
+              "private_ip": "10.0.1.10",
+              "public_ip": "198.51.100.10",
+              "state": "running",
+              "type": "t3.small"
+            }
+          },
+          {
+            "id": 10,
+            "labels": [
+              "TargetGroup"
+            ],
+            "properties": {
+              "khonsu_id": "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/def",
+              "khonsu_plugin": "aws@0.2.0",
+              "khonsu_source": "shop",
+              "name": "web",
+              "port": 8080,
+              "protocol": "HTTP"
+            }
+          }
+        ],
+        "edges": [
+          {
+            "id": 19,
+            "source": 10,
+            "target": 1,
+            "rel_type": "ROUTES_TO",
+            "properties": {
+              "health": "healthy",
+              "khonsu_hash": "a7a7247ee928e602",
+              "khonsu_id": "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/def|ROUTES_TO|123456789012:us-east-1:i-web1",
+              "khonsu_plugin": "aws@0.2.0",
+              "khonsu_source": "shop"
+            }
+          }
+        ]
+      }
+    }
   }
 }

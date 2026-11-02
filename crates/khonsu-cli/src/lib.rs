@@ -10,6 +10,7 @@
 
 mod analyze;
 mod dash;
+mod explore;
 
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use khonsu_core::plugin::{self, SyncEvent};
@@ -118,6 +119,8 @@ enum Command {
     Open(dash::OpenArgs),
     /// Graph algorithms after networkx: PageRank, betweenness, components, communities, paths and more.
     Analyze(analyze::AnalyzeArgs),
+    /// Follow relationships from chosen nodes, within caps, and say when a cap or a filter limited the answer.
+    Explore(explore::ExploreArgs),
 }
 
 #[derive(Subcommand)]
@@ -368,6 +371,7 @@ fn execute(command: Command) -> Result<Value, CliError> {
         Command::Presence(args) => dash::presence(args),
         Command::Open(args) => dash::open(args),
         Command::Analyze(args) => analyze::analyze(args),
+        Command::Explore(args) => explore::explore(args),
     }
 }
 

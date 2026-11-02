@@ -37,6 +37,24 @@ khonsu explain --db DIR --cypher "MATCH (n:Host) RETURN n"
 
 `{node_count, relationship_count, labels: [{name, count, properties}], relationship_types: [{name, count, properties, patterns: [[source, target]]}], tables: [{name, columns}]}`. Counts are exact; properties come from HawDB's statistics.
 
+## Explore
+
+```sh
+khonsu explore --db graphs/aws --from shop/cidr:internet --to shop/123456789012:us-east-1:i-web1 --type ROUTES_TO,FORWARDS_TO
+```
+
+| Option | Meaning | Default |
+|---|---|---|
+| `--from NODE` | A start: a `khonsu_id` or a numeric ID. Repeat for several | Required |
+| `--to NODE` | Report a fewest-hops `path` to this node among what was found | None |
+| `--direction out\|in\|both` | Along the arrows, against them, or both | `out` |
+| `--type A,B` | Follow only these relationship types | Every type |
+| `--max-hops N` | Steps from a start, at most 16 | 3 |
+| `--max-nodes N` | Nodes returned, starts included, at most 2,000 | 200 |
+| `--max-edges N` | Relationships returned, at most 5,000 | 500 |
+
+The output holds `complete`, `limits` (`hops`, `nodes`, `edges`), `depth_reached`, `starts`, `missing_starts`, `hops` (`depth`, `from`, `to`, `edge`, `rel_type`, `along`, `text`), `graph` and, with `--to`, `path` (`to`, `found`, `hops`). A value above a ceiling is refused, not lowered.
+
 ## Graph analysis
 
 HawDB's Cypher has no shortest paths, centrality or communities; `khonsu analyze` computes them in memory, after networkx's definitions (results match networkx on the same graph).
