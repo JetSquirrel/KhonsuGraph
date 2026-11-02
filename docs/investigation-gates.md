@@ -22,7 +22,8 @@ cargo test --locked --workspace --test investigation
 | Cycles | A shortest path and a variable-length pattern both end on a cycle |
 | Evidence | `khonsu evidence` and `explore --to` give stable IDs, state what is unknown, and mask secrets; the golden file holds a node and a relationship |
 | Exposure rules | `plugins/aws/tests/fixture-exposure` has a positive, a negative and an undecided case; the golden file holds its whole report, and rule IDs and verdicts for the shop fixture. See [the rules](exposure-rules.md) |
-| HawDB upgrades | `app/tests/fixtures/graph-hawdb-*.zip` must still give the golden answers and accept a write |
+| Saved investigations | Reopening restores a walk and path on unchanged data, and flags a changed source, a missing record, a missing graph and a bad file; the golden file holds a reopened walk and the fixture's fingerprint. See [saved investigations](investigations.md) |
+| HawDB upgrades | `app/tests/fixtures/graph-hawdb-*.zip` must still give the golden answers and fingerprint, and accept a write |
 
 Timings, sync times, paths, line numbers and plugin versions are left out of the
 comparison.
