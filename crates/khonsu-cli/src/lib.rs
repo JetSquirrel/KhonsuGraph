@@ -14,6 +14,7 @@ mod evidence;
 mod explore;
 mod exposure;
 mod investigation;
+mod snapshot;
 
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use khonsu_core::plugin::{self, SyncEvent};
@@ -132,6 +133,11 @@ enum Command {
     Investigation {
         #[command(subcommand)]
         command: investigation::InvestigationCommand,
+    },
+    /// Keep a graph's records in a file, and say what changed between two. A record is only called removed when its source was read completely.
+    Snapshot {
+        #[command(subcommand)]
+        command: snapshot::SnapshotCommand,
     },
 }
 
@@ -387,6 +393,7 @@ fn execute(command: Command) -> Result<Value, CliError> {
         Command::Evidence(args) => evidence::evidence(args),
         Command::Exposure(args) => exposure::exposure(args),
         Command::Investigation { command } => investigation::investigation(command),
+        Command::Snapshot { command } => snapshot::snapshot(command),
     }
 }
 

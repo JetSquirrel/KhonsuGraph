@@ -111,7 +111,8 @@ pub struct Evidence {
     pub source_last_successful_sync: Field<u64>,
     /// How much of the source its last sync covered.
     pub source_coverage: Field<SourceCoverage>,
-    /// Which snapshot of the source this came from. Not recorded yet.
+    /// The source's last sync, when it was complete: a version of the source
+    /// this record can be compared against. Unknown otherwise.
     pub source_snapshot: Field<String>,
     pub assertion: Assertion,
     /// The rule that produced it, for a derived record.
@@ -253,8 +254,8 @@ fn provenance(properties: &Map<String, Json>, source: Option<String>, sources: &
         plugin: text(properties, PLUGIN_PROPERTY).into(),
         record_written_at: properties.get(SYNCED_AT_PROPERTY).and_then(Json::as_u64).into(),
         source_last_successful_sync: last_ok.into(),
+        source_snapshot: coverage.known().filter(|coverage| coverage.status == RunStatus::Complete).map(|coverage| coverage.run_id.clone()).into(),
         source_coverage: coverage,
-        source_snapshot: Field::Unknown,
         rule_id: Field::Unknown,
         properties: own,
         redacted,
@@ -267,7 +268,7 @@ fn text(properties: &Map<String, Json>, key: &str) -> Option<String> {
 
 /// `properties` without KhonsuGraph's bookkeeping, and with secrets masked,
 /// along with the names of those masked.
-fn own_properties(properties: &Map<String, Json>) -> (Map<String, Json>, Vec<String>) {
+pub(crate) fn own_properties(properties: &Map<String, Json>) -> (Map<String, Json>, Vec<String>) {
     let mut redacted = Vec::new();
     let own = properties
         .iter()
@@ -440,6 +441,11 @@ mod tests {
         assert_eq!((coverage.run_id.as_str(), coverage.status), ("shop#2", RunStatus::Partial));
         assert_eq!(coverage.gaps, ["no route tables"]);
         assert_eq!(record.source_last_successful_sync, Field::Known(100), "the last complete one, not the last one");
+        assert_eq!(record.source_snapshot, Field::Unknown, "a partial sync is no version to compare against");
+
+        configured.runs = vec![run(1, RunStatus::Complete)];
+        let record = for_node(&host, std::slice::from_ref(&configured));
+        assert_eq!(record.source_snapshot, Field::Known("shop#1".to_string()));
 
         configured.runs = vec![run(1, RunStatus::Failed)];
         let record = for_node(&host, std::slice::from_ref(&configured));

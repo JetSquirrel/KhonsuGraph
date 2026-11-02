@@ -45,8 +45,11 @@ matches. It covers the whole graph, not just the records you saved, so an unrela
 change also reads as `changed`.
 
 The hash is for noticing change, not for security: someone who wants to can
-produce a matching one. It also has no record of what the source held when saved.
-Comparing source snapshots is #37.
+produce a matching one.
+
+A file pins the source runs it was evaluated against. On a changed graph,
+`differences` names the run when saved and the run now. To see what changed, compare
+[snapshots](snapshots.md), since a saved investigation holds no records of its own.
 
 ## The file
 
