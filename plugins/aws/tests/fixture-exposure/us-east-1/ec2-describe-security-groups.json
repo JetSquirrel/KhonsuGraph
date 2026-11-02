@@ -1,0 +1,26 @@
+{"SecurityGroups": [
+ {"GroupId": "sg-web", "GroupName": "web", "Description": "web tier", "VpcId": "vpc-shop",
+  "IpPermissions": [
+   {"IpProtocol": "tcp", "FromPort": 443, "ToPort": 443, "IpRanges": [{"CidrIp": "0.0.0.0/0"}], "Ipv6Ranges": [], "UserIdGroupPairs": []}
+  ]},
+ {"GroupId": "sg-lb", "GroupName": "public-lb", "Description": "load balancer", "VpcId": "vpc-shop",
+  "IpPermissions": [
+   {"IpProtocol": "tcp", "FromPort": 443, "ToPort": 443, "IpRanges": [{"CidrIp": "0.0.0.0/0"}], "Ipv6Ranges": [], "UserIdGroupPairs": []}
+  ]},
+ {"GroupId": "sg-app", "GroupName": "app", "Description": "behind the load balancer", "VpcId": "vpc-shop",
+  "IpPermissions": [
+   {"IpProtocol": "tcp", "FromPort": 8080, "ToPort": 8080, "IpRanges": [], "Ipv6Ranges": [], "UserIdGroupPairs": [{"GroupId": "sg-lb"}]}
+  ]},
+ {"GroupId": "sg-batch", "GroupName": "batch", "Description": "opened by mistake", "VpcId": "vpc-shop",
+  "IpPermissions": [
+   {"IpProtocol": "tcp", "FromPort": 22, "ToPort": 22, "IpRanges": [{"CidrIp": "0.0.0.0/0"}], "Ipv6Ranges": [], "UserIdGroupPairs": []}
+  ]},
+ {"GroupId": "sg-db", "GroupName": "db", "Description": "database", "VpcId": "vpc-shop",
+  "IpPermissions": [
+   {"IpProtocol": "tcp", "FromPort": 5432, "ToPort": 5432, "IpRanges": [], "Ipv6Ranges": [], "UserIdGroupPairs": [{"GroupId": "sg-web"}]}
+  ]},
+ {"GroupId": "sg-legacy", "GroupName": "legacy", "Description": "old account", "VpcId": "vpc-legacy",
+  "IpPermissions": [
+   {"IpProtocol": "tcp", "FromPort": 80, "ToPort": 80, "IpRanges": [{"CidrIp": "0.0.0.0/0"}], "Ipv6Ranges": [], "UserIdGroupPairs": []}
+  ]}
+]}

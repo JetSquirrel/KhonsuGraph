@@ -71,9 +71,32 @@ khonsu evidence --db graphs/aws --node shop/123456789012:us-east-1:i-web1
 | `source`, `plugin` | What wrote it |
 | `record_written_at` | When it last changed, in Unix seconds; can predate the last sync |
 | `source_last_successful_sync` | From the source's settings; unknown when its last sync failed |
-| `source_snapshot`, `rule_id` | Unknown for now |
+| `source_snapshot` | Unknown for now |
+| `rule_id` | Unknown on a record; known on an exposure finding's `path` |
 | `assertion` | `explicit` (a source reported it), `derived`, or `unknown` |
 | `properties`, `redacted` | Its own properties, and the names masked as possible secrets |
+
+## AWS exposure findings
+
+```sh
+khonsu exposure --db graphs/aws --verdict potential-exposure --pretty
+```
+
+`--resource ID` takes a `khonsu_id`, `--verdict` takes `potential-exposure`, `insufficient-data` or `not-indicated`, and `--max-findings` defaults to 200. The top level has `claim`, `order`, `rules`, `instances`, `summary` (counts before any narrowing), `complete` and `truncated` (findings cut by `--max-findings`). When `complete` is false, a missing finding means nothing.
+
+| Finding field | Meaning |
+|---|---|
+| `finding_id`, `rule_id` | Stable for the same rule and records |
+| `verdict` | `potential_exposure`, `insufficient_data` or `not_indicated`. None means reachable or safe |
+| `resource`, `resource_name` | The instance it is about |
+| `conditions[]` | `id`, `statement`, `status` (`met`, `not_met`, `unknown`), `detail`, and `fields[]` with `record`, `field`, `aws_field`, `value` |
+| `unknowns`, `assumptions` | What could not be evaluated, and what the rule does not read |
+| `path` | The candidate path as a derived evidence record, or null when its records do not exist |
+| `walk` | `from`, `to`, `direction`, `types`, `max_hops` for `khonsu explore`, or null |
+| `depends_on` | The finding a lateral step rests on |
+| `contributing`, `evidence` | Evidence IDs of every record used, and those records |
+
+See `docs/exposure-rules.md` for the rules and a walkthrough.
 
 ## Graph analysis
 

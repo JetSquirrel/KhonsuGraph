@@ -1,0 +1,4 @@
+{"Vpcs": [
+ {"VpcId": "vpc-shop", "CidrBlock": "10.0.0.0/16", "IsDefault": false, "Tags": [{"Key": "Name", "Value": "shop"}]},
+ {"VpcId": "vpc-legacy", "CidrBlock": "10.9.0.0/16", "IsDefault": false, "Tags": [{"Key": "Name", "Value": "legacy"}]}
+]}

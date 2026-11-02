@@ -12,6 +12,7 @@ mod analyze;
 mod dash;
 mod evidence;
 mod explore;
+mod exposure;
 
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use khonsu_core::plugin::{self, SyncEvent};
@@ -124,6 +125,8 @@ enum Command {
     Explore(explore::ExploreArgs),
     /// What supports a node or relationship: its source, plugin and times, with unknowns stated and secrets masked.
     Evidence(evidence::EvidenceArgs),
+    /// AWS exposure findings: the rule, records and fields behind each, what is assumed and what is unknown. A finding is potential exposure from configuration, not proof of reachability.
+    Exposure(exposure::ExposureArgs),
 }
 
 #[derive(Subcommand)]
@@ -376,6 +379,7 @@ fn execute(command: Command) -> Result<Value, CliError> {
         Command::Analyze(args) => analyze::analyze(args),
         Command::Explore(args) => explore::explore(args),
         Command::Evidence(args) => evidence::evidence(args),
+        Command::Exposure(args) => exposure::exposure(args),
     }
 }
 

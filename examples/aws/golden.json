@@ -1609,5 +1609,3310 @@
         ]
       }
     }
+  },
+  "exposure": {
+    "shop_fixture": [
+      [
+        "aws.exposure.direct-instance",
+        "node:shop/123456789012:us-east-1:i-web1",
+        "insufficient_data"
+      ],
+      [
+        "aws.exposure.security-group-lateral",
+        "node:shop/123456789012:us-east-1:i-db1",
+        "insufficient_data"
+      ],
+      [
+        "aws.exposure.direct-instance",
+        "node:shop/123456789012:us-east-1:i-db1",
+        "not_indicated"
+      ],
+      [
+        "aws.exposure.public-load-balancer",
+        "node:shop/123456789012:us-east-1:i-web1",
+        "not_indicated"
+      ]
+    ],
+    "exposure_fixture": {
+      "claim": "Potential exposure worked out from configuration. No traffic was sent, so this does not show that anything is reachable, and a resource with no finding is not shown to be safe.",
+      "order": "By verdict (potential_exposure, insufficient_data, not_indicated), then rule ID, then resource ID. There is no risk score.",
+      "rules": [
+        {
+          "rule_id": "aws.exposure.direct-instance",
+          "title": "Instance open to the internet directly",
+          "statement": "A running instance with a public address, a security group rule open to the internet, and a route to an internet gateway from its subnet.",
+          "assumptions": [
+            "Network ACLs, host firewalls and anything outside this AWS account are not read.",
+            "0.0.0.0/0 and ::/0 are one Internet record, so a rule's address family is not compared with the instance's address.",
+            "Whether anything listens on the allowed ports is not read."
+          ]
+        },
+        {
+          "rule_id": "aws.exposure.public-load-balancer",
+          "title": "Instance behind an internet-facing load balancer",
+          "statement": "A running, healthy target of an internet-facing load balancer whose security group is open to the internet, where the target's security group allows the target port from the balancer.",
+          "assumptions": [
+            "Network ACLs, host firewalls and anything outside this AWS account are not read.",
+            "Listeners and their rules are not read, so an open security group is not shown to lead to this target group.",
+            "The target group's port is used; a target registered on another port is not seen.",
+            "A CIDR rule is not compared with the balancer's addresses, which are not read."
+          ]
+        },
+        {
+          "rule_id": "aws.exposure.security-group-lateral",
+          "title": "Instance one security group rule behind a potentially exposed one",
+          "statement": "A running instance whose security group allows traffic from the security group of an instance with a potential exposure finding.",
+          "assumptions": [
+            "Network ACLs, host firewalls and anything outside this AWS account are not read.",
+            "Only one step is followed; use khonsu explore for longer chains.",
+            "Whether the source instance could be made to send this traffic is not assessed."
+          ]
+        }
+      ],
+      "instances": 5,
+      "summary": {
+        "potential_exposure": 3,
+        "insufficient_data": 1,
+        "not_indicated": 3
+      },
+      "complete": true,
+      "findings": [
+        {
+          "finding_id": "finding:f2dfac00f69ee196",
+          "rule_id": "aws.exposure.direct-instance",
+          "verdict": "potential_exposure",
+          "resource": "node:shop/123456789012:us-east-1:i-web1",
+          "resource_name": "web-1",
+          "conditions": [
+            {
+              "id": "instance-running",
+              "statement": "The instance is running.",
+              "status": "met",
+              "detail": "The instance is running.",
+              "fields": [
+                {
+                  "record": "node:shop/123456789012:us-east-1:i-web1",
+                  "field": "state",
+                  "aws_field": "ec2 describe-instances: State.Name",
+                  "value": {
+                    "status": "known",
+                    "value": "running"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "public-address",
+              "statement": "The instance has a public address.",
+              "status": "met",
+              "detail": "Public address 198.51.100.10.",
+              "fields": [
+                {
+                  "record": "node:shop/123456789012:us-east-1:i-web1",
+                  "field": "public_ip",
+                  "aws_field": "ec2 describe-instances: PublicIpAddress",
+                  "value": {
+                    "status": "known",
+                    "value": "198.51.100.10"
+                  }
+                },
+                {
+                  "record": "node:shop/123456789012:us-east-1:i-web1",
+                  "field": "ipv6_address",
+                  "aws_field": "ec2 describe-instances: Ipv6Address",
+                  "value": {
+                    "status": "unknown"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "open-inbound-rule",
+              "statement": "The instance has a security group rule open to the internet.",
+              "status": "met",
+              "detail": "Open to the internet on tcp 443.",
+              "fields": [
+                {
+                  "record": "rel:shop/123456789012:us-east-1:i-web1|PROTECTED_BY|123456789012:us-east-1:sg-web",
+                  "field": "PROTECTED_BY",
+                  "aws_field": "ec2 describe-instances: SecurityGroups[].GroupId",
+                  "value": {
+                    "status": "known",
+                    "value": "node:shop/123456789012:us-east-1:sg-web"
+                  }
+                },
+                {
+                  "record": "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-web|\"\\\"tcp\\\":\\\"443\\\"\"",
+                  "field": "protocol",
+                  "aws_field": "ec2 describe-security-groups: IpPermissions[].IpProtocol",
+                  "value": {
+                    "status": "known",
+                    "value": "tcp"
+                  }
+                },
+                {
+                  "record": "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-web|\"\\\"tcp\\\":\\\"443\\\"\"",
+                  "field": "ports",
+                  "aws_field": "ec2 describe-security-groups: IpPermissions[].FromPort, ToPort",
+                  "value": {
+                    "status": "known",
+                    "value": "443"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "internet-route",
+              "statement": "The instance's subnet has an active default route to an internet gateway.",
+              "status": "met",
+              "detail": "Route table public sends 0.0.0.0/0 to an internet gateway.",
+              "fields": [
+                {
+                  "record": "node:shop/123456789012:us-east-1:rtb-public",
+                  "field": "ipv4_default_target",
+                  "aws_field": "ec2 describe-route-tables: Routes[DestinationCidrBlock=0.0.0.0/0]",
+                  "value": {
+                    "status": "known",
+                    "value": "igw-shop"
+                  }
+                },
+                {
+                  "record": "node:shop/123456789012:us-east-1:rtb-public",
+                  "field": "ipv6_default_target",
+                  "aws_field": "ec2 describe-route-tables: Routes[DestinationIpv6CidrBlock=::/0]",
+                  "value": {
+                    "status": "unknown"
+                  }
+                },
+                {
+                  "record": "rel:shop/123456789012:us-east-1:rtb-public|ROUTES_VIA|123456789012:us-east-1:igw-shop|\"0.0.0.0/0\"",
+                  "field": "destination",
+                  "aws_field": "ec2 describe-route-tables: Routes[].DestinationCidrBlock",
+                  "value": {
+                    "status": "known",
+                    "value": "0.0.0.0/0"
+                  }
+                },
+                {
+                  "record": "rel:shop/123456789012:us-east-1:rtb-public|ROUTES_VIA|123456789012:us-east-1:igw-shop|\"0.0.0.0/0\"",
+                  "field": "state",
+                  "aws_field": "ec2 describe-route-tables: Routes[].State",
+                  "value": {
+                    "status": "known",
+                    "value": "active"
+                  }
+                }
+              ]
+            }
+          ],
+          "unknowns": [],
+          "assumptions": [
+            "Network ACLs, host firewalls and anything outside this AWS account are not read.",
+            "0.0.0.0/0 and ::/0 are one Internet record, so a rule's address family is not compared with the instance's address.",
+            "Whether anything listens on the allowed ports is not read."
+          ],
+          "path": {
+            "evidence_id": "path:e58dfab0a5655b39",
+            "stable": true,
+            "kind": "path",
+            "assertion": "derived",
+            "derivation": "the rule's candidate path",
+            "rule_id": {
+              "status": "known",
+              "value": "aws.exposure.direct-instance"
+            },
+            "claim": "These records connect in the data. This is not proof that anything can reach anything.",
+            "hops": [
+              "Internet -[ALLOWS]-> web",
+              "web <-[PROTECTED_BY]- web-1"
+            ],
+            "supporting": [
+              "node:shop/cidr:internet",
+              "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-web|\"\\\"tcp\\\":\\\"443\\\"\"",
+              "node:shop/123456789012:us-east-1:sg-web",
+              "rel:shop/123456789012:us-east-1:i-web1|PROTECTED_BY|123456789012:us-east-1:sg-web",
+              "node:shop/123456789012:us-east-1:i-web1"
+            ],
+            "evidence": [
+              {
+                "evidence_id": "node:shop/cidr:internet",
+                "stable": true,
+                "kind": "node",
+                "internal_id": 25,
+                "types": [
+                  "Cidr"
+                ],
+                "source": {
+                  "status": "known",
+                  "value": "shop"
+                },
+                "source_snapshot": {
+                  "status": "unknown"
+                },
+                "assertion": "explicit",
+                "rule_id": {
+                  "status": "unknown"
+                },
+                "properties": {
+                  "cidr": "0.0.0.0/0",
+                  "name": "Internet"
+                }
+              },
+              {
+                "evidence_id": "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-web|\"\\\"tcp\\\":\\\"443\\\"\"",
+                "stable": true,
+                "kind": "relationship",
+                "internal_id": 41,
+                "types": [
+                  "ALLOWS"
+                ],
+                "from": {
+                  "status": "known",
+                  "value": "node:shop/cidr:internet"
+                },
+                "to": {
+                  "status": "known",
+                  "value": "node:shop/123456789012:us-east-1:sg-web"
+                },
+                "source": {
+                  "status": "known",
+                  "value": "shop"
+                },
+                "source_snapshot": {
+                  "status": "unknown"
+                },
+                "assertion": "explicit",
+                "rule_id": {
+                  "status": "unknown"
+                },
+                "properties": {
+                  "ports": "443",
+                  "protocol": "tcp",
+                  "rule": "\"tcp\":\"443\""
+                }
+              },
+              {
+                "evidence_id": "node:shop/123456789012:us-east-1:sg-web",
+                "stable": true,
+                "kind": "node",
+                "internal_id": 14,
+                "types": [
+                  "SecurityGroup"
+                ],
+                "source": {
+                  "status": "known",
+                  "value": "shop"
+                },
+                "source_snapshot": {
+                  "status": "unknown"
+                },
+                "assertion": "explicit",
+                "rule_id": {
+                  "status": "unknown"
+                },
+                "properties": {
+                  "description": "web tier",
+                  "group_id": "sg-web",
+                  "name": "web"
+                }
+              },
+              {
+                "evidence_id": "rel:shop/123456789012:us-east-1:i-web1|PROTECTED_BY|123456789012:us-east-1:sg-web",
+                "stable": true,
+                "kind": "relationship",
+                "internal_id": 11,
+                "types": [
+                  "PROTECTED_BY"
+                ],
+                "from": {
+                  "status": "known",
+                  "value": "node:shop/123456789012:us-east-1:i-web1"
+                },
+                "to": {
+                  "status": "known",
+                  "value": "node:shop/123456789012:us-east-1:sg-web"
+                },
+                "source": {
+                  "status": "known",
+                  "value": "shop"
+                },
+                "source_snapshot": {
+                  "status": "unknown"
+                },
+                "assertion": "explicit",
+                "rule_id": {
+                  "status": "unknown"
+                },
+                "properties": {}
+              },
+              {
+                "evidence_id": "node:shop/123456789012:us-east-1:i-web1",
+                "stable": true,
+                "kind": "node",
+                "internal_id": 4,
+                "types": [
+                  "Instance"
+                ],
+                "source": {
+                  "status": "known",
+                  "value": "shop"
+                },
+                "source_snapshot": {
+                  "status": "unknown"
+                },
+                "assertion": "explicit",
+                "rule_id": {
+                  "status": "unknown"
+                },
+                "properties": {
+                  "image_id": "ami-web",
+                  "instance_id": "i-web1",
+                  "launched_at": "2026-09-01T08:00:00+00:00",
+                  "name": "web-1",
+                  "private_ip": "10.0.1.10",
+                  "public_ip": "198.51.100.10",
+                  "state": "running",
+                  "type": "t3.small"
+                }
+              }
+            ]
+          },
+          "walk": {
+            "from": "shop/cidr:internet",
+            "to": "shop/123456789012:us-east-1:i-web1",
+            "direction": "both",
+            "types": [
+              "ALLOWS",
+              "PROTECTED_BY"
+            ],
+            "max_hops": 2
+          },
+          "contributing": [
+            "node:shop/cidr:internet",
+            "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-web|\"\\\"tcp\\\":\\\"443\\\"\"",
+            "node:shop/123456789012:us-east-1:sg-web",
+            "rel:shop/123456789012:us-east-1:i-web1|PROTECTED_BY|123456789012:us-east-1:sg-web",
+            "node:shop/123456789012:us-east-1:i-web1",
+            "node:shop/123456789012:us-east-1:rtb-public",
+            "node:shop/arn:aws:ec2:us-east-1:123456789012:subnet/subnet-public",
+            "rel:shop/123456789012:us-east-1:rtb-public|ROUTES_VIA|123456789012:us-east-1:igw-shop|\"0.0.0.0/0\""
+          ],
+          "evidence": [
+            {
+              "evidence_id": "node:shop/cidr:internet",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 25,
+              "types": [
+                "Cidr"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "cidr": "0.0.0.0/0",
+                "name": "Internet"
+              }
+            },
+            {
+              "evidence_id": "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-web|\"\\\"tcp\\\":\\\"443\\\"\"",
+              "stable": true,
+              "kind": "relationship",
+              "internal_id": 41,
+              "types": [
+                "ALLOWS"
+              ],
+              "from": {
+                "status": "known",
+                "value": "node:shop/cidr:internet"
+              },
+              "to": {
+                "status": "known",
+                "value": "node:shop/123456789012:us-east-1:sg-web"
+              },
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "ports": "443",
+                "protocol": "tcp",
+                "rule": "\"tcp\":\"443\""
+              }
+            },
+            {
+              "evidence_id": "node:shop/123456789012:us-east-1:sg-web",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 14,
+              "types": [
+                "SecurityGroup"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "description": "web tier",
+                "group_id": "sg-web",
+                "name": "web"
+              }
+            },
+            {
+              "evidence_id": "rel:shop/123456789012:us-east-1:i-web1|PROTECTED_BY|123456789012:us-east-1:sg-web",
+              "stable": true,
+              "kind": "relationship",
+              "internal_id": 11,
+              "types": [
+                "PROTECTED_BY"
+              ],
+              "from": {
+                "status": "known",
+                "value": "node:shop/123456789012:us-east-1:i-web1"
+              },
+              "to": {
+                "status": "known",
+                "value": "node:shop/123456789012:us-east-1:sg-web"
+              },
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {}
+            },
+            {
+              "evidence_id": "node:shop/123456789012:us-east-1:i-web1",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 4,
+              "types": [
+                "Instance"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "image_id": "ami-web",
+                "instance_id": "i-web1",
+                "launched_at": "2026-09-01T08:00:00+00:00",
+                "name": "web-1",
+                "private_ip": "10.0.1.10",
+                "public_ip": "198.51.100.10",
+                "state": "running",
+                "type": "t3.small"
+              }
+            },
+            {
+              "evidence_id": "node:shop/123456789012:us-east-1:rtb-public",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 8,
+              "types": [
+                "RouteTable"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "ipv4_default_target": "igw-shop",
+                "is_main": false,
+                "name": "public",
+                "route_table_id": "rtb-public"
+              }
+            },
+            {
+              "evidence_id": "node:shop/arn:aws:ec2:us-east-1:123456789012:subnet/subnet-public",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 20,
+              "types": [
+                "Subnet"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "availability_zone": "us-east-1a",
+                "cidr": "10.0.1.0/24",
+                "name": "public-a",
+                "public_ip_on_launch": true,
+                "subnet_id": "subnet-public"
+              }
+            },
+            {
+              "evidence_id": "rel:shop/123456789012:us-east-1:rtb-public|ROUTES_VIA|123456789012:us-east-1:igw-shop|\"0.0.0.0/0\"",
+              "stable": true,
+              "kind": "relationship",
+              "internal_id": 16,
+              "types": [
+                "ROUTES_VIA"
+              ],
+              "from": {
+                "status": "known",
+                "value": "node:shop/123456789012:us-east-1:rtb-public"
+              },
+              "to": {
+                "status": "known",
+                "value": "node:shop/123456789012:us-east-1:igw-shop"
+              },
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "destination": "0.0.0.0/0",
+                "rule": "0.0.0.0/0",
+                "state": "active"
+              }
+            }
+          ]
+        },
+        {
+          "finding_id": "finding:5f8bbb1e573fb631",
+          "rule_id": "aws.exposure.public-load-balancer",
+          "verdict": "potential_exposure",
+          "resource": "node:shop/123456789012:us-east-1:i-app1",
+          "resource_name": "app-1",
+          "conditions": [
+            {
+              "id": "instance-running",
+              "statement": "The instance is running.",
+              "status": "met",
+              "detail": "The instance is running.",
+              "fields": [
+                {
+                  "record": "node:shop/123456789012:us-east-1:i-app1",
+                  "field": "state",
+                  "aws_field": "ec2 describe-instances: State.Name",
+                  "value": {
+                    "status": "known",
+                    "value": "running"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "internet-facing",
+              "statement": "The load balancer is internet-facing.",
+              "status": "met",
+              "detail": "The load balancer is internet-facing.",
+              "fields": [
+                {
+                  "record": "node:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
+                  "field": "scheme",
+                  "aws_field": "elbv2 describe-load-balancers: Scheme",
+                  "value": {
+                    "status": "known",
+                    "value": "internet-facing"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "balancer-open-rule",
+              "statement": "The load balancer has a security group rule open to the internet.",
+              "status": "met",
+              "detail": "Open to the internet on tcp 443.",
+              "fields": [
+                {
+                  "record": "rel:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc|PROTECTED_BY|123456789012:us-east-1:sg-lb",
+                  "field": "PROTECTED_BY",
+                  "aws_field": "elbv2 describe-load-balancers: SecurityGroups[]",
+                  "value": {
+                    "status": "known",
+                    "value": "node:shop/123456789012:us-east-1:sg-lb"
+                  }
+                },
+                {
+                  "record": "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-lb|\"\\\"tcp\\\":\\\"443\\\"\"",
+                  "field": "protocol",
+                  "aws_field": "ec2 describe-security-groups: IpPermissions[].IpProtocol",
+                  "value": {
+                    "status": "known",
+                    "value": "tcp"
+                  }
+                },
+                {
+                  "record": "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-lb|\"\\\"tcp\\\":\\\"443\\\"\"",
+                  "field": "ports",
+                  "aws_field": "ec2 describe-security-groups: IpPermissions[].FromPort, ToPort",
+                  "value": {
+                    "status": "known",
+                    "value": "443"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "target-healthy",
+              "statement": "The target is healthy.",
+              "status": "met",
+              "detail": "The target was healthy.",
+              "fields": [
+                {
+                  "record": "rel:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/app/def|ROUTES_TO|123456789012:us-east-1:i-app1",
+                  "field": "health",
+                  "aws_field": "elbv2 describe-target-health: TargetHealth.State",
+                  "value": {
+                    "status": "known",
+                    "value": "healthy"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "target-allows-balancer",
+              "statement": "The target's security group allows the target group's port from the load balancer.",
+              "status": "met",
+              "detail": "A rule allows tcp 8080 from the load balancer's group or the internet.",
+              "fields": [
+                {
+                  "record": "node:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/app/def",
+                  "field": "port",
+                  "aws_field": "elbv2 describe-target-groups: Port",
+                  "value": {
+                    "status": "known",
+                    "value": 8080
+                  }
+                },
+                {
+                  "record": "rel:shop/123456789012:us-east-1:sg-lb|ALLOWS|123456789012:us-east-1:sg-app|\"\\\"tcp\\\":\\\"8080\\\"\"",
+                  "field": "ports",
+                  "aws_field": "ec2 describe-security-groups: IpPermissions[].FromPort, ToPort",
+                  "value": {
+                    "status": "known",
+                    "value": "8080"
+                  }
+                }
+              ]
+            }
+          ],
+          "unknowns": [],
+          "assumptions": [
+            "Network ACLs, host firewalls and anything outside this AWS account are not read.",
+            "Listeners and their rules are not read, so an open security group is not shown to lead to this target group.",
+            "The target group's port is used; a target registered on another port is not seen.",
+            "A CIDR rule is not compared with the balancer's addresses, which are not read."
+          ],
+          "path": {
+            "evidence_id": "path:ee48d3346c316825",
+            "stable": true,
+            "kind": "path",
+            "assertion": "derived",
+            "derivation": "the rule's candidate path",
+            "rule_id": {
+              "status": "known",
+              "value": "aws.exposure.public-load-balancer"
+            },
+            "claim": "These records connect in the data. This is not proof that anything can reach anything.",
+            "hops": [
+              "Internet -[ROUTES_TO]-> shop",
+              "shop -[FORWARDS_TO]-> app",
+              "app -[ROUTES_TO]-> app-1"
+            ],
+            "supporting": [
+              "node:shop/cidr:internet",
+              "rel:shop/cidr:internet|ROUTES_TO|arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
+              "node:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
+              "rel:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc|FORWARDS_TO|arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/app/def",
+              "node:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/app/def",
+              "rel:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/app/def|ROUTES_TO|123456789012:us-east-1:i-app1",
+              "node:shop/123456789012:us-east-1:i-app1"
+            ],
+            "evidence": [
+              {
+                "evidence_id": "node:shop/cidr:internet",
+                "stable": true,
+                "kind": "node",
+                "internal_id": 25,
+                "types": [
+                  "Cidr"
+                ],
+                "source": {
+                  "status": "known",
+                  "value": "shop"
+                },
+                "source_snapshot": {
+                  "status": "unknown"
+                },
+                "assertion": "explicit",
+                "rule_id": {
+                  "status": "unknown"
+                },
+                "properties": {
+                  "cidr": "0.0.0.0/0",
+                  "name": "Internet"
+                }
+              },
+              {
+                "evidence_id": "rel:shop/cidr:internet|ROUTES_TO|arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
+                "stable": true,
+                "kind": "relationship",
+                "internal_id": 44,
+                "types": [
+                  "ROUTES_TO"
+                ],
+                "from": {
+                  "status": "known",
+                  "value": "node:shop/cidr:internet"
+                },
+                "to": {
+                  "status": "known",
+                  "value": "node:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc"
+                },
+                "source": {
+                  "status": "known",
+                  "value": "shop"
+                },
+                "source_snapshot": {
+                  "status": "unknown"
+                },
+                "assertion": "explicit",
+                "rule_id": {
+                  "status": "unknown"
+                },
+                "properties": {}
+              },
+              {
+                "evidence_id": "node:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
+                "stable": true,
+                "kind": "node",
+                "internal_id": 21,
+                "types": [
+                  "LoadBalancer"
+                ],
+                "source": {
+                  "status": "known",
+                  "value": "shop"
+                },
+                "source_snapshot": {
+                  "status": "unknown"
+                },
+                "assertion": "explicit",
+                "rule_id": {
+                  "status": "unknown"
+                },
+                "properties": {
+                  "dns_name": "shop-123.us-east-1.elb.amazonaws.com",
+                  "name": "shop",
+                  "scheme": "internet-facing",
+                  "type": "application"
+                }
+              },
+              {
+                "evidence_id": "rel:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc|FORWARDS_TO|arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/app/def",
+                "stable": true,
+                "kind": "relationship",
+                "internal_id": 34,
+                "types": [
+                  "FORWARDS_TO"
+                ],
+                "from": {
+                  "status": "known",
+                  "value": "node:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc"
+                },
+                "to": {
+                  "status": "known",
+                  "value": "node:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/app/def"
+                },
+                "source": {
+                  "status": "known",
+                  "value": "shop"
+                },
+                "source_snapshot": {
+                  "status": "unknown"
+                },
+                "assertion": "explicit",
+                "rule_id": {
+                  "status": "unknown"
+                },
+                "properties": {}
+              },
+              {
+                "evidence_id": "node:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/app/def",
+                "stable": true,
+                "kind": "node",
+                "internal_id": 22,
+                "types": [
+                  "TargetGroup"
+                ],
+                "source": {
+                  "status": "known",
+                  "value": "shop"
+                },
+                "source_snapshot": {
+                  "status": "unknown"
+                },
+                "assertion": "explicit",
+                "rule_id": {
+                  "status": "unknown"
+                },
+                "properties": {
+                  "name": "app",
+                  "port": 8080,
+                  "protocol": "HTTP"
+                }
+              },
+              {
+                "evidence_id": "rel:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/app/def|ROUTES_TO|123456789012:us-east-1:i-app1",
+                "stable": true,
+                "kind": "relationship",
+                "internal_id": 37,
+                "types": [
+                  "ROUTES_TO"
+                ],
+                "from": {
+                  "status": "known",
+                  "value": "node:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/app/def"
+                },
+                "to": {
+                  "status": "known",
+                  "value": "node:shop/123456789012:us-east-1:i-app1"
+                },
+                "source": {
+                  "status": "known",
+                  "value": "shop"
+                },
+                "source_snapshot": {
+                  "status": "unknown"
+                },
+                "assertion": "explicit",
+                "rule_id": {
+                  "status": "unknown"
+                },
+                "properties": {
+                  "health": "healthy"
+                }
+              },
+              {
+                "evidence_id": "node:shop/123456789012:us-east-1:i-app1",
+                "stable": true,
+                "kind": "node",
+                "internal_id": 0,
+                "types": [
+                  "Instance"
+                ],
+                "source": {
+                  "status": "known",
+                  "value": "shop"
+                },
+                "source_snapshot": {
+                  "status": "unknown"
+                },
+                "assertion": "explicit",
+                "rule_id": {
+                  "status": "unknown"
+                },
+                "properties": {
+                  "image_id": "ami-app",
+                  "instance_id": "i-app1",
+                  "launched_at": "2026-09-01T08:00:00+00:00",
+                  "name": "app-1",
+                  "private_ip": "10.0.2.30",
+                  "state": "running",
+                  "type": "t3.small"
+                }
+              }
+            ]
+          },
+          "walk": {
+            "from": "shop/cidr:internet",
+            "to": "shop/123456789012:us-east-1:i-app1",
+            "direction": "out",
+            "types": [
+              "FORWARDS_TO",
+              "ROUTES_TO"
+            ],
+            "max_hops": 3
+          },
+          "contributing": [
+            "node:shop/cidr:internet",
+            "rel:shop/cidr:internet|ROUTES_TO|arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
+            "node:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
+            "rel:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc|FORWARDS_TO|arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/app/def",
+            "node:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/app/def",
+            "rel:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/app/def|ROUTES_TO|123456789012:us-east-1:i-app1",
+            "node:shop/123456789012:us-east-1:i-app1",
+            "rel:shop/123456789012:us-east-1:sg-lb|ALLOWS|123456789012:us-east-1:sg-app|\"\\\"tcp\\\":\\\"8080\\\"\"",
+            "rel:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc|PROTECTED_BY|123456789012:us-east-1:sg-lb",
+            "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-lb|\"\\\"tcp\\\":\\\"443\\\"\""
+          ],
+          "evidence": [
+            {
+              "evidence_id": "node:shop/cidr:internet",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 25,
+              "types": [
+                "Cidr"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "cidr": "0.0.0.0/0",
+                "name": "Internet"
+              }
+            },
+            {
+              "evidence_id": "rel:shop/cidr:internet|ROUTES_TO|arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
+              "stable": true,
+              "kind": "relationship",
+              "internal_id": 44,
+              "types": [
+                "ROUTES_TO"
+              ],
+              "from": {
+                "status": "known",
+                "value": "node:shop/cidr:internet"
+              },
+              "to": {
+                "status": "known",
+                "value": "node:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc"
+              },
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {}
+            },
+            {
+              "evidence_id": "node:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 21,
+              "types": [
+                "LoadBalancer"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "dns_name": "shop-123.us-east-1.elb.amazonaws.com",
+                "name": "shop",
+                "scheme": "internet-facing",
+                "type": "application"
+              }
+            },
+            {
+              "evidence_id": "rel:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc|FORWARDS_TO|arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/app/def",
+              "stable": true,
+              "kind": "relationship",
+              "internal_id": 34,
+              "types": [
+                "FORWARDS_TO"
+              ],
+              "from": {
+                "status": "known",
+                "value": "node:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc"
+              },
+              "to": {
+                "status": "known",
+                "value": "node:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/app/def"
+              },
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {}
+            },
+            {
+              "evidence_id": "node:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/app/def",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 22,
+              "types": [
+                "TargetGroup"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "name": "app",
+                "port": 8080,
+                "protocol": "HTTP"
+              }
+            },
+            {
+              "evidence_id": "rel:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/app/def|ROUTES_TO|123456789012:us-east-1:i-app1",
+              "stable": true,
+              "kind": "relationship",
+              "internal_id": 37,
+              "types": [
+                "ROUTES_TO"
+              ],
+              "from": {
+                "status": "known",
+                "value": "node:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/app/def"
+              },
+              "to": {
+                "status": "known",
+                "value": "node:shop/123456789012:us-east-1:i-app1"
+              },
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "health": "healthy"
+              }
+            },
+            {
+              "evidence_id": "node:shop/123456789012:us-east-1:i-app1",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 0,
+              "types": [
+                "Instance"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "image_id": "ami-app",
+                "instance_id": "i-app1",
+                "launched_at": "2026-09-01T08:00:00+00:00",
+                "name": "app-1",
+                "private_ip": "10.0.2.30",
+                "state": "running",
+                "type": "t3.small"
+              }
+            },
+            {
+              "evidence_id": "rel:shop/123456789012:us-east-1:sg-lb|ALLOWS|123456789012:us-east-1:sg-app|\"\\\"tcp\\\":\\\"8080\\\"\"",
+              "stable": true,
+              "kind": "relationship",
+              "internal_id": 20,
+              "types": [
+                "ALLOWS"
+              ],
+              "from": {
+                "status": "known",
+                "value": "node:shop/123456789012:us-east-1:sg-lb"
+              },
+              "to": {
+                "status": "known",
+                "value": "node:shop/123456789012:us-east-1:sg-app"
+              },
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "ports": "8080",
+                "protocol": "tcp",
+                "rule": "\"tcp\":\"8080\""
+              }
+            },
+            {
+              "evidence_id": "rel:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc|PROTECTED_BY|123456789012:us-east-1:sg-lb",
+              "stable": true,
+              "kind": "relationship",
+              "internal_id": 36,
+              "types": [
+                "PROTECTED_BY"
+              ],
+              "from": {
+                "status": "known",
+                "value": "node:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc"
+              },
+              "to": {
+                "status": "known",
+                "value": "node:shop/123456789012:us-east-1:sg-lb"
+              },
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {}
+            },
+            {
+              "evidence_id": "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-lb|\"\\\"tcp\\\":\\\"443\\\"\"",
+              "stable": true,
+              "kind": "relationship",
+              "internal_id": 39,
+              "types": [
+                "ALLOWS"
+              ],
+              "from": {
+                "status": "known",
+                "value": "node:shop/cidr:internet"
+              },
+              "to": {
+                "status": "known",
+                "value": "node:shop/123456789012:us-east-1:sg-lb"
+              },
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "ports": "443",
+                "protocol": "tcp",
+                "rule": "\"tcp\":\"443\""
+              }
+            }
+          ]
+        },
+        {
+          "finding_id": "finding:55110fd21a8ba08b",
+          "rule_id": "aws.exposure.security-group-lateral",
+          "verdict": "potential_exposure",
+          "resource": "node:shop/123456789012:us-east-1:i-db1",
+          "resource_name": "db-1",
+          "conditions": [
+            {
+              "id": "instance-running",
+              "statement": "The instance is running.",
+              "status": "met",
+              "detail": "The instance is running.",
+              "fields": [
+                {
+                  "record": "node:shop/123456789012:us-east-1:i-db1",
+                  "field": "state",
+                  "aws_field": "ec2 describe-instances: State.Name",
+                  "value": {
+                    "status": "known",
+                    "value": "running"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "source-potentially-exposed",
+              "statement": "The source instance has a potential exposure finding.",
+              "status": "met",
+              "detail": "web-1 has a potential exposure finding from aws.exposure.direct-instance.",
+              "fields": []
+            },
+            {
+              "id": "group-allows-source",
+              "statement": "A security group rule on this instance allows the source instance's group.",
+              "status": "met",
+              "detail": "Allowed on tcp 5432.",
+              "fields": [
+                {
+                  "record": "rel:shop/123456789012:us-east-1:sg-web|ALLOWS|123456789012:us-east-1:sg-db|\"\\\"tcp\\\":\\\"5432\\\"\"",
+                  "field": "protocol",
+                  "aws_field": "ec2 describe-security-groups: IpPermissions[].IpProtocol",
+                  "value": {
+                    "status": "known",
+                    "value": "tcp"
+                  }
+                },
+                {
+                  "record": "rel:shop/123456789012:us-east-1:sg-web|ALLOWS|123456789012:us-east-1:sg-db|\"\\\"tcp\\\":\\\"5432\\\"\"",
+                  "field": "ports",
+                  "aws_field": "ec2 describe-security-groups: IpPermissions[].FromPort, ToPort",
+                  "value": {
+                    "status": "known",
+                    "value": "5432"
+                  }
+                }
+              ]
+            }
+          ],
+          "unknowns": [],
+          "assumptions": [
+            "Network ACLs, host firewalls and anything outside this AWS account are not read.",
+            "Only one step is followed; use khonsu explore for longer chains.",
+            "Whether the source instance could be made to send this traffic is not assessed."
+          ],
+          "path": {
+            "evidence_id": "path:b8e817cb02495d22",
+            "stable": true,
+            "kind": "path",
+            "assertion": "derived",
+            "derivation": "the rule's candidate path",
+            "rule_id": {
+              "status": "known",
+              "value": "aws.exposure.security-group-lateral"
+            },
+            "claim": "These records connect in the data. This is not proof that anything can reach anything.",
+            "hops": [
+              "Internet -[ALLOWS]-> web",
+              "web <-[PROTECTED_BY]- web-1",
+              "web-1 -[PROTECTED_BY]-> web",
+              "web -[ALLOWS]-> db",
+              "db <-[PROTECTED_BY]- db-1"
+            ],
+            "supporting": [
+              "node:shop/cidr:internet",
+              "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-web|\"\\\"tcp\\\":\\\"443\\\"\"",
+              "node:shop/123456789012:us-east-1:sg-web",
+              "rel:shop/123456789012:us-east-1:i-web1|PROTECTED_BY|123456789012:us-east-1:sg-web",
+              "node:shop/123456789012:us-east-1:i-web1",
+              "rel:shop/123456789012:us-east-1:sg-web|ALLOWS|123456789012:us-east-1:sg-db|\"\\\"tcp\\\":\\\"5432\\\"\"",
+              "node:shop/123456789012:us-east-1:sg-db",
+              "rel:shop/123456789012:us-east-1:i-db1|PROTECTED_BY|123456789012:us-east-1:sg-db",
+              "node:shop/123456789012:us-east-1:i-db1"
+            ],
+            "evidence": [
+              {
+                "evidence_id": "node:shop/cidr:internet",
+                "stable": true,
+                "kind": "node",
+                "internal_id": 25,
+                "types": [
+                  "Cidr"
+                ],
+                "source": {
+                  "status": "known",
+                  "value": "shop"
+                },
+                "source_snapshot": {
+                  "status": "unknown"
+                },
+                "assertion": "explicit",
+                "rule_id": {
+                  "status": "unknown"
+                },
+                "properties": {
+                  "cidr": "0.0.0.0/0",
+                  "name": "Internet"
+                }
+              },
+              {
+                "evidence_id": "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-web|\"\\\"tcp\\\":\\\"443\\\"\"",
+                "stable": true,
+                "kind": "relationship",
+                "internal_id": 41,
+                "types": [
+                  "ALLOWS"
+                ],
+                "from": {
+                  "status": "known",
+                  "value": "node:shop/cidr:internet"
+                },
+                "to": {
+                  "status": "known",
+                  "value": "node:shop/123456789012:us-east-1:sg-web"
+                },
+                "source": {
+                  "status": "known",
+                  "value": "shop"
+                },
+                "source_snapshot": {
+                  "status": "unknown"
+                },
+                "assertion": "explicit",
+                "rule_id": {
+                  "status": "unknown"
+                },
+                "properties": {
+                  "ports": "443",
+                  "protocol": "tcp",
+                  "rule": "\"tcp\":\"443\""
+                }
+              },
+              {
+                "evidence_id": "node:shop/123456789012:us-east-1:sg-web",
+                "stable": true,
+                "kind": "node",
+                "internal_id": 14,
+                "types": [
+                  "SecurityGroup"
+                ],
+                "source": {
+                  "status": "known",
+                  "value": "shop"
+                },
+                "source_snapshot": {
+                  "status": "unknown"
+                },
+                "assertion": "explicit",
+                "rule_id": {
+                  "status": "unknown"
+                },
+                "properties": {
+                  "description": "web tier",
+                  "group_id": "sg-web",
+                  "name": "web"
+                }
+              },
+              {
+                "evidence_id": "rel:shop/123456789012:us-east-1:i-web1|PROTECTED_BY|123456789012:us-east-1:sg-web",
+                "stable": true,
+                "kind": "relationship",
+                "internal_id": 11,
+                "types": [
+                  "PROTECTED_BY"
+                ],
+                "from": {
+                  "status": "known",
+                  "value": "node:shop/123456789012:us-east-1:i-web1"
+                },
+                "to": {
+                  "status": "known",
+                  "value": "node:shop/123456789012:us-east-1:sg-web"
+                },
+                "source": {
+                  "status": "known",
+                  "value": "shop"
+                },
+                "source_snapshot": {
+                  "status": "unknown"
+                },
+                "assertion": "explicit",
+                "rule_id": {
+                  "status": "unknown"
+                },
+                "properties": {}
+              },
+              {
+                "evidence_id": "node:shop/123456789012:us-east-1:i-web1",
+                "stable": true,
+                "kind": "node",
+                "internal_id": 4,
+                "types": [
+                  "Instance"
+                ],
+                "source": {
+                  "status": "known",
+                  "value": "shop"
+                },
+                "source_snapshot": {
+                  "status": "unknown"
+                },
+                "assertion": "explicit",
+                "rule_id": {
+                  "status": "unknown"
+                },
+                "properties": {
+                  "image_id": "ami-web",
+                  "instance_id": "i-web1",
+                  "launched_at": "2026-09-01T08:00:00+00:00",
+                  "name": "web-1",
+                  "private_ip": "10.0.1.10",
+                  "public_ip": "198.51.100.10",
+                  "state": "running",
+                  "type": "t3.small"
+                }
+              },
+              {
+                "evidence_id": "rel:shop/123456789012:us-east-1:sg-web|ALLOWS|123456789012:us-east-1:sg-db|\"\\\"tcp\\\":\\\"5432\\\"\"",
+                "stable": true,
+                "kind": "relationship",
+                "internal_id": 23,
+                "types": [
+                  "ALLOWS"
+                ],
+                "from": {
+                  "status": "known",
+                  "value": "node:shop/123456789012:us-east-1:sg-web"
+                },
+                "to": {
+                  "status": "known",
+                  "value": "node:shop/123456789012:us-east-1:sg-db"
+                },
+                "source": {
+                  "status": "known",
+                  "value": "shop"
+                },
+                "source_snapshot": {
+                  "status": "unknown"
+                },
+                "assertion": "explicit",
+                "rule_id": {
+                  "status": "unknown"
+                },
+                "properties": {
+                  "ports": "5432",
+                  "protocol": "tcp",
+                  "rule": "\"tcp\":\"5432\""
+                }
+              },
+              {
+                "evidence_id": "node:shop/123456789012:us-east-1:sg-db",
+                "stable": true,
+                "kind": "node",
+                "internal_id": 11,
+                "types": [
+                  "SecurityGroup"
+                ],
+                "source": {
+                  "status": "known",
+                  "value": "shop"
+                },
+                "source_snapshot": {
+                  "status": "unknown"
+                },
+                "assertion": "explicit",
+                "rule_id": {
+                  "status": "unknown"
+                },
+                "properties": {
+                  "description": "database",
+                  "group_id": "sg-db",
+                  "name": "db"
+                }
+              },
+              {
+                "evidence_id": "rel:shop/123456789012:us-east-1:i-db1|PROTECTED_BY|123456789012:us-east-1:sg-db",
+                "stable": true,
+                "kind": "relationship",
+                "internal_id": 6,
+                "types": [
+                  "PROTECTED_BY"
+                ],
+                "from": {
+                  "status": "known",
+                  "value": "node:shop/123456789012:us-east-1:i-db1"
+                },
+                "to": {
+                  "status": "known",
+                  "value": "node:shop/123456789012:us-east-1:sg-db"
+                },
+                "source": {
+                  "status": "known",
+                  "value": "shop"
+                },
+                "source_snapshot": {
+                  "status": "unknown"
+                },
+                "assertion": "explicit",
+                "rule_id": {
+                  "status": "unknown"
+                },
+                "properties": {}
+              },
+              {
+                "evidence_id": "node:shop/123456789012:us-east-1:i-db1",
+                "stable": true,
+                "kind": "node",
+                "internal_id": 2,
+                "types": [
+                  "Instance"
+                ],
+                "source": {
+                  "status": "known",
+                  "value": "shop"
+                },
+                "source_snapshot": {
+                  "status": "unknown"
+                },
+                "assertion": "explicit",
+                "rule_id": {
+                  "status": "unknown"
+                },
+                "properties": {
+                  "image_id": "ami-db",
+                  "instance_id": "i-db1",
+                  "launched_at": "2026-09-01T08:00:00+00:00",
+                  "name": "db-1",
+                  "private_ip": "10.0.2.20",
+                  "state": "running",
+                  "type": "r6g.large"
+                }
+              }
+            ]
+          },
+          "walk": {
+            "from": "shop/cidr:internet",
+            "to": "shop/123456789012:us-east-1:i-db1",
+            "direction": "both",
+            "types": [
+              "ALLOWS",
+              "PROTECTED_BY"
+            ],
+            "max_hops": 5
+          },
+          "depends_on": "finding:f2dfac00f69ee196",
+          "contributing": [
+            "node:shop/cidr:internet",
+            "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-web|\"\\\"tcp\\\":\\\"443\\\"\"",
+            "node:shop/123456789012:us-east-1:sg-web",
+            "rel:shop/123456789012:us-east-1:i-web1|PROTECTED_BY|123456789012:us-east-1:sg-web",
+            "node:shop/123456789012:us-east-1:i-web1",
+            "rel:shop/123456789012:us-east-1:sg-web|ALLOWS|123456789012:us-east-1:sg-db|\"\\\"tcp\\\":\\\"5432\\\"\"",
+            "node:shop/123456789012:us-east-1:sg-db",
+            "rel:shop/123456789012:us-east-1:i-db1|PROTECTED_BY|123456789012:us-east-1:sg-db",
+            "node:shop/123456789012:us-east-1:i-db1"
+          ],
+          "evidence": [
+            {
+              "evidence_id": "node:shop/cidr:internet",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 25,
+              "types": [
+                "Cidr"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "cidr": "0.0.0.0/0",
+                "name": "Internet"
+              }
+            },
+            {
+              "evidence_id": "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-web|\"\\\"tcp\\\":\\\"443\\\"\"",
+              "stable": true,
+              "kind": "relationship",
+              "internal_id": 41,
+              "types": [
+                "ALLOWS"
+              ],
+              "from": {
+                "status": "known",
+                "value": "node:shop/cidr:internet"
+              },
+              "to": {
+                "status": "known",
+                "value": "node:shop/123456789012:us-east-1:sg-web"
+              },
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "ports": "443",
+                "protocol": "tcp",
+                "rule": "\"tcp\":\"443\""
+              }
+            },
+            {
+              "evidence_id": "node:shop/123456789012:us-east-1:sg-web",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 14,
+              "types": [
+                "SecurityGroup"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "description": "web tier",
+                "group_id": "sg-web",
+                "name": "web"
+              }
+            },
+            {
+              "evidence_id": "rel:shop/123456789012:us-east-1:i-web1|PROTECTED_BY|123456789012:us-east-1:sg-web",
+              "stable": true,
+              "kind": "relationship",
+              "internal_id": 11,
+              "types": [
+                "PROTECTED_BY"
+              ],
+              "from": {
+                "status": "known",
+                "value": "node:shop/123456789012:us-east-1:i-web1"
+              },
+              "to": {
+                "status": "known",
+                "value": "node:shop/123456789012:us-east-1:sg-web"
+              },
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {}
+            },
+            {
+              "evidence_id": "node:shop/123456789012:us-east-1:i-web1",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 4,
+              "types": [
+                "Instance"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "image_id": "ami-web",
+                "instance_id": "i-web1",
+                "launched_at": "2026-09-01T08:00:00+00:00",
+                "name": "web-1",
+                "private_ip": "10.0.1.10",
+                "public_ip": "198.51.100.10",
+                "state": "running",
+                "type": "t3.small"
+              }
+            },
+            {
+              "evidence_id": "rel:shop/123456789012:us-east-1:sg-web|ALLOWS|123456789012:us-east-1:sg-db|\"\\\"tcp\\\":\\\"5432\\\"\"",
+              "stable": true,
+              "kind": "relationship",
+              "internal_id": 23,
+              "types": [
+                "ALLOWS"
+              ],
+              "from": {
+                "status": "known",
+                "value": "node:shop/123456789012:us-east-1:sg-web"
+              },
+              "to": {
+                "status": "known",
+                "value": "node:shop/123456789012:us-east-1:sg-db"
+              },
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "ports": "5432",
+                "protocol": "tcp",
+                "rule": "\"tcp\":\"5432\""
+              }
+            },
+            {
+              "evidence_id": "node:shop/123456789012:us-east-1:sg-db",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 11,
+              "types": [
+                "SecurityGroup"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "description": "database",
+                "group_id": "sg-db",
+                "name": "db"
+              }
+            },
+            {
+              "evidence_id": "rel:shop/123456789012:us-east-1:i-db1|PROTECTED_BY|123456789012:us-east-1:sg-db",
+              "stable": true,
+              "kind": "relationship",
+              "internal_id": 6,
+              "types": [
+                "PROTECTED_BY"
+              ],
+              "from": {
+                "status": "known",
+                "value": "node:shop/123456789012:us-east-1:i-db1"
+              },
+              "to": {
+                "status": "known",
+                "value": "node:shop/123456789012:us-east-1:sg-db"
+              },
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {}
+            },
+            {
+              "evidence_id": "node:shop/123456789012:us-east-1:i-db1",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 2,
+              "types": [
+                "Instance"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "image_id": "ami-db",
+                "instance_id": "i-db1",
+                "launched_at": "2026-09-01T08:00:00+00:00",
+                "name": "db-1",
+                "private_ip": "10.0.2.20",
+                "state": "running",
+                "type": "r6g.large"
+              }
+            }
+          ]
+        },
+        {
+          "finding_id": "finding:a866b83abf26af97",
+          "rule_id": "aws.exposure.direct-instance",
+          "verdict": "insufficient_data",
+          "resource": "node:shop/123456789012:us-east-1:i-legacy1",
+          "resource_name": "legacy-1",
+          "conditions": [
+            {
+              "id": "instance-running",
+              "statement": "The instance is running.",
+              "status": "met",
+              "detail": "The instance is running.",
+              "fields": [
+                {
+                  "record": "node:shop/123456789012:us-east-1:i-legacy1",
+                  "field": "state",
+                  "aws_field": "ec2 describe-instances: State.Name",
+                  "value": {
+                    "status": "known",
+                    "value": "running"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "public-address",
+              "statement": "The instance has a public address.",
+              "status": "met",
+              "detail": "Public address 198.51.100.77.",
+              "fields": [
+                {
+                  "record": "node:shop/123456789012:us-east-1:i-legacy1",
+                  "field": "public_ip",
+                  "aws_field": "ec2 describe-instances: PublicIpAddress",
+                  "value": {
+                    "status": "known",
+                    "value": "198.51.100.77"
+                  }
+                },
+                {
+                  "record": "node:shop/123456789012:us-east-1:i-legacy1",
+                  "field": "ipv6_address",
+                  "aws_field": "ec2 describe-instances: Ipv6Address",
+                  "value": {
+                    "status": "unknown"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "open-inbound-rule",
+              "statement": "The instance has a security group rule open to the internet.",
+              "status": "met",
+              "detail": "Open to the internet on tcp 80.",
+              "fields": [
+                {
+                  "record": "rel:shop/123456789012:us-east-1:i-legacy1|PROTECTED_BY|123456789012:us-east-1:sg-legacy",
+                  "field": "PROTECTED_BY",
+                  "aws_field": "ec2 describe-instances: SecurityGroups[].GroupId",
+                  "value": {
+                    "status": "known",
+                    "value": "node:shop/123456789012:us-east-1:sg-legacy"
+                  }
+                },
+                {
+                  "record": "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-legacy|\"\\\"tcp\\\":\\\"80\\\"\"",
+                  "field": "protocol",
+                  "aws_field": "ec2 describe-security-groups: IpPermissions[].IpProtocol",
+                  "value": {
+                    "status": "known",
+                    "value": "tcp"
+                  }
+                },
+                {
+                  "record": "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-legacy|\"\\\"tcp\\\":\\\"80\\\"\"",
+                  "field": "ports",
+                  "aws_field": "ec2 describe-security-groups: IpPermissions[].FromPort, ToPort",
+                  "value": {
+                    "status": "known",
+                    "value": "80"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "internet-route",
+              "statement": "The instance's subnet has an active default route to an internet gateway.",
+              "status": "unknown",
+              "detail": "No route table is recorded for the subnet or as its VPC's main table, so its routes could not be read.",
+              "fields": []
+            }
+          ],
+          "unknowns": [
+            "The instance's subnet has an active default route to an internet gateway."
+          ],
+          "assumptions": [
+            "Network ACLs, host firewalls and anything outside this AWS account are not read.",
+            "0.0.0.0/0 and ::/0 are one Internet record, so a rule's address family is not compared with the instance's address.",
+            "Whether anything listens on the allowed ports is not read."
+          ],
+          "path": {
+            "evidence_id": "path:2bdb0f342ca09503",
+            "stable": true,
+            "kind": "path",
+            "assertion": "derived",
+            "derivation": "the rule's candidate path",
+            "rule_id": {
+              "status": "known",
+              "value": "aws.exposure.direct-instance"
+            },
+            "claim": "These records connect in the data. This is not proof that anything can reach anything.",
+            "hops": [
+              "Internet -[ALLOWS]-> legacy",
+              "legacy <-[PROTECTED_BY]- legacy-1"
+            ],
+            "supporting": [
+              "node:shop/cidr:internet",
+              "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-legacy|\"\\\"tcp\\\":\\\"80\\\"\"",
+              "node:shop/123456789012:us-east-1:sg-legacy",
+              "rel:shop/123456789012:us-east-1:i-legacy1|PROTECTED_BY|123456789012:us-east-1:sg-legacy",
+              "node:shop/123456789012:us-east-1:i-legacy1"
+            ],
+            "evidence": [
+              {
+                "evidence_id": "node:shop/cidr:internet",
+                "stable": true,
+                "kind": "node",
+                "internal_id": 25,
+                "types": [
+                  "Cidr"
+                ],
+                "source": {
+                  "status": "known",
+                  "value": "shop"
+                },
+                "source_snapshot": {
+                  "status": "unknown"
+                },
+                "assertion": "explicit",
+                "rule_id": {
+                  "status": "unknown"
+                },
+                "properties": {
+                  "cidr": "0.0.0.0/0",
+                  "name": "Internet"
+                }
+              },
+              {
+                "evidence_id": "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-legacy|\"\\\"tcp\\\":\\\"80\\\"\"",
+                "stable": true,
+                "kind": "relationship",
+                "internal_id": 40,
+                "types": [
+                  "ALLOWS"
+                ],
+                "from": {
+                  "status": "known",
+                  "value": "node:shop/cidr:internet"
+                },
+                "to": {
+                  "status": "known",
+                  "value": "node:shop/123456789012:us-east-1:sg-legacy"
+                },
+                "source": {
+                  "status": "known",
+                  "value": "shop"
+                },
+                "source_snapshot": {
+                  "status": "unknown"
+                },
+                "assertion": "explicit",
+                "rule_id": {
+                  "status": "unknown"
+                },
+                "properties": {
+                  "ports": "80",
+                  "protocol": "tcp",
+                  "rule": "\"tcp\":\"80\""
+                }
+              },
+              {
+                "evidence_id": "node:shop/123456789012:us-east-1:sg-legacy",
+                "stable": true,
+                "kind": "node",
+                "internal_id": 13,
+                "types": [
+                  "SecurityGroup"
+                ],
+                "source": {
+                  "status": "known",
+                  "value": "shop"
+                },
+                "source_snapshot": {
+                  "status": "unknown"
+                },
+                "assertion": "explicit",
+                "rule_id": {
+                  "status": "unknown"
+                },
+                "properties": {
+                  "description": "old account",
+                  "group_id": "sg-legacy",
+                  "name": "legacy"
+                }
+              },
+              {
+                "evidence_id": "rel:shop/123456789012:us-east-1:i-legacy1|PROTECTED_BY|123456789012:us-east-1:sg-legacy",
+                "stable": true,
+                "kind": "relationship",
+                "internal_id": 8,
+                "types": [
+                  "PROTECTED_BY"
+                ],
+                "from": {
+                  "status": "known",
+                  "value": "node:shop/123456789012:us-east-1:i-legacy1"
+                },
+                "to": {
+                  "status": "known",
+                  "value": "node:shop/123456789012:us-east-1:sg-legacy"
+                },
+                "source": {
+                  "status": "known",
+                  "value": "shop"
+                },
+                "source_snapshot": {
+                  "status": "unknown"
+                },
+                "assertion": "explicit",
+                "rule_id": {
+                  "status": "unknown"
+                },
+                "properties": {}
+              },
+              {
+                "evidence_id": "node:shop/123456789012:us-east-1:i-legacy1",
+                "stable": true,
+                "kind": "node",
+                "internal_id": 3,
+                "types": [
+                  "Instance"
+                ],
+                "source": {
+                  "status": "known",
+                  "value": "shop"
+                },
+                "source_snapshot": {
+                  "status": "unknown"
+                },
+                "assertion": "explicit",
+                "rule_id": {
+                  "status": "unknown"
+                },
+                "properties": {
+                  "image_id": "ami-old",
+                  "instance_id": "i-legacy1",
+                  "launched_at": "2023-03-01T08:00:00+00:00",
+                  "name": "legacy-1",
+                  "private_ip": "10.9.1.5",
+                  "public_ip": "198.51.100.77",
+                  "state": "running",
+                  "type": "t2.micro"
+                }
+              }
+            ]
+          },
+          "walk": {
+            "from": "shop/cidr:internet",
+            "to": "shop/123456789012:us-east-1:i-legacy1",
+            "direction": "both",
+            "types": [
+              "ALLOWS",
+              "PROTECTED_BY"
+            ],
+            "max_hops": 2
+          },
+          "contributing": [
+            "node:shop/cidr:internet",
+            "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-legacy|\"\\\"tcp\\\":\\\"80\\\"\"",
+            "node:shop/123456789012:us-east-1:sg-legacy",
+            "rel:shop/123456789012:us-east-1:i-legacy1|PROTECTED_BY|123456789012:us-east-1:sg-legacy",
+            "node:shop/123456789012:us-east-1:i-legacy1",
+            "node:shop/arn:aws:ec2:us-east-1:123456789012:subnet/subnet-legacy"
+          ],
+          "evidence": [
+            {
+              "evidence_id": "node:shop/cidr:internet",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 25,
+              "types": [
+                "Cidr"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "cidr": "0.0.0.0/0",
+                "name": "Internet"
+              }
+            },
+            {
+              "evidence_id": "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-legacy|\"\\\"tcp\\\":\\\"80\\\"\"",
+              "stable": true,
+              "kind": "relationship",
+              "internal_id": 40,
+              "types": [
+                "ALLOWS"
+              ],
+              "from": {
+                "status": "known",
+                "value": "node:shop/cidr:internet"
+              },
+              "to": {
+                "status": "known",
+                "value": "node:shop/123456789012:us-east-1:sg-legacy"
+              },
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "ports": "80",
+                "protocol": "tcp",
+                "rule": "\"tcp\":\"80\""
+              }
+            },
+            {
+              "evidence_id": "node:shop/123456789012:us-east-1:sg-legacy",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 13,
+              "types": [
+                "SecurityGroup"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "description": "old account",
+                "group_id": "sg-legacy",
+                "name": "legacy"
+              }
+            },
+            {
+              "evidence_id": "rel:shop/123456789012:us-east-1:i-legacy1|PROTECTED_BY|123456789012:us-east-1:sg-legacy",
+              "stable": true,
+              "kind": "relationship",
+              "internal_id": 8,
+              "types": [
+                "PROTECTED_BY"
+              ],
+              "from": {
+                "status": "known",
+                "value": "node:shop/123456789012:us-east-1:i-legacy1"
+              },
+              "to": {
+                "status": "known",
+                "value": "node:shop/123456789012:us-east-1:sg-legacy"
+              },
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {}
+            },
+            {
+              "evidence_id": "node:shop/123456789012:us-east-1:i-legacy1",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 3,
+              "types": [
+                "Instance"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "image_id": "ami-old",
+                "instance_id": "i-legacy1",
+                "launched_at": "2023-03-01T08:00:00+00:00",
+                "name": "legacy-1",
+                "private_ip": "10.9.1.5",
+                "public_ip": "198.51.100.77",
+                "state": "running",
+                "type": "t2.micro"
+              }
+            },
+            {
+              "evidence_id": "node:shop/arn:aws:ec2:us-east-1:123456789012:subnet/subnet-legacy",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 18,
+              "types": [
+                "Subnet"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "availability_zone": "us-east-1a",
+                "cidr": "10.9.1.0/24",
+                "name": "legacy-a",
+                "public_ip_on_launch": true,
+                "subnet_id": "subnet-legacy"
+              }
+            }
+          ]
+        },
+        {
+          "finding_id": "finding:abb703787e9dce7d",
+          "rule_id": "aws.exposure.direct-instance",
+          "verdict": "not_indicated",
+          "resource": "node:shop/123456789012:us-east-1:i-app1",
+          "resource_name": "app-1",
+          "conditions": [
+            {
+              "id": "instance-running",
+              "statement": "The instance is running.",
+              "status": "met",
+              "detail": "The instance is running.",
+              "fields": [
+                {
+                  "record": "node:shop/123456789012:us-east-1:i-app1",
+                  "field": "state",
+                  "aws_field": "ec2 describe-instances: State.Name",
+                  "value": {
+                    "status": "known",
+                    "value": "running"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "public-address",
+              "statement": "The instance has a public address.",
+              "status": "not_met",
+              "detail": "AWS reported no public IPv4 or IPv6 address.",
+              "fields": [
+                {
+                  "record": "node:shop/123456789012:us-east-1:i-app1",
+                  "field": "public_ip",
+                  "aws_field": "ec2 describe-instances: PublicIpAddress",
+                  "value": {
+                    "status": "unknown"
+                  }
+                },
+                {
+                  "record": "node:shop/123456789012:us-east-1:i-app1",
+                  "field": "ipv6_address",
+                  "aws_field": "ec2 describe-instances: Ipv6Address",
+                  "value": {
+                    "status": "unknown"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "open-inbound-rule",
+              "statement": "The instance has a security group rule open to the internet.",
+              "status": "not_met",
+              "detail": "None of its security groups has a rule from 0.0.0.0/0 or ::/0.",
+              "fields": [
+                {
+                  "record": "rel:shop/123456789012:us-east-1:i-app1|PROTECTED_BY|123456789012:us-east-1:sg-app",
+                  "field": "PROTECTED_BY",
+                  "aws_field": "ec2 describe-instances: SecurityGroups[].GroupId",
+                  "value": {
+                    "status": "known",
+                    "value": "node:shop/123456789012:us-east-1:sg-app"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "internet-route",
+              "statement": "The instance's subnet has an active default route to an internet gateway.",
+              "status": "not_met",
+              "detail": "Route table main has no active default route to an internet gateway.",
+              "fields": [
+                {
+                  "record": "node:shop/123456789012:us-east-1:rtb-main",
+                  "field": "ipv4_default_target",
+                  "aws_field": "ec2 describe-route-tables: Routes[DestinationCidrBlock=0.0.0.0/0]",
+                  "value": {
+                    "status": "known",
+                    "value": "nat-shop"
+                  }
+                },
+                {
+                  "record": "node:shop/123456789012:us-east-1:rtb-main",
+                  "field": "ipv6_default_target",
+                  "aws_field": "ec2 describe-route-tables: Routes[DestinationIpv6CidrBlock=::/0]",
+                  "value": {
+                    "status": "unknown"
+                  }
+                }
+              ]
+            }
+          ],
+          "unknowns": [],
+          "assumptions": [
+            "Network ACLs, host firewalls and anything outside this AWS account are not read.",
+            "0.0.0.0/0 and ::/0 are one Internet record, so a rule's address family is not compared with the instance's address.",
+            "Whether anything listens on the allowed ports is not read."
+          ],
+          "path": null,
+          "walk": null,
+          "contributing": [
+            "node:shop/123456789012:us-east-1:i-app1",
+            "node:shop/123456789012:us-east-1:rtb-main",
+            "node:shop/arn:aws:ec2:us-east-1:123456789012:subnet/subnet-private",
+            "rel:shop/123456789012:us-east-1:i-app1|PROTECTED_BY|123456789012:us-east-1:sg-app"
+          ],
+          "evidence": [
+            {
+              "evidence_id": "node:shop/123456789012:us-east-1:i-app1",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 0,
+              "types": [
+                "Instance"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "image_id": "ami-app",
+                "instance_id": "i-app1",
+                "launched_at": "2026-09-01T08:00:00+00:00",
+                "name": "app-1",
+                "private_ip": "10.0.2.30",
+                "state": "running",
+                "type": "t3.small"
+              }
+            },
+            {
+              "evidence_id": "node:shop/123456789012:us-east-1:rtb-main",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 7,
+              "types": [
+                "RouteTable"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "ipv4_default_target": "nat-shop",
+                "is_main": true,
+                "name": "main",
+                "route_table_id": "rtb-main"
+              }
+            },
+            {
+              "evidence_id": "node:shop/arn:aws:ec2:us-east-1:123456789012:subnet/subnet-private",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 19,
+              "types": [
+                "Subnet"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "availability_zone": "us-east-1a",
+                "cidr": "10.0.2.0/24",
+                "name": "private-a",
+                "public_ip_on_launch": false,
+                "subnet_id": "subnet-private"
+              }
+            },
+            {
+              "evidence_id": "rel:shop/123456789012:us-east-1:i-app1|PROTECTED_BY|123456789012:us-east-1:sg-app",
+              "stable": true,
+              "kind": "relationship",
+              "internal_id": 1,
+              "types": [
+                "PROTECTED_BY"
+              ],
+              "from": {
+                "status": "known",
+                "value": "node:shop/123456789012:us-east-1:i-app1"
+              },
+              "to": {
+                "status": "known",
+                "value": "node:shop/123456789012:us-east-1:sg-app"
+              },
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {}
+            }
+          ]
+        },
+        {
+          "finding_id": "finding:df1e8c7264295bb4",
+          "rule_id": "aws.exposure.direct-instance",
+          "verdict": "not_indicated",
+          "resource": "node:shop/123456789012:us-east-1:i-batch1",
+          "resource_name": "batch-1",
+          "conditions": [
+            {
+              "id": "instance-running",
+              "statement": "The instance is running.",
+              "status": "met",
+              "detail": "The instance is running.",
+              "fields": [
+                {
+                  "record": "node:shop/123456789012:us-east-1:i-batch1",
+                  "field": "state",
+                  "aws_field": "ec2 describe-instances: State.Name",
+                  "value": {
+                    "status": "known",
+                    "value": "running"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "public-address",
+              "statement": "The instance has a public address.",
+              "status": "not_met",
+              "detail": "AWS reported no public IPv4 or IPv6 address.",
+              "fields": [
+                {
+                  "record": "node:shop/123456789012:us-east-1:i-batch1",
+                  "field": "public_ip",
+                  "aws_field": "ec2 describe-instances: PublicIpAddress",
+                  "value": {
+                    "status": "unknown"
+                  }
+                },
+                {
+                  "record": "node:shop/123456789012:us-east-1:i-batch1",
+                  "field": "ipv6_address",
+                  "aws_field": "ec2 describe-instances: Ipv6Address",
+                  "value": {
+                    "status": "unknown"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "open-inbound-rule",
+              "statement": "The instance has a security group rule open to the internet.",
+              "status": "met",
+              "detail": "Open to the internet on tcp 22.",
+              "fields": [
+                {
+                  "record": "rel:shop/123456789012:us-east-1:i-batch1|PROTECTED_BY|123456789012:us-east-1:sg-batch",
+                  "field": "PROTECTED_BY",
+                  "aws_field": "ec2 describe-instances: SecurityGroups[].GroupId",
+                  "value": {
+                    "status": "known",
+                    "value": "node:shop/123456789012:us-east-1:sg-batch"
+                  }
+                },
+                {
+                  "record": "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-batch|\"\\\"tcp\\\":\\\"22\\\"\"",
+                  "field": "protocol",
+                  "aws_field": "ec2 describe-security-groups: IpPermissions[].IpProtocol",
+                  "value": {
+                    "status": "known",
+                    "value": "tcp"
+                  }
+                },
+                {
+                  "record": "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-batch|\"\\\"tcp\\\":\\\"22\\\"\"",
+                  "field": "ports",
+                  "aws_field": "ec2 describe-security-groups: IpPermissions[].FromPort, ToPort",
+                  "value": {
+                    "status": "known",
+                    "value": "22"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "internet-route",
+              "statement": "The instance's subnet has an active default route to an internet gateway.",
+              "status": "not_met",
+              "detail": "Route table main has no active default route to an internet gateway.",
+              "fields": [
+                {
+                  "record": "node:shop/123456789012:us-east-1:rtb-main",
+                  "field": "ipv4_default_target",
+                  "aws_field": "ec2 describe-route-tables: Routes[DestinationCidrBlock=0.0.0.0/0]",
+                  "value": {
+                    "status": "known",
+                    "value": "nat-shop"
+                  }
+                },
+                {
+                  "record": "node:shop/123456789012:us-east-1:rtb-main",
+                  "field": "ipv6_default_target",
+                  "aws_field": "ec2 describe-route-tables: Routes[DestinationIpv6CidrBlock=::/0]",
+                  "value": {
+                    "status": "unknown"
+                  }
+                }
+              ]
+            }
+          ],
+          "unknowns": [],
+          "assumptions": [
+            "Network ACLs, host firewalls and anything outside this AWS account are not read.",
+            "0.0.0.0/0 and ::/0 are one Internet record, so a rule's address family is not compared with the instance's address.",
+            "Whether anything listens on the allowed ports is not read."
+          ],
+          "path": {
+            "evidence_id": "path:cc501cb09671c83c",
+            "stable": true,
+            "kind": "path",
+            "assertion": "derived",
+            "derivation": "the rule's candidate path",
+            "rule_id": {
+              "status": "known",
+              "value": "aws.exposure.direct-instance"
+            },
+            "claim": "These records connect in the data. This is not proof that anything can reach anything.",
+            "hops": [
+              "Internet -[ALLOWS]-> batch",
+              "batch <-[PROTECTED_BY]- batch-1"
+            ],
+            "supporting": [
+              "node:shop/cidr:internet",
+              "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-batch|\"\\\"tcp\\\":\\\"22\\\"\"",
+              "node:shop/123456789012:us-east-1:sg-batch",
+              "rel:shop/123456789012:us-east-1:i-batch1|PROTECTED_BY|123456789012:us-east-1:sg-batch",
+              "node:shop/123456789012:us-east-1:i-batch1"
+            ],
+            "evidence": [
+              {
+                "evidence_id": "node:shop/cidr:internet",
+                "stable": true,
+                "kind": "node",
+                "internal_id": 25,
+                "types": [
+                  "Cidr"
+                ],
+                "source": {
+                  "status": "known",
+                  "value": "shop"
+                },
+                "source_snapshot": {
+                  "status": "unknown"
+                },
+                "assertion": "explicit",
+                "rule_id": {
+                  "status": "unknown"
+                },
+                "properties": {
+                  "cidr": "0.0.0.0/0",
+                  "name": "Internet"
+                }
+              },
+              {
+                "evidence_id": "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-batch|\"\\\"tcp\\\":\\\"22\\\"\"",
+                "stable": true,
+                "kind": "relationship",
+                "internal_id": 38,
+                "types": [
+                  "ALLOWS"
+                ],
+                "from": {
+                  "status": "known",
+                  "value": "node:shop/cidr:internet"
+                },
+                "to": {
+                  "status": "known",
+                  "value": "node:shop/123456789012:us-east-1:sg-batch"
+                },
+                "source": {
+                  "status": "known",
+                  "value": "shop"
+                },
+                "source_snapshot": {
+                  "status": "unknown"
+                },
+                "assertion": "explicit",
+                "rule_id": {
+                  "status": "unknown"
+                },
+                "properties": {
+                  "ports": "22",
+                  "protocol": "tcp",
+                  "rule": "\"tcp\":\"22\""
+                }
+              },
+              {
+                "evidence_id": "node:shop/123456789012:us-east-1:sg-batch",
+                "stable": true,
+                "kind": "node",
+                "internal_id": 10,
+                "types": [
+                  "SecurityGroup"
+                ],
+                "source": {
+                  "status": "known",
+                  "value": "shop"
+                },
+                "source_snapshot": {
+                  "status": "unknown"
+                },
+                "assertion": "explicit",
+                "rule_id": {
+                  "status": "unknown"
+                },
+                "properties": {
+                  "description": "opened by mistake",
+                  "group_id": "sg-batch",
+                  "name": "batch"
+                }
+              },
+              {
+                "evidence_id": "rel:shop/123456789012:us-east-1:i-batch1|PROTECTED_BY|123456789012:us-east-1:sg-batch",
+                "stable": true,
+                "kind": "relationship",
+                "internal_id": 3,
+                "types": [
+                  "PROTECTED_BY"
+                ],
+                "from": {
+                  "status": "known",
+                  "value": "node:shop/123456789012:us-east-1:i-batch1"
+                },
+                "to": {
+                  "status": "known",
+                  "value": "node:shop/123456789012:us-east-1:sg-batch"
+                },
+                "source": {
+                  "status": "known",
+                  "value": "shop"
+                },
+                "source_snapshot": {
+                  "status": "unknown"
+                },
+                "assertion": "explicit",
+                "rule_id": {
+                  "status": "unknown"
+                },
+                "properties": {}
+              },
+              {
+                "evidence_id": "node:shop/123456789012:us-east-1:i-batch1",
+                "stable": true,
+                "kind": "node",
+                "internal_id": 1,
+                "types": [
+                  "Instance"
+                ],
+                "source": {
+                  "status": "known",
+                  "value": "shop"
+                },
+                "source_snapshot": {
+                  "status": "unknown"
+                },
+                "assertion": "explicit",
+                "rule_id": {
+                  "status": "unknown"
+                },
+                "properties": {
+                  "image_id": "ami-batch",
+                  "instance_id": "i-batch1",
+                  "launched_at": "2026-09-01T08:00:00+00:00",
+                  "name": "batch-1",
+                  "private_ip": "10.0.2.40",
+                  "state": "running",
+                  "type": "t3.small"
+                }
+              }
+            ]
+          },
+          "walk": {
+            "from": "shop/cidr:internet",
+            "to": "shop/123456789012:us-east-1:i-batch1",
+            "direction": "both",
+            "types": [
+              "ALLOWS",
+              "PROTECTED_BY"
+            ],
+            "max_hops": 2
+          },
+          "contributing": [
+            "node:shop/cidr:internet",
+            "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-batch|\"\\\"tcp\\\":\\\"22\\\"\"",
+            "node:shop/123456789012:us-east-1:sg-batch",
+            "rel:shop/123456789012:us-east-1:i-batch1|PROTECTED_BY|123456789012:us-east-1:sg-batch",
+            "node:shop/123456789012:us-east-1:i-batch1",
+            "node:shop/123456789012:us-east-1:rtb-main",
+            "node:shop/arn:aws:ec2:us-east-1:123456789012:subnet/subnet-private"
+          ],
+          "evidence": [
+            {
+              "evidence_id": "node:shop/cidr:internet",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 25,
+              "types": [
+                "Cidr"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "cidr": "0.0.0.0/0",
+                "name": "Internet"
+              }
+            },
+            {
+              "evidence_id": "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-batch|\"\\\"tcp\\\":\\\"22\\\"\"",
+              "stable": true,
+              "kind": "relationship",
+              "internal_id": 38,
+              "types": [
+                "ALLOWS"
+              ],
+              "from": {
+                "status": "known",
+                "value": "node:shop/cidr:internet"
+              },
+              "to": {
+                "status": "known",
+                "value": "node:shop/123456789012:us-east-1:sg-batch"
+              },
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "ports": "22",
+                "protocol": "tcp",
+                "rule": "\"tcp\":\"22\""
+              }
+            },
+            {
+              "evidence_id": "node:shop/123456789012:us-east-1:sg-batch",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 10,
+              "types": [
+                "SecurityGroup"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "description": "opened by mistake",
+                "group_id": "sg-batch",
+                "name": "batch"
+              }
+            },
+            {
+              "evidence_id": "rel:shop/123456789012:us-east-1:i-batch1|PROTECTED_BY|123456789012:us-east-1:sg-batch",
+              "stable": true,
+              "kind": "relationship",
+              "internal_id": 3,
+              "types": [
+                "PROTECTED_BY"
+              ],
+              "from": {
+                "status": "known",
+                "value": "node:shop/123456789012:us-east-1:i-batch1"
+              },
+              "to": {
+                "status": "known",
+                "value": "node:shop/123456789012:us-east-1:sg-batch"
+              },
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {}
+            },
+            {
+              "evidence_id": "node:shop/123456789012:us-east-1:i-batch1",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 1,
+              "types": [
+                "Instance"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "image_id": "ami-batch",
+                "instance_id": "i-batch1",
+                "launched_at": "2026-09-01T08:00:00+00:00",
+                "name": "batch-1",
+                "private_ip": "10.0.2.40",
+                "state": "running",
+                "type": "t3.small"
+              }
+            },
+            {
+              "evidence_id": "node:shop/123456789012:us-east-1:rtb-main",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 7,
+              "types": [
+                "RouteTable"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "ipv4_default_target": "nat-shop",
+                "is_main": true,
+                "name": "main",
+                "route_table_id": "rtb-main"
+              }
+            },
+            {
+              "evidence_id": "node:shop/arn:aws:ec2:us-east-1:123456789012:subnet/subnet-private",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 19,
+              "types": [
+                "Subnet"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "availability_zone": "us-east-1a",
+                "cidr": "10.0.2.0/24",
+                "name": "private-a",
+                "public_ip_on_launch": false,
+                "subnet_id": "subnet-private"
+              }
+            }
+          ]
+        },
+        {
+          "finding_id": "finding:d0d126dda67e15e4",
+          "rule_id": "aws.exposure.direct-instance",
+          "verdict": "not_indicated",
+          "resource": "node:shop/123456789012:us-east-1:i-db1",
+          "resource_name": "db-1",
+          "conditions": [
+            {
+              "id": "instance-running",
+              "statement": "The instance is running.",
+              "status": "met",
+              "detail": "The instance is running.",
+              "fields": [
+                {
+                  "record": "node:shop/123456789012:us-east-1:i-db1",
+                  "field": "state",
+                  "aws_field": "ec2 describe-instances: State.Name",
+                  "value": {
+                    "status": "known",
+                    "value": "running"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "public-address",
+              "statement": "The instance has a public address.",
+              "status": "not_met",
+              "detail": "AWS reported no public IPv4 or IPv6 address.",
+              "fields": [
+                {
+                  "record": "node:shop/123456789012:us-east-1:i-db1",
+                  "field": "public_ip",
+                  "aws_field": "ec2 describe-instances: PublicIpAddress",
+                  "value": {
+                    "status": "unknown"
+                  }
+                },
+                {
+                  "record": "node:shop/123456789012:us-east-1:i-db1",
+                  "field": "ipv6_address",
+                  "aws_field": "ec2 describe-instances: Ipv6Address",
+                  "value": {
+                    "status": "unknown"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "open-inbound-rule",
+              "statement": "The instance has a security group rule open to the internet.",
+              "status": "not_met",
+              "detail": "None of its security groups has a rule from 0.0.0.0/0 or ::/0.",
+              "fields": [
+                {
+                  "record": "rel:shop/123456789012:us-east-1:i-db1|PROTECTED_BY|123456789012:us-east-1:sg-db",
+                  "field": "PROTECTED_BY",
+                  "aws_field": "ec2 describe-instances: SecurityGroups[].GroupId",
+                  "value": {
+                    "status": "known",
+                    "value": "node:shop/123456789012:us-east-1:sg-db"
+                  }
+                }
+              ]
+            },
+            {
+              "id": "internet-route",
+              "statement": "The instance's subnet has an active default route to an internet gateway.",
+              "status": "not_met",
+              "detail": "Route table main has no active default route to an internet gateway.",
+              "fields": [
+                {
+                  "record": "node:shop/123456789012:us-east-1:rtb-main",
+                  "field": "ipv4_default_target",
+                  "aws_field": "ec2 describe-route-tables: Routes[DestinationCidrBlock=0.0.0.0/0]",
+                  "value": {
+                    "status": "known",
+                    "value": "nat-shop"
+                  }
+                },
+                {
+                  "record": "node:shop/123456789012:us-east-1:rtb-main",
+                  "field": "ipv6_default_target",
+                  "aws_field": "ec2 describe-route-tables: Routes[DestinationIpv6CidrBlock=::/0]",
+                  "value": {
+                    "status": "unknown"
+                  }
+                }
+              ]
+            }
+          ],
+          "unknowns": [],
+          "assumptions": [
+            "Network ACLs, host firewalls and anything outside this AWS account are not read.",
+            "0.0.0.0/0 and ::/0 are one Internet record, so a rule's address family is not compared with the instance's address.",
+            "Whether anything listens on the allowed ports is not read."
+          ],
+          "path": null,
+          "walk": null,
+          "contributing": [
+            "node:shop/123456789012:us-east-1:i-db1",
+            "node:shop/123456789012:us-east-1:rtb-main",
+            "node:shop/arn:aws:ec2:us-east-1:123456789012:subnet/subnet-private",
+            "rel:shop/123456789012:us-east-1:i-db1|PROTECTED_BY|123456789012:us-east-1:sg-db"
+          ],
+          "evidence": [
+            {
+              "evidence_id": "node:shop/123456789012:us-east-1:i-db1",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 2,
+              "types": [
+                "Instance"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "image_id": "ami-db",
+                "instance_id": "i-db1",
+                "launched_at": "2026-09-01T08:00:00+00:00",
+                "name": "db-1",
+                "private_ip": "10.0.2.20",
+                "state": "running",
+                "type": "r6g.large"
+              }
+            },
+            {
+              "evidence_id": "node:shop/123456789012:us-east-1:rtb-main",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 7,
+              "types": [
+                "RouteTable"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "ipv4_default_target": "nat-shop",
+                "is_main": true,
+                "name": "main",
+                "route_table_id": "rtb-main"
+              }
+            },
+            {
+              "evidence_id": "node:shop/arn:aws:ec2:us-east-1:123456789012:subnet/subnet-private",
+              "stable": true,
+              "kind": "node",
+              "internal_id": 19,
+              "types": [
+                "Subnet"
+              ],
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {
+                "availability_zone": "us-east-1a",
+                "cidr": "10.0.2.0/24",
+                "name": "private-a",
+                "public_ip_on_launch": false,
+                "subnet_id": "subnet-private"
+              }
+            },
+            {
+              "evidence_id": "rel:shop/123456789012:us-east-1:i-db1|PROTECTED_BY|123456789012:us-east-1:sg-db",
+              "stable": true,
+              "kind": "relationship",
+              "internal_id": 6,
+              "types": [
+                "PROTECTED_BY"
+              ],
+              "from": {
+                "status": "known",
+                "value": "node:shop/123456789012:us-east-1:i-db1"
+              },
+              "to": {
+                "status": "known",
+                "value": "node:shop/123456789012:us-east-1:sg-db"
+              },
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {}
+            }
+          ]
+        }
+      ],
+      "truncated": 0
+    }
   }
 }
