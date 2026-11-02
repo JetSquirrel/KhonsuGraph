@@ -1,0 +1,1047 @@
+{
+  "sync": {
+    "source": "shop",
+    "mode": "full",
+    "received_nodes": 16,
+    "received_edges": 24,
+    "merge": {
+      "nodes_written": 16,
+      "edges_written": 24,
+      "duplicate_nodes": 0,
+      "duplicate_edges": 0,
+      "skipped_edges": 0,
+      "stale_nodes_removed": 0,
+      "stale_edges_removed": 0,
+      "unchanged_edges": 0,
+      "warnings": []
+    }
+  },
+  "resync": {
+    "source": "shop",
+    "mode": "full",
+    "received_nodes": 16,
+    "received_edges": 24,
+    "merge": {
+      "nodes_written": 16,
+      "edges_written": 0,
+      "duplicate_nodes": 0,
+      "duplicate_edges": 0,
+      "skipped_edges": 0,
+      "stale_nodes_removed": 0,
+      "stale_edges_removed": 0,
+      "unchanged_edges": 24,
+      "warnings": []
+    }
+  },
+  "schema": {
+    "node_count": 16,
+    "relationship_count": 24,
+    "labels": [
+      {
+        "name": "Account",
+        "count": 1,
+        "properties": [
+          "account_id",
+          "khonsu_id",
+          "khonsu_plugin",
+          "khonsu_source",
+          "khonsu_synced_at"
+        ]
+      },
+      {
+        "name": "Cidr",
+        "count": 2,
+        "properties": [
+          "cidr",
+          "khonsu_id",
+          "khonsu_plugin",
+          "khonsu_source",
+          "khonsu_synced_at",
+          "name"
+        ]
+      },
+      {
+        "name": "Instance",
+        "count": 2,
+        "properties": [
+          "image_id",
+          "instance_id",
+          "khonsu_id",
+          "khonsu_plugin",
+          "khonsu_source",
+          "khonsu_synced_at",
+          "launched_at",
+          "name",
+          "private_ip",
+          "public_ip",
+          "state",
+          "type"
+        ]
+      },
+      {
+        "name": "InternetGateway",
+        "count": 1,
+        "properties": [
+          "khonsu_id",
+          "khonsu_plugin",
+          "khonsu_source",
+          "khonsu_synced_at",
+          "name"
+        ]
+      },
+      {
+        "name": "LoadBalancer",
+        "count": 1,
+        "properties": [
+          "dns_name",
+          "khonsu_id",
+          "khonsu_plugin",
+          "khonsu_source",
+          "khonsu_synced_at",
+          "name",
+          "scheme",
+          "type"
+        ]
+      },
+      {
+        "name": "Region",
+        "count": 1,
+        "properties": [
+          "khonsu_id",
+          "khonsu_plugin",
+          "khonsu_source",
+          "khonsu_synced_at",
+          "name"
+        ]
+      },
+      {
+        "name": "Role",
+        "count": 2,
+        "properties": [
+          "arn",
+          "khonsu_id",
+          "khonsu_plugin",
+          "khonsu_source",
+          "khonsu_synced_at",
+          "name",
+          "path",
+          "trust_policy"
+        ]
+      },
+      {
+        "name": "SecurityGroup",
+        "count": 2,
+        "properties": [
+          "description",
+          "group_id",
+          "khonsu_id",
+          "khonsu_plugin",
+          "khonsu_source",
+          "khonsu_synced_at",
+          "name"
+        ]
+      },
+      {
+        "name": "Subnet",
+        "count": 2,
+        "properties": [
+          "availability_zone",
+          "cidr",
+          "khonsu_id",
+          "khonsu_plugin",
+          "khonsu_source",
+          "khonsu_synced_at",
+          "name",
+          "public_ip_on_launch",
+          "subnet_id"
+        ]
+      },
+      {
+        "name": "TargetGroup",
+        "count": 1,
+        "properties": [
+          "khonsu_id",
+          "khonsu_plugin",
+          "khonsu_source",
+          "khonsu_synced_at",
+          "name",
+          "port",
+          "protocol"
+        ]
+      },
+      {
+        "name": "Vpc",
+        "count": 1,
+        "properties": [
+          "cidr",
+          "is_default",
+          "khonsu_id",
+          "khonsu_plugin",
+          "khonsu_source",
+          "khonsu_synced_at",
+          "name",
+          "vpc_id"
+        ]
+      }
+    ],
+    "relationship_types": [
+      {
+        "name": "ALLOWS",
+        "count": 3,
+        "properties": [
+          "khonsu_hash",
+          "khonsu_id",
+          "khonsu_plugin",
+          "khonsu_source",
+          "khonsu_synced_at",
+          "ports",
+          "protocol",
+          "rule"
+        ],
+        "patterns": [
+          [
+            "Cidr",
+            "SecurityGroup"
+          ],
+          [
+            "SecurityGroup",
+            "SecurityGroup"
+          ]
+        ]
+      },
+      {
+        "name": "ASSUMES",
+        "count": 2,
+        "properties": [
+          "instance_profile",
+          "khonsu_hash",
+          "khonsu_id",
+          "khonsu_plugin",
+          "khonsu_source",
+          "khonsu_synced_at"
+        ],
+        "patterns": [
+          [
+            "Instance",
+            "Role"
+          ]
+        ]
+      },
+      {
+        "name": "ATTACHED_TO",
+        "count": 1,
+        "properties": [
+          "khonsu_hash",
+          "khonsu_id",
+          "khonsu_plugin",
+          "khonsu_source",
+          "khonsu_synced_at"
+        ],
+        "patterns": [
+          [
+            "InternetGateway",
+            "Vpc"
+          ]
+        ]
+      },
+      {
+        "name": "FORWARDS_TO",
+        "count": 1,
+        "properties": [
+          "khonsu_hash",
+          "khonsu_id",
+          "khonsu_plugin",
+          "khonsu_source",
+          "khonsu_synced_at"
+        ],
+        "patterns": [
+          [
+            "LoadBalancer",
+            "TargetGroup"
+          ]
+        ]
+      },
+      {
+        "name": "IN_REGION",
+        "count": 1,
+        "properties": [
+          "khonsu_hash",
+          "khonsu_id",
+          "khonsu_plugin",
+          "khonsu_source",
+          "khonsu_synced_at"
+        ],
+        "patterns": [
+          [
+            "Vpc",
+            "Region"
+          ]
+        ]
+      },
+      {
+        "name": "IN_SUBNET",
+        "count": 2,
+        "properties": [
+          "khonsu_hash",
+          "khonsu_id",
+          "khonsu_plugin",
+          "khonsu_source",
+          "khonsu_synced_at"
+        ],
+        "patterns": [
+          [
+            "Instance",
+            "Subnet"
+          ]
+        ]
+      },
+      {
+        "name": "IN_VPC",
+        "count": 5,
+        "properties": [
+          "khonsu_hash",
+          "khonsu_id",
+          "khonsu_plugin",
+          "khonsu_source",
+          "khonsu_synced_at"
+        ],
+        "patterns": [
+          [
+            "LoadBalancer",
+            "Vpc"
+          ],
+          [
+            "SecurityGroup",
+            "Vpc"
+          ],
+          [
+            "Subnet",
+            "Vpc"
+          ]
+        ]
+      },
+      {
+        "name": "OWNS",
+        "count": 3,
+        "properties": [
+          "khonsu_hash",
+          "khonsu_id",
+          "khonsu_plugin",
+          "khonsu_source",
+          "khonsu_synced_at"
+        ],
+        "patterns": [
+          [
+            "Account",
+            "Region"
+          ],
+          [
+            "Account",
+            "Role"
+          ]
+        ]
+      },
+      {
+        "name": "PROTECTED_BY",
+        "count": 3,
+        "properties": [
+          "khonsu_hash",
+          "khonsu_id",
+          "khonsu_plugin",
+          "khonsu_source",
+          "khonsu_synced_at"
+        ],
+        "patterns": [
+          [
+            "Instance",
+            "SecurityGroup"
+          ],
+          [
+            "LoadBalancer",
+            "SecurityGroup"
+          ]
+        ]
+      },
+      {
+        "name": "ROUTES_TO",
+        "count": 3,
+        "properties": [
+          "health",
+          "khonsu_hash",
+          "khonsu_id",
+          "khonsu_plugin",
+          "khonsu_source",
+          "khonsu_synced_at"
+        ],
+        "patterns": [
+          [
+            "Cidr",
+            "InternetGateway"
+          ],
+          [
+            "Cidr",
+            "LoadBalancer"
+          ],
+          [
+            "TargetGroup",
+            "Instance"
+          ]
+        ]
+      }
+    ],
+    "tables": []
+  },
+  "answers": {
+    "topology": {
+      "columns": [
+        "source",
+        "type",
+        "target"
+      ],
+      "rows": [
+        [
+          "shop/123456789012:us-east-1:i-db1",
+          "ASSUMES",
+          "shop/arn:aws:iam::123456789012:role/db-backup"
+        ],
+        [
+          "shop/123456789012:us-east-1:i-db1",
+          "IN_SUBNET",
+          "shop/arn:aws:ec2:us-east-1:123456789012:subnet/subnet-private"
+        ],
+        [
+          "shop/123456789012:us-east-1:i-db1",
+          "PROTECTED_BY",
+          "shop/123456789012:us-east-1:sg-db"
+        ],
+        [
+          "shop/123456789012:us-east-1:i-web1",
+          "ASSUMES",
+          "shop/arn:aws:iam::123456789012:role/web-app"
+        ],
+        [
+          "shop/123456789012:us-east-1:i-web1",
+          "IN_SUBNET",
+          "shop/arn:aws:ec2:us-east-1:123456789012:subnet/subnet-public"
+        ],
+        [
+          "shop/123456789012:us-east-1:i-web1",
+          "PROTECTED_BY",
+          "shop/123456789012:us-east-1:sg-web"
+        ],
+        [
+          "shop/123456789012:us-east-1:igw-shop",
+          "ATTACHED_TO",
+          "shop/123456789012:us-east-1:vpc-shop"
+        ],
+        [
+          "shop/123456789012:us-east-1:sg-db",
+          "IN_VPC",
+          "shop/123456789012:us-east-1:vpc-shop"
+        ],
+        [
+          "shop/123456789012:us-east-1:sg-web",
+          "ALLOWS",
+          "shop/123456789012:us-east-1:sg-db"
+        ],
+        [
+          "shop/123456789012:us-east-1:sg-web",
+          "IN_VPC",
+          "shop/123456789012:us-east-1:vpc-shop"
+        ],
+        [
+          "shop/123456789012:us-east-1:vpc-shop",
+          "IN_REGION",
+          "shop/region:123456789012:us-east-1"
+        ],
+        [
+          "shop/account:123456789012",
+          "OWNS",
+          "shop/arn:aws:iam::123456789012:role/db-backup"
+        ],
+        [
+          "shop/account:123456789012",
+          "OWNS",
+          "shop/arn:aws:iam::123456789012:role/web-app"
+        ],
+        [
+          "shop/account:123456789012",
+          "OWNS",
+          "shop/region:123456789012:us-east-1"
+        ],
+        [
+          "shop/arn:aws:ec2:us-east-1:123456789012:subnet/subnet-private",
+          "IN_VPC",
+          "shop/123456789012:us-east-1:vpc-shop"
+        ],
+        [
+          "shop/arn:aws:ec2:us-east-1:123456789012:subnet/subnet-public",
+          "IN_VPC",
+          "shop/123456789012:us-east-1:vpc-shop"
+        ],
+        [
+          "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
+          "FORWARDS_TO",
+          "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/def"
+        ],
+        [
+          "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
+          "IN_VPC",
+          "shop/123456789012:us-east-1:vpc-shop"
+        ],
+        [
+          "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
+          "PROTECTED_BY",
+          "shop/123456789012:us-east-1:sg-web"
+        ],
+        [
+          "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/def",
+          "ROUTES_TO",
+          "shop/123456789012:us-east-1:i-web1"
+        ],
+        [
+          "shop/cidr:203.0.113.0/24",
+          "ALLOWS",
+          "shop/123456789012:us-east-1:sg-web"
+        ],
+        [
+          "shop/cidr:internet",
+          "ALLOWS",
+          "shop/123456789012:us-east-1:sg-web"
+        ],
+        [
+          "shop/cidr:internet",
+          "ROUTES_TO",
+          "shop/123456789012:us-east-1:igw-shop"
+        ],
+        [
+          "shop/cidr:internet",
+          "ROUTES_TO",
+          "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc"
+        ]
+      ]
+    },
+    "rules_into_security_groups": {
+      "columns": [
+        "source",
+        "protocol",
+        "ports",
+        "target"
+      ],
+      "rows": [
+        [
+          "shop/cidr:203.0.113.0/24",
+          "tcp",
+          "22",
+          "shop/123456789012:us-east-1:sg-web"
+        ],
+        [
+          "shop/cidr:internet",
+          "tcp",
+          "443",
+          "shop/123456789012:us-east-1:sg-web"
+        ]
+      ]
+    },
+    "candidate_path_through_the_load_balancer": {
+      "columns": [
+        "source",
+        "balancer",
+        "target_group",
+        "instance"
+      ],
+      "rows": [
+        [
+          "shop/cidr:internet",
+          "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
+          "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/def",
+          "shop/123456789012:us-east-1:i-web1"
+        ]
+      ]
+    },
+    "candidate_path_through_security_groups": {
+      "columns": [
+        "source",
+        "first",
+        "second",
+        "instance"
+      ],
+      "rows": [
+        [
+          "shop/cidr:internet",
+          "shop/123456789012:us-east-1:sg-web",
+          "shop/123456789012:us-east-1:sg-db",
+          "shop/123456789012:us-east-1:i-db1"
+        ]
+      ]
+    },
+    "shortest_path_forward": {
+      "columns": [
+        "hops",
+        "types"
+      ],
+      "rows": [
+        [
+          [
+            "shop/cidr:internet",
+            "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
+            "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/def",
+            "shop/123456789012:us-east-1:i-web1"
+          ],
+          [
+            "ROUTES_TO",
+            "FORWARDS_TO",
+            "ROUTES_TO"
+          ]
+        ]
+      ]
+    },
+    "shortest_path_against_the_arrows_finds_nothing": {
+      "columns": [
+        "hops"
+      ],
+      "rows": []
+    },
+    "shortest_path_inbound_reads_the_same_path": {
+      "columns": [
+        "hops"
+      ],
+      "rows": [
+        [
+          3
+        ]
+      ]
+    },
+    "shortest_path_under_the_hop_cap_finds_nothing": {
+      "columns": [
+        "hops"
+      ],
+      "rows": []
+    },
+    "shortest_path_of_one_type_finds_nothing": {
+      "columns": [
+        "hops"
+      ],
+      "rows": []
+    },
+    "no_directed_path_to_the_database": {
+      "columns": [
+        "hops"
+      ],
+      "rows": []
+    }
+  },
+  "analyze": {
+    "summary": {
+      "summary": {
+        "nodes": 16,
+        "relationships": 24,
+        "density": 0.1,
+        "self_loops": 0,
+        "weak_components": 1,
+        "largest_weak_component": 16,
+        "strong_components": 16,
+        "isolated_nodes": 0,
+        "average_degree": 3.0,
+        "average_clustering": 0.080952381,
+        "max_core": 2,
+        "diameter": 4,
+        "diameter_estimated": false
+      },
+      "algorithm": "summary",
+      "graph": {
+        "nodes": 16,
+        "relationships": 24,
+        "directed": true,
+        "weighted": false
+      }
+    },
+    "degree": {
+      "rows": [
+        {
+          "id": 5,
+          "labels": [
+            "Vpc"
+          ],
+          "name": "shop",
+          "degree": 7,
+          "in": 6,
+          "out": 1,
+          "centrality": 0.466666667
+        },
+        {
+          "id": 4,
+          "labels": [
+            "SecurityGroup"
+          ],
+          "name": "web",
+          "degree": 6,
+          "in": 4,
+          "out": 2,
+          "centrality": 0.4
+        },
+        {
+          "id": 1,
+          "labels": [
+            "Instance"
+          ],
+          "name": "web-1",
+          "degree": 4,
+          "in": 1,
+          "out": 3,
+          "centrality": 0.266666667
+        },
+        {
+          "id": 9,
+          "labels": [
+            "LoadBalancer"
+          ],
+          "name": "shop",
+          "degree": 4,
+          "in": 1,
+          "out": 3,
+          "centrality": 0.266666667
+        },
+        {
+          "id": 0,
+          "labels": [
+            "Instance"
+          ],
+          "name": "db-1",
+          "degree": 3,
+          "in": 0,
+          "out": 3,
+          "centrality": 0.2
+        }
+      ],
+      "algorithm": "degree",
+      "graph": {
+        "nodes": 16,
+        "relationships": 24,
+        "directed": true,
+        "weighted": false
+      }
+    },
+    "pagerank": {
+      "rows": [
+        {
+          "id": 15,
+          "labels": [
+            "Region"
+          ],
+          "name": "us-east-1",
+          "pagerank": 0.216659464
+        },
+        {
+          "id": 5,
+          "labels": [
+            "Vpc"
+          ],
+          "name": "shop",
+          "pagerank": 0.216255578
+        },
+        {
+          "id": 4,
+          "labels": [
+            "SecurityGroup"
+          ],
+          "name": "web",
+          "pagerank": 0.079555079
+        },
+        {
+          "id": 3,
+          "labels": [
+            "SecurityGroup"
+          ],
+          "name": "db",
+          "pagerank": 0.066653624
+        },
+        {
+          "id": 1,
+          "labels": [
+            "Instance"
+          ],
+          "name": "web-1",
+          "pagerank": 0.055253444
+        }
+      ],
+      "converged": true,
+      "algorithm": "pagerank",
+      "graph": {
+        "nodes": 16,
+        "relationships": 24,
+        "directed": true,
+        "weighted": false
+      }
+    },
+    "path": {
+      "found": true,
+      "hops": 3,
+      "length": 3.0,
+      "rows": [
+        {
+          "id": 14,
+          "labels": [
+            "Cidr"
+          ],
+          "name": "Internet"
+        },
+        {
+          "id": 9,
+          "labels": [
+            "LoadBalancer"
+          ],
+          "name": "shop"
+        },
+        {
+          "id": 10,
+          "labels": [
+            "TargetGroup"
+          ],
+          "name": "web"
+        },
+        {
+          "id": 1,
+          "labels": [
+            "Instance"
+          ],
+          "name": "web-1"
+        }
+      ],
+      "algorithm": "path",
+      "graph": {
+        "nodes": 16,
+        "relationships": 24,
+        "directed": true,
+        "weighted": false
+      }
+    }
+  },
+  "dashboard": {
+    "ok": true,
+    "queries": [
+      {
+        "name": "open_groups",
+        "language": "cypher",
+        "rows": 2,
+        "columns": [
+          {
+            "name": "group",
+            "type": "text"
+          },
+          {
+            "name": "source",
+            "type": "text"
+          },
+          {
+            "name": "protocol",
+            "type": "text"
+          },
+          {
+            "name": "ports",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "name": "internet_rules",
+        "language": "cypher",
+        "rows": 1,
+        "columns": [
+          {
+            "name": "rules",
+            "type": "number"
+          }
+        ]
+      },
+      {
+        "name": "exposure",
+        "language": "cypher",
+        "rows": 2,
+        "columns": [
+          {
+            "name": "c",
+            "type": "node"
+          },
+          {
+            "name": "a",
+            "type": "relationship"
+          },
+          {
+            "name": "g",
+            "type": "node"
+          },
+          {
+            "name": "p",
+            "type": "relationship"
+          },
+          {
+            "name": "i",
+            "type": "node"
+          }
+        ],
+        "graph": {
+          "nodes": 4,
+          "relationships": 3
+        }
+      },
+      {
+        "name": "roles",
+        "language": "cypher",
+        "rows": 2,
+        "columns": [
+          {
+            "name": "instance",
+            "type": "text"
+          },
+          {
+            "name": "state",
+            "type": "text"
+          },
+          {
+            "name": "role",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "name": "lateral",
+        "language": "cypher",
+        "rows": 1,
+        "columns": [
+          {
+            "name": "from",
+            "type": "node"
+          },
+          {
+            "name": "a",
+            "type": "relationship"
+          },
+          {
+            "name": "to",
+            "type": "node"
+          }
+        ],
+        "graph": {
+          "nodes": 2,
+          "relationships": 1
+        }
+      }
+    ],
+    "filters": [
+      {
+        "name": "group",
+        "plot": "open_groups",
+        "column": "group",
+        "match": "g.name",
+        "queries": [
+          "exposure"
+        ]
+      }
+    ],
+    "plots": [
+      {
+        "name": "intro",
+        "type": "text",
+        "query": "",
+        "x": null,
+        "y": null,
+        "series": null,
+        "value": null,
+        "caption": null,
+        "group": null,
+        "labels": null,
+        "highlight": null,
+        "note": null,
+        "tone": null,
+        "title": "Internet exposure",
+        "width": 9
+      },
+      {
+        "name": "internet_rules",
+        "type": "card",
+        "query": "internet_rules",
+        "x": null,
+        "y": null,
+        "series": null,
+        "value": null,
+        "caption": null,
+        "group": null,
+        "labels": null,
+        "highlight": null,
+        "note": null,
+        "tone": "warning",
+        "title": "Rules open to 0.0.0.0/0",
+        "width": 3
+      },
+      {
+        "name": "open_groups",
+        "type": "table",
+        "query": "open_groups",
+        "x": null,
+        "y": null,
+        "series": null,
+        "value": null,
+        "caption": null,
+        "group": null,
+        "labels": null,
+        "highlight": null,
+        "note": null,
+        "tone": null,
+        "title": null,
+        "width": 5
+      },
+      {
+        "name": "exposure",
+        "type": "graph",
+        "query": "exposure",
+        "x": null,
+        "y": null,
+        "series": null,
+        "value": null,
+        "caption": "name",
+        "group": null,
+        "labels": null,
+        "highlight": null,
+        "note": null,
+        "tone": null,
+        "title": null,
+        "width": 7
+      },
+      {
+        "name": "roles",
+        "type": "table",
+        "query": "roles",
+        "x": null,
+        "y": null,
+        "series": null,
+        "value": null,
+        "caption": null,
+        "group": null,
+        "labels": null,
+        "highlight": null,
+        "note": null,
+        "tone": null,
+        "title": null,
+        "width": 6
+      },
+      {
+        "name": "lateral",
+        "type": "graph",
+        "query": "lateral",
+        "x": null,
+        "y": null,
+        "series": null,
+        "value": null,
+        "caption": "name",
+        "group": null,
+        "labels": null,
+        "highlight": null,
+        "note": null,
+        "tone": null,
+        "title": null,
+        "width": 6
+      }
+    ]
+  }
+}
