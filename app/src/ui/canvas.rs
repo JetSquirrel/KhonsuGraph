@@ -23,6 +23,7 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use khonsu_core::evidence::{self, Evidence};
 use khonsu_core::explore::{Direction, Exploration};
+use khonsu_core::exposure::{Status, Verdict};
 use khonsu_core::settings::{self, Source};
 use khonsu_core::{GraphData, GraphEdge, GraphNode};
 use serde_json::Value as Json;
@@ -506,6 +507,43 @@ impl GraphCanvas {
         self.explorer.walk = Some(walk);
     }
 
+    /// Evaluate the exposure rules over the whole graph, not just the canvas.
+    fn check_exposure(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.explorer.checking_exposure {
+            return;
+        }
+        self.explorer.checking_exposure = true;
+        self.explorer.exposure_error = None;
+        cx.notify();
+        cx.spawn_in(window, async move |this, cx| {
+            let result = smol::unblock(crate::db::exposure).await;
+            this.update(cx, |this, cx| {
+                this.explorer.checking_exposure = false;
+                match result {
+                    Ok(report) => this.explorer.exposure = Some(report),
+                    Err(error) => this.explorer.exposure_error = Some(error.message),
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// Show a finding's candidate path, as a walk Path Explorer can go on from.
+    fn show_finding(&mut self, finding_id: &str, target: i64, cx: &mut Context<Self>) {
+        let report = self.explorer.exposure.as_ref();
+        let Some(walk) = report.and_then(|report| report.findings.iter().find(|finding| finding.finding_id == finding_id)).and_then(|finding| finding.exploration()) else {
+            return;
+        };
+        self.explorer.push_view(self.view());
+        self.replace_canvas(walk.graph.nodes.clone(), walk.graph.edges.clone(), cx);
+        self.explorer.walk = Some(walk);
+        self.set_path_view(true, cx);
+        let id = target.to_string();
+        self.graph.update(cx, |graph, cx| graph.select_node(Some(&id), false, cx));
+    }
+
     /// Narrow the canvas to the path the last walk took to `target`.
     fn show_path(&mut self, target: i64, cx: &mut Context<Self>) {
         let Some(path) = self.explorer.walk.as_ref().and_then(|walk| explorer::path_graph(walk, target)) else {
@@ -590,6 +628,114 @@ impl GraphCanvas {
                     .on_click(move |_, _, cx| cx.write_to_clipboard(ClipboardItem::new_string(copy.clone()))),
             )
             .into_any_element()
+    }
+
+    /// What the rules say about a selected instance, and why. Not shown for
+    /// anything else: the rules are only about instances.
+    fn render_exposure(&self, id: i64, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let node = self.nodes.get(&id).filter(|node| node.labels.iter().any(|label| label == "Instance"))?;
+        let muted = cx.theme().muted_foreground;
+        let warning = cx.theme().warning;
+        let mono = cx.theme().mono_font_family.clone();
+        let explorer = &self.explorer;
+        let findings = explorer.exposure.as_ref().map(|report| explorer::findings_for(report, node));
+
+        let mut list = Vec::new();
+        for (ix, finding) in findings.iter().flatten().enumerate() {
+            let title = explorer::rule_key(&finding.rule_id).map_or_else(|| finding.rule_id.clone(), |key| tr(key).to_string());
+            let copy = serde_json::to_string_pretty(finding).expect("a finding serializes");
+            let finding_id = finding.finding_id.clone();
+            // Offered again only when another path is showing: Back would otherwise
+            // step through the same view twice.
+            let showing = self.path_view && explorer.walk.as_ref().is_some_and(|walk| walk.hops == finding.hops);
+            let drawable = !finding.hops.is_empty() && !showing;
+            let conditions = finding.conditions.iter().map(|condition| {
+                let statement = explorer::condition_key(&condition.id).map_or_else(|| condition.statement.clone(), |key| tr(key).to_string());
+                let color = if condition.status == Status::Met { muted } else { warning };
+                let fields = condition.fields.iter().filter_map(|field| {
+                    let value = field.value.known()?;
+                    Some(
+                        div()
+                            .text_xs()
+                            .whitespace_normal()
+                            .font_family(mono.clone())
+                            .text_color(muted)
+                            .child(format!("{} = {}", field.aws_field, crate::ui::results::cell_text(value))),
+                    )
+                });
+                v_flex()
+                    .child(
+                        div()
+                            .text_xs()
+                            .whitespace_normal()
+                            .child(format!("{} · {statement}", tr(explorer::status_key(condition.status)))),
+                    )
+                    .child(div().text_xs().whitespace_normal().text_color(color).child(condition.detail.clone()))
+                    .children(fields.collect::<Vec<_>>())
+            });
+            let verdict_color = if finding.verdict == Verdict::NotIndicated { muted } else { warning };
+            list.push(
+                v_flex()
+                    .gap_1()
+                    .pt_1()
+                    .child(div().text_xs().font_semibold().text_color(verdict_color).child(tr(explorer::verdict_key(finding.verdict))))
+                    .child(div().text_xs().whitespace_normal().child(title))
+                    .child(div().text_xs().font_family(mono.clone()).whitespace_normal().text_color(muted).child(finding.rule_id.clone()))
+                    .children(conditions.collect::<Vec<_>>())
+                    .when_some(finding.path.as_ref(), |this, path| {
+                        this.child(div().pt_1().text_xs().font_semibold().child(tr("explore.path")))
+                            .children(path.hops.iter().map(|hop| div().text_xs().whitespace_normal().font_family(mono.clone()).child(hop.clone())))
+                    })
+                    .child(div().pt_1().text_xs().font_semibold().child(tr("exposure.assumptions")))
+                    .children(finding.assumptions.iter().map(|text| div().text_xs().whitespace_normal().text_color(muted).child(text.clone())))
+                    .child(
+                        h_flex()
+                            .gap_1()
+                            .flex_wrap()
+                            .when(drawable, |this| {
+                                this.child(
+                                    Button::new(("exposure-path", ix))
+                                        .xsmall()
+                                        .outline()
+                                        .label(tr("exposure.show_path"))
+                                        .on_click(cx.listener(move |this, _, _, cx| this.show_finding(&finding_id, id, cx))),
+                                )
+                            })
+                            .child(
+                                Button::new(("exposure-copy", ix))
+                                    .xsmall()
+                                    .outline()
+                                    .label(tr("exposure.copy"))
+                                    .on_click(move |_, _, cx| cx.write_to_clipboard(ClipboardItem::new_string(copy.clone()))),
+                            ),
+                    ),
+            );
+        }
+
+        let checked = explorer.exposure.is_some();
+        let complete = explorer.exposure.as_ref().is_none_or(|report| report.complete);
+        let none = findings.as_ref().is_some_and(Vec::is_empty);
+        Some(
+            v_flex()
+                .gap_1()
+                .child(div().text_sm().font_semibold().child(tr("exposure.title")))
+                .child(
+                    Button::new("exposure-check")
+                        .xsmall()
+                        .outline()
+                        .label(tr(if checked { "exposure.recheck" } else { "exposure.check" }))
+                        .loading(explorer.checking_exposure)
+                        .on_click(cx.listener(|this, _, window, cx| this.check_exposure(window, cx))),
+                )
+                .when_some(explorer.exposure_error.clone(), |this, error| {
+                    this.child(div().text_xs().whitespace_normal().text_color(warning).child(trf("exposure.failed", &[&error])))
+                })
+                .when(checked, |this| this.child(div().text_xs().whitespace_normal().text_color(muted).child(tr("exposure.claim"))))
+                .when(!complete, |this| this.child(div().text_xs().whitespace_normal().text_color(warning).child(tr("exposure.incomplete"))))
+                .when(none, |this| this.child(div().text_xs().whitespace_normal().text_color(muted).child(tr("exposure.none"))))
+                .children(list)
+                .into_any_element(),
+        )
     }
 
     fn selected_evidence(&self, selected: Selected) -> Option<Evidence> {
@@ -787,6 +933,7 @@ impl GraphCanvas {
         rows.sort_by_key(|(k, _)| (k.starts_with("khonsu_"), k.to_string()));
         let mono = cx.theme().mono_font_family.clone();
         let muted = cx.theme().muted_foreground;
+        let exposure = self.selected_node().and_then(|id| self.render_exposure(id, cx));
         Some(
             v_flex()
                 .id("inspector")
@@ -811,6 +958,9 @@ impl GraphCanvas {
                 // a walk's result out of sight.
                 .when_some(self.selected_node(), |this, id| {
                     this.child(self.render_explorer(id, cx)).child(div().border_b_1().border_color(cx.theme().border))
+                })
+                .when_some(exposure, |this, exposure| {
+                    this.child(exposure).child(div().border_b_1().border_color(cx.theme().border))
                 })
                 .when_some(self.selected_evidence(selected), |this, record| {
                     this.child(self.render_evidence(record, cx)).child(div().border_b_1().border_color(cx.theme().border))

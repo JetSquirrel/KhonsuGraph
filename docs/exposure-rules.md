@@ -155,3 +155,21 @@ khonsu exposure --db graphs/exposure --pretty --resource shop/123456789012:us-ea
 
 The commands above need the graph free. They fail with kind `locked` while the
 window has it open.
+
+## In the window
+
+Select an instance on a graph canvas, then choose **Check exposure** in the
+inspector. It evaluates the whole graph, not just what is on the canvas, and the
+result lasts until the canvas gets a new result. After a sync, choose **Check
+again**.
+
+Each finding shows its verdict, rule, conditions with their AWS fields, candidate
+path and what was not checked.
+
+- **Show path on canvas** narrows the canvas to the path. **Back** returns to the
+  earlier view, and selecting a node on the path shows its evidence.
+- **Copy finding as JSON** copies the same record as `khonsu exposure`.
+
+In the Chinese interface, verdicts, rule titles and condition statements are
+translated. Each condition's detail and the list of what was not checked stay in
+English.

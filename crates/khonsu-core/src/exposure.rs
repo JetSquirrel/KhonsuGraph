@@ -14,7 +14,7 @@
 
 use crate::engine::{Graph, QueryError};
 use crate::evidence::{self, Evidence, Field, PathEvidence};
-use crate::explore::{node_name, Direction, Hop};
+use crate::explore::{node_name, Direction, Exploration, Hop};
 use crate::result::{value_to_json, GraphCollector, GraphData, GraphEdge, GraphNode};
 use crate::settings::Source;
 use serde::{Deserialize, Serialize};
@@ -153,6 +153,9 @@ pub struct Finding {
     /// The same path as hops, for a later rule to continue from.
     #[serde(skip)]
     pub hops: Vec<Hop>,
+    /// The records those hops cross, for drawing the path.
+    #[serde(skip)]
+    pub path_graph: GraphData,
     pub walk: Option<WalkHint>,
     /// The finding this one rests on, for a lateral step.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -182,6 +185,20 @@ pub struct Report {
     /// then means nothing.
     pub complete: bool,
     pub findings: Vec<Finding>,
+}
+
+impl Finding {
+    /// The candidate path as a walk, for Path Explorer to show.
+    pub fn exploration(&self) -> Option<Exploration> {
+        let start = self.hops.first()?.from;
+        Some(Exploration {
+            starts: vec![start],
+            graph: self.path_graph.clone(),
+            hops: self.hops.clone(),
+            depth_reached: self.hops.len() as u32,
+            ..Exploration::default()
+        })
+    }
 }
 
 impl Report {
@@ -256,6 +273,7 @@ pub fn evaluate(data: &GraphData, sources: &[Source], complete: bool) -> Report 
 /// Stable lookups over the records, sorted so that every choice is repeatable.
 struct Index<'a> {
     nodes: BTreeMap<i64, &'a GraphNode>,
+    edges: BTreeMap<i64, &'a GraphEdge>,
     data: &'a GraphData,
     node_ids: BTreeMap<String, &'a GraphNode>,
     edge_ids: BTreeMap<String, &'a GraphEdge>,
@@ -276,6 +294,7 @@ impl<'a> Index<'a> {
         out.values_mut().chain(into.values_mut()).for_each(|edges| edges.sort_by_cached_key(|edge| edge_id(edge)));
         Self {
             nodes,
+            edges: data.edges.iter().map(|edge| (edge.id, edge)).collect(),
             data,
             node_ids: data.nodes.iter().map(|node| (record_id(node), node)).collect(),
             edge_ids: data.edges.iter().map(|edge| (edge_id(edge), edge)).collect(),
@@ -733,6 +752,7 @@ fn build(index: &Index, instance: &GraphNode, rule_id: &str, conditions: Vec<Con
         evidence::for_hops(&hops, index.data, sources, "the rule's candidate path", Field::Known(rule_id.to_string()))
     });
     let walk = walk_hint(index, &hops, instance);
+    let path_graph = path_graph(index, &hops);
 
     // In the path's order, then the rest by ID.
     let mut contributing: Vec<String> = path.as_ref().map(|path| path.supporting.clone()).unwrap_or_default();
@@ -753,10 +773,20 @@ fn build(index: &Index, instance: &GraphNode, rule_id: &str, conditions: Vec<Con
         assumptions,
         path,
         hops,
+        path_graph,
         walk,
         depends_on: None,
         contributing,
         evidence,
+    }
+}
+
+fn path_graph(index: &Index, hops: &[Hop]) -> GraphData {
+    let nodes: BTreeSet<i64> = hops.iter().flat_map(|hop| [hop.from, hop.to]).collect();
+    let edges: BTreeSet<i64> = hops.iter().map(|hop| hop.edge).collect();
+    GraphData {
+        nodes: nodes.into_iter().filter_map(|id| index.node(id).cloned()).collect(),
+        edges: edges.into_iter().filter_map(|id| index.edges.get(&id).map(|edge| (*edge).clone())).collect(),
     }
 }
 
@@ -1100,6 +1130,22 @@ mod tests {
         let (narrow, cut) = with_database(exposed()).report().narrowed(|_| true, 1);
         assert_eq!((narrow.findings.len(), cut), (1, 2));
         assert_eq!(narrow.summary.potential_exposure, 2, "the summary still counts everything");
+    }
+
+    #[test]
+    fn a_finding_becomes_a_walk_that_draws_only_its_own_path() {
+        let report = with_database(exposed()).report();
+        let walk = only(&report, RULE_LATERAL, "db").exploration().unwrap();
+        assert_eq!(walk.starts.len(), 1);
+        assert_eq!(walk.hops.len(), 5);
+        assert!(walk.is_complete());
+        let names: BTreeSet<String> = walk.graph.nodes.iter().map(node_name).collect();
+        assert_eq!(names, ["Internet", "db", "sg", "sg-db", "web"].map(String::from).into_iter().collect());
+        assert_eq!(walk.graph.edges.len(), 4, "the hop back through a group crosses a relationship already drawn");
+
+        // Without a path there is nothing to draw.
+        let none = without_edge(exposed(), "PROTECTED_BY").report();
+        assert!(only(&none, RULE_DIRECT, "web").exploration().is_none());
     }
 
     #[test]

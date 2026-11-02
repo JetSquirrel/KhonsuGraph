@@ -7,6 +7,7 @@ use std::sync::Arc;
 
 use khonsu_core::evidence::{Assertion, Evidence, Field};
 use khonsu_core::explore::{Direction, Exploration, ExploreRequest, Limit, DEFAULT_MAX_HOPS, MAX_HOPS};
+use khonsu_core::exposure::{Finding, Report, Status, Verdict, RULE_BALANCER, RULE_DIRECT, RULE_LATERAL};
 use khonsu_core::util::format_unix_time;
 use khonsu_core::{GraphData, GraphEdge, GraphNode};
 
@@ -38,6 +39,10 @@ pub struct Explorer {
     pub walk: Option<Exploration>,
     /// A walk that failed; the canvas keeps what it had.
     pub error: Option<String>,
+    /// The last exposure check, kept until the canvas gets a new result.
+    pub exposure: Option<Report>,
+    pub checking_exposure: bool,
+    pub exposure_error: Option<String>,
     history: Vec<View>,
 }
 
@@ -52,6 +57,9 @@ impl Default for Explorer {
             running: None,
             walk: None,
             error: None,
+            exposure: None,
+            checking_exposure: false,
+            exposure_error: None,
             history: Vec::new(),
         }
     }
@@ -109,6 +117,8 @@ impl Explorer {
     pub fn forget_walks(&mut self) {
         self.walk = None;
         self.error = None;
+        self.exposure = None;
+        self.exposure_error = None;
         self.starts.clear();
         self.history.clear();
     }
@@ -184,6 +194,55 @@ pub fn evidence_rows(record: &Evidence) -> Vec<(&'static str, String)> {
     ]
 }
 
+/// The findings about `node`, in the report's order.
+pub fn findings_for<'a>(report: &'a Report, node: &GraphNode) -> Vec<&'a Finding> {
+    let resource = khonsu_core::evidence::for_node(node, &[]).evidence_id;
+    report.findings.iter().filter(|finding| finding.resource == resource).collect()
+}
+
+pub fn verdict_key(verdict: Verdict) -> &'static str {
+    match verdict {
+        Verdict::PotentialExposure => "exposure.verdict.potential",
+        Verdict::InsufficientData => "exposure.verdict.insufficient",
+        Verdict::NotIndicated => "exposure.verdict.not_indicated",
+    }
+}
+
+pub fn status_key(status: Status) -> &'static str {
+    match status {
+        Status::Met => "exposure.status.met",
+        Status::NotMet => "exposure.status.not_met",
+        Status::Unknown => "exposure.status.unknown",
+    }
+}
+
+/// A rule's title in the window's language.
+pub fn rule_key(rule_id: &str) -> Option<&'static str> {
+    match rule_id {
+        RULE_DIRECT => Some("exposure.rule.direct"),
+        RULE_BALANCER => Some("exposure.rule.balancer"),
+        RULE_LATERAL => Some("exposure.rule.lateral"),
+        _ => None,
+    }
+}
+
+/// A condition's statement in the window's language.
+pub fn condition_key(id: &str) -> Option<&'static str> {
+    Some(match id {
+        "instance-running" => "exposure.cond.running",
+        "public-address" => "exposure.cond.address",
+        "open-inbound-rule" => "exposure.cond.open_rule",
+        "internet-route" => "exposure.cond.route",
+        "internet-facing" => "exposure.cond.facing",
+        "balancer-open-rule" => "exposure.cond.balancer_open",
+        "target-healthy" => "exposure.cond.healthy",
+        "target-allows-balancer" => "exposure.cond.target_allows",
+        "source-potentially-exposed" => "exposure.cond.source",
+        "group-allows-source" => "exposure.cond.group_allows",
+        _ => return None,
+    })
+}
+
 /// Only the nodes and relationships on the path to `target`.
 pub fn path_graph(walk: &Exploration, target: i64) -> Option<GraphData> {
     let path = walk.path_to(target).filter(|path| !path.is_empty())?;
@@ -243,6 +302,91 @@ mod tests {
             depth_reached: 2,
             ..Exploration::default()
         }
+    }
+
+    /// A public balancer in front of `app`, and `db` allowing `app`'s group, so
+    /// that every rule produces a finding.
+    fn exposure_report() -> Report {
+        let at = |id: i64, label: &str, extra: serde_json::Value| GraphNode {
+            id,
+            labels: vec![label.into()],
+            properties: extra.as_object().unwrap().clone(),
+        };
+        let link = |id: i64, source: i64, rel: &str, target: i64, extra: serde_json::Value| GraphEdge {
+            id,
+            source,
+            target,
+            rel_type: rel.into(),
+            properties: extra.as_object().unwrap().clone(),
+        };
+        let data = GraphData {
+            nodes: vec![
+                at(1, "Cidr", json!({"khonsu_id": "net", "cidr": "0.0.0.0/0"})),
+                at(2, "SecurityGroup", json!({"khonsu_id": "sg-lb"})),
+                at(3, "SecurityGroup", json!({"khonsu_id": "sg-app"})),
+                at(4, "SecurityGroup", json!({"khonsu_id": "sg-db"})),
+                at(5, "LoadBalancer", json!({"khonsu_id": "lb", "scheme": "internet-facing"})),
+                at(6, "TargetGroup", json!({"khonsu_id": "tg", "port": 80})),
+                at(7, "Instance", json!({"khonsu_id": "app", "name": "app", "state": "running"})),
+                at(8, "Instance", json!({"khonsu_id": "db", "name": "db", "state": "running"})),
+            ],
+            edges: vec![
+                link(1, 1, "ROUTES_TO", 5, json!({"khonsu_id": "a"})),
+                link(2, 1, "ALLOWS", 2, json!({"khonsu_id": "b", "protocol": "tcp", "ports": "80"})),
+                link(3, 5, "PROTECTED_BY", 2, json!({"khonsu_id": "c"})),
+                link(4, 5, "FORWARDS_TO", 6, json!({"khonsu_id": "d"})),
+                link(5, 6, "ROUTES_TO", 7, json!({"khonsu_id": "e", "health": "healthy"})),
+                link(6, 7, "PROTECTED_BY", 3, json!({"khonsu_id": "f"})),
+                link(7, 2, "ALLOWS", 3, json!({"khonsu_id": "g", "protocol": "tcp", "ports": "80"})),
+                link(8, 8, "PROTECTED_BY", 4, json!({"khonsu_id": "h"})),
+                link(9, 3, "ALLOWS", 4, json!({"khonsu_id": "i", "protocol": "tcp", "ports": "5432"})),
+            ],
+        };
+        khonsu_core::exposure::evaluate(&data, &[], true)
+    }
+
+    #[test]
+    fn every_rule_and_condition_has_words_in_the_window() {
+        let report = exposure_report();
+        assert_eq!(report.summary.potential_exposure, 2, "{report:#?}");
+        let rules: BTreeSet<&str> = report.findings.iter().map(|finding| finding.rule_id.as_str()).collect();
+        assert_eq!(rules.len(), 3, "the test should reach every rule: {rules:?}");
+        for finding in &report.findings {
+            let title = rule_key(&finding.rule_id).unwrap_or_else(|| panic!("no title for {}", finding.rule_id));
+            assert_ne!(tr(title), title, "{title} is not in the table");
+            for condition in &finding.conditions {
+                let key = condition_key(&condition.id).unwrap_or_else(|| panic!("no words for {}", condition.id));
+                assert_ne!(tr(key), key, "{key} is not in the table");
+            }
+        }
+        for key in [Verdict::PotentialExposure, Verdict::InsufficientData, Verdict::NotIndicated].map(verdict_key) {
+            assert_ne!(tr(key), key);
+        }
+        for key in [Status::Met, Status::NotMet, Status::Unknown].map(status_key) {
+            assert_ne!(tr(key), key);
+        }
+    }
+
+    #[test]
+    fn findings_are_matched_to_the_selected_node_and_a_new_result_drops_them() {
+        let report = exposure_report();
+        let db = GraphNode {
+            id: 8,
+            labels: vec!["Instance".into()],
+            properties: Map::from_iter([("khonsu_id".to_string(), json!("db"))]),
+        };
+        let found = findings_for(&report, &db);
+        assert!(!found.is_empty());
+        assert!(found.iter().all(|finding| finding.resource == "node:db"));
+        assert!(findings_for(&report, &node(99, "elsewhere")).is_empty());
+
+        let mut explorer = Explorer {
+            exposure: Some(report),
+            exposure_error: Some("x".into()),
+            ..Explorer::default()
+        };
+        explorer.forget_walks();
+        assert!(explorer.exposure.is_none() && explorer.exposure_error.is_none(), "the graph may have changed");
     }
 
     #[test]

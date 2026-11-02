@@ -99,6 +99,12 @@ pub fn explore(request: &ExploreRequest, cancel: &AtomicBool) -> Result<Explorat
     with_graph(|g| g.explore(request, cancel))
 }
 
+/// Evaluates the exposure rules, holding the graph while it reads.
+pub fn exposure() -> Result<khonsu_core::exposure::Report, QueryError> {
+    let sources = khonsu_core::settings::load_sources();
+    with_graph(|g| g.exposure(&sources))
+}
+
 pub fn nodes_by_id(ids: &[i64]) -> Result<GraphData, QueryError> {
     with_graph(|g| g.nodes_by_id(ids))
 }
