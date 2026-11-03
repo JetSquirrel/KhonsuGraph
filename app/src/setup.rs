@@ -312,6 +312,8 @@ pub fn agent_prompt() -> String {
          `{command} schema --db <graph>`.\n\
          - HawDB's Cypher has no labels(), and path variables only with shortestPath; \
          return whole nodes and relationships to get a graph back.\n\
+         - To follow a suspected chain within caps: `{command} explore --db <graph> --from <node> --to <node>`; \
+         check `complete` before treating a missing path as an answer.\n\
          - Validate a dashboard with `{command} check <file.dash> --db <graph>`; \
          answer my comments on it with `{command} comments <file.dash>`.\n\
          - Reads are the default. Answer from the values it returns, check `truncated`, \

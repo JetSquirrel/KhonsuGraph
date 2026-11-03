@@ -10,6 +10,8 @@
 //! collapsed group to open it again.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use gpui_graph::{ColorBy, Edge, GraphData as Graph, LabelMode, NetworkGraph, NetworkGraphEvent, Node, Selection};
 use gpui_kit::component::button::{Button, ButtonVariants};
@@ -19,10 +21,14 @@ use gpui_kit::assets::IconName as AssetIcon;
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme, Icon, IconName, Sizable, StyledExt, WindowExt, TITLE_BAR_HEIGHT};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
+use khonsu_core::evidence::{self, Evidence};
+use khonsu_core::explore::{Direction, Exploration};
+use khonsu_core::settings::{self, Source};
 use khonsu_core::{GraphData, GraphEdge, GraphNode};
 use serde_json::Value as Json;
 
 use crate::i18n::{tr, trf};
+use crate::ui::explorer::{self, Explorer, View};
 use crate::ui::palette;
 
 /// Above this many nodes the canvas shows the first ones and says so.
@@ -127,6 +133,12 @@ pub struct GraphCanvas {
     /// Nodes the result held beyond [`NODE_LIMIT`].
     hidden: usize,
     expanding: bool,
+    explorer: Explorer,
+    /// Configured sources, read when a selection changes, for the inspector's
+    /// evidence.
+    sources: Vec<Source>,
+    /// The canvas shows only one path of the last walk.
+    path_view: bool,
     /// The node property shown as each node's caption, before the usual
     /// name-like ones: a dashboard `graph`'s `caption`.
     caption_key: Option<String>,
@@ -167,6 +179,9 @@ impl GraphCanvas {
             selected: None,
             hidden: 0,
             expanding: false,
+            explorer: Explorer::default(),
+            sources: Vec::new(),
+            path_view: false,
             caption_key: None,
             group_key: None,
             label_mode: LabelMode::Auto,
@@ -276,6 +291,8 @@ impl GraphCanvas {
     /// Show a new result. Relationship endpoints the result left out are
     /// fetched so every edge has both ends on the canvas.
     pub fn set_data(&mut self, data: GraphData, window: &mut Window, cx: &mut Context<Self>) {
+        self.explorer.forget_walks();
+        self.set_path_view(false, cx);
         self.nodes.clear();
         self.edges.clear();
         self.selected = None;
@@ -348,6 +365,7 @@ impl GraphCanvas {
     ) {
         match event {
             NetworkGraphEvent::SelectionChanged(selection) => {
+                self.sources = settings::load_sources();
                 self.selected = match selection {
                     Selection::Node(node) => node.id.parse().ok().map(Selected::Node),
                     Selection::Edge(edge) => edge_id(edge).map(Selected::Edge),
@@ -358,6 +376,7 @@ impl GraphCanvas {
                     if let Some(node) = self.nodes.get(&id) {
                         cx.emit(CanvasEvent::NodeSelected(node.clone()));
                     }
+                    self.load_relationship_types(window, cx);
                 }
                 cx.notify();
             }
@@ -404,6 +423,340 @@ impl GraphCanvas {
             .ok();
         })
         .detach();
+    }
+
+    /// Offer the graph's relationship types as filters, once a node is picked.
+    fn load_relationship_types(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.compact || !self.explorer.available.is_empty() {
+            return;
+        }
+        cx.spawn_in(window, async move |this, cx| {
+            let schema = smol::unblock(crate::db::schema).await;
+            this.update(cx, |this, cx| {
+                if let Ok(schema) = schema {
+                    this.explorer.available = schema.relationship_types.into_iter().map(|rel| rel.name).collect();
+                    cx.notify();
+                }
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// By ID, so that a view comes back in the order it would have anyway.
+    fn view(&self) -> View {
+        let mut nodes: Vec<GraphNode> = self.nodes.values().cloned().collect();
+        let mut edges: Vec<GraphEdge> = self.edges.values().cloned().collect();
+        nodes.sort_by_key(|node| node.id);
+        edges.sort_by_key(|edge| edge.id);
+        View {
+            nodes,
+            edges,
+            walk: self.explorer.walk.clone(),
+            selected: self.selected_node(),
+        }
+    }
+
+    fn selected_node(&self) -> Option<i64> {
+        match self.selected {
+            Some(Selected::Node(id)) => Some(id),
+            _ => None,
+        }
+    }
+
+    /// Walk from the chosen starts and add what it finds to the canvas. A walk
+    /// that would not fit adds nothing and says so, as expanding does.
+    fn explore(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.explorer.running.is_some() {
+            return;
+        }
+        let Some(request) = self.explorer.request(self.selected_node()) else {
+            return;
+        };
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.explorer.running = Some(cancel.clone());
+        self.explorer.error = None;
+        cx.notify();
+        cx.spawn_in(window, async move |this, cx| {
+            let anchor = request.starts[0].to_string();
+            let result = smol::unblock(move || crate::db::explore(&request, &cancel)).await;
+            this.update_in(cx, |this, window, cx| {
+                this.explorer.running = None;
+                match result {
+                    Ok(walk) => this.show_walk(walk, &anchor, window, cx),
+                    Err(error) => this.explorer.error = Some(error.message),
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    fn show_walk(&mut self, walk: Exploration, anchor: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let fresh = walk.graph.nodes.iter().filter(|node| !self.nodes.contains_key(&node.id)).count();
+        if self.nodes.len() + fresh > NODE_LIMIT {
+            window.push_notification(Notification::warning(trf("canvas.limit", &[&NODE_LIMIT.to_string()])), cx);
+            return;
+        }
+        self.explorer.push_view(self.view());
+        self.set_path_view(false, cx);
+        let data = self.admit(walk.graph.nodes.clone(), walk.graph.edges.clone(), cx);
+        self.graph.update(cx, |graph, cx| graph.merge(data, Some(anchor), cx));
+        self.explorer.walk = Some(walk);
+    }
+
+    /// Narrow the canvas to the path the last walk took to `target`.
+    fn show_path(&mut self, target: i64, cx: &mut Context<Self>) {
+        let Some(path) = self.explorer.walk.as_ref().and_then(|walk| explorer::path_graph(walk, target)) else {
+            return;
+        };
+        self.explorer.push_view(self.view());
+        self.replace_canvas(path.nodes, path.edges, cx);
+        self.set_path_view(true, cx);
+        let id = target.to_string();
+        self.graph.update(cx, |graph, cx| graph.select_node(Some(&id), false, cx));
+    }
+
+    /// Return to the canvas as it was before the last walk or path.
+    fn go_back(&mut self, cx: &mut Context<Self>) {
+        if let Some(view) = self.explorer.pop_view() {
+            self.explorer.walk = view.walk;
+            self.explorer.error = None;
+            self.replace_canvas(view.nodes, view.edges, cx);
+            self.set_path_view(false, cx);
+            // Back where the person was, with the panel still in reach.
+            let id = view.selected.map(|id| id.to_string());
+            self.graph.update(cx, |graph, cx| graph.select_node(id.as_deref(), false, cx));
+        }
+    }
+
+    /// On a path every node is the point, so a selected one must not fade the
+    /// rest; elsewhere the canvas's usual setting applies.
+    fn set_path_view(&mut self, on: bool, cx: &mut Context<Self>) {
+        self.path_view = on;
+        let dimming = self.focus_dimming && !on;
+        self.graph.update(cx, |graph, cx| graph.set_focus_dimming(dimming, cx));
+    }
+
+    fn replace_canvas(&mut self, nodes: Vec<GraphNode>, edges: Vec<GraphEdge>, cx: &mut Context<Self>) {
+        self.nodes.clear();
+        self.edges.clear();
+        self.selected = None;
+        self.hidden = 0;
+        self.load(nodes, edges, cx);
+    }
+
+    /// Where the selected record came from, with what is missing stated.
+    fn render_evidence(&self, record: Evidence, cx: &mut Context<Self>) -> AnyElement {
+        let muted = cx.theme().muted_foreground;
+        let warning = cx.theme().warning;
+        let mono = cx.theme().mono_font_family.clone();
+        let unknown = tr("evidence.unknown");
+        let copy = serde_json::to_string_pretty(&record).expect("evidence serializes");
+        v_flex()
+            .gap_1()
+            .child(div().text_sm().font_semibold().child(tr("evidence.title")))
+            .children(explorer::evidence_rows(&record).into_iter().map(|(key, value)| {
+                let missing = value == unknown;
+                v_flex()
+                    .child(div().text_xs().text_color(muted).child(tr(key)))
+                    .child(
+                        div()
+                            .text_xs()
+                            .font_family(mono.clone())
+                            .whitespace_normal()
+                            .when(missing, |this| this.text_color(muted))
+                            .child(value),
+                    )
+            }))
+            .when(!record.stable, |this| {
+                this.child(div().text_xs().whitespace_normal().text_color(warning).child(tr("evidence.not_stable")))
+            })
+            .when(!record.redacted.is_empty(), |this| {
+                this.child(
+                    div()
+                        .text_xs()
+                        .whitespace_normal()
+                        .text_color(warning)
+                        .child(trf("evidence.redacted", &[&record.redacted.join(", ")])),
+                )
+            })
+            .child(
+                Button::new("evidence-copy")
+                    .xsmall()
+                    .outline()
+                    .label(tr("evidence.copy"))
+                    .on_click(move |_, _, cx| cx.write_to_clipboard(ClipboardItem::new_string(copy.clone()))),
+            )
+            .into_any_element()
+    }
+
+    fn selected_evidence(&self, selected: Selected) -> Option<Evidence> {
+        match selected {
+            Selected::Node(id) => self.nodes.get(&id).map(|node| evidence::for_node(node, &self.sources)),
+            Selected::Edge(id) => {
+                let edge = self.edges.get(&id)?;
+                let ends: Vec<GraphNode> = [edge.source, edge.target].iter().filter_map(|id| self.nodes.get(id).cloned()).collect();
+                Some(evidence::for_edge(edge, &ends, &self.sources))
+            }
+        }
+    }
+
+    fn render_explorer(&self, node: i64, cx: &mut Context<Self>) -> AnyElement {
+        let muted = cx.theme().muted_foreground;
+        let warning = cx.theme().warning;
+        let border = cx.theme().border;
+        let mono = cx.theme().mono_font_family.clone();
+        let explorer = &self.explorer;
+        let running = explorer.running.is_some();
+        let target = cx.entity().downgrade();
+        let current = explorer.direction;
+        let way = |id: &'static str, label: &'static str, direction: Direction, cx: &mut Context<Self>| {
+            let button = Button::new(id).xsmall().label(tr(label));
+            let button = if current == direction { button.primary() } else { button.outline() };
+            button.on_click(cx.listener(move |this, _, _, cx| {
+                this.explorer.direction = direction;
+                cx.notify();
+            }))
+        };
+        let types_label = match explorer.types.len() {
+            0 => tr("explore.types_all").to_string(),
+            count => trf("explore.types_some", &[&count.to_string()]),
+        };
+        let (available, chosen) = (explorer.available.clone(), explorer.types.clone());
+        let is_start = explorer.starts.contains(&node);
+        let path = explorer.walk.as_ref().map(|walk| explorer::explained_path(walk, node)).unwrap_or_default();
+        let path_evidence = explorer
+            .walk
+            .as_ref()
+            .and_then(|walk| evidence::for_path(walk, node, &self.sources))
+            .map(|record| serde_json::to_string_pretty(&record).expect("evidence serializes"));
+
+        v_flex()
+            .pt_2()
+            .mt_1()
+            .gap_1p5()
+            .border_t_1()
+            .border_color(border)
+            .child(div().text_sm().font_semibold().child(tr("explore.title")))
+            .child(
+                h_flex()
+                    .gap_1()
+                    .child(way("explore-out", "explore.out", Direction::Out, cx))
+                    .child(way("explore-in", "explore.in", Direction::In, cx))
+                    .child(way("explore-both", "explore.both", Direction::Both, cx)),
+            )
+            .child(
+                h_flex()
+                    .gap_1()
+                    .items_center()
+                    .child(
+                        Button::new("explore-fewer")
+                            .xsmall()
+                            .outline()
+                            .icon(IconName::Minus)
+                            .tooltip(tr("explore.fewer_hops"))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.explorer.change_hops(-1);
+                                cx.notify();
+                            })),
+                    )
+                    .child(div().text_xs().child(trf("explore.hops", &[&explorer.max_hops.to_string()])))
+                    .child(
+                        Button::new("explore-more")
+                            .xsmall()
+                            .outline()
+                            .icon(IconName::Plus)
+                            .tooltip(tr("explore.more_hops"))
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.explorer.change_hops(1);
+                                cx.notify();
+                            })),
+                    ),
+            )
+            .child(Button::new("explore-types").xsmall().outline().label(types_label).dropdown_menu(move |mut menu, _, _| {
+                for name in &available {
+                    let (target, picked) = (target.clone(), name.clone());
+                    menu = menu.item(PopupMenuItem::new(name.clone()).checked(chosen.contains(name)).on_click(move |_, _, cx| {
+                        target
+                            .update(cx, |canvas, cx| {
+                                canvas.explorer.toggle_type(&picked);
+                                cx.notify();
+                            })
+                            .ok();
+                    }));
+                }
+                menu
+            }))
+            .child(
+                h_flex()
+                    .gap_1()
+                    .items_center()
+                    .child(
+                        Button::new("explore-start")
+                            .xsmall()
+                            .outline()
+                            .label(tr(if is_start { "explore.remove_start" } else { "explore.add_start" }))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.explorer.toggle_start(node);
+                                cx.notify();
+                            })),
+                    )
+                    .when(!explorer.starts.is_empty(), |this| {
+                        this.child(div().text_xs().text_color(muted).child(trf("explore.starts", &[&explorer.starts.len().to_string()])))
+                    }),
+            )
+            .child(
+                h_flex()
+                    .gap_1()
+                    .child(
+                        Button::new("explore-run")
+                            .xsmall()
+                            .primary()
+                            .label(tr("explore.run"))
+                            .loading(running)
+                            .on_click(cx.listener(|this, _, window, cx| this.explore(window, cx))),
+                    )
+                    .when_some(explorer.running.clone(), |this, cancel| {
+                        this.child(
+                            Button::new("explore-cancel")
+                                .xsmall()
+                                .outline()
+                                .label(tr("explore.cancel"))
+                                .on_click(move |_, _, _| cancel.store(true, Ordering::Relaxed)),
+                        )
+                    }),
+            )
+            .children(explorer.status_lines().into_iter().map(|(line, warn)| {
+                div().text_xs().whitespace_normal().text_color(if warn { warning } else { muted }).child(line)
+            }))
+            .when(!path.is_empty(), |this| {
+                this.child(div().pt_1().text_xs().font_semibold().child(tr("explore.path")))
+                    .children(path.into_iter().map(|hop| {
+                        div().text_xs().whitespace_normal().font_family(mono.clone()).child(hop)
+                    }))
+                    .child(div().text_xs().whitespace_normal().text_color(muted).child(tr("explore.candidate")))
+                    .when_some(path_evidence, |this, copy| {
+                        this.child(
+                            Button::new("evidence-copy-path")
+                                .xsmall()
+                                .outline()
+                                .label(tr("evidence.copy_path"))
+                                .on_click(move |_, _, cx| cx.write_to_clipboard(ClipboardItem::new_string(copy.clone()))),
+                        )
+                    })
+                    .when(!self.path_view, |this| {
+                        this.child(
+                            Button::new("explore-show-path")
+                                .xsmall()
+                                .outline()
+                                .label(tr("explore.show_path"))
+                                .on_click(cx.listener(move |this, _, _, cx| this.show_path(node, cx))),
+                        )
+                    })
+            })
+            .into_any_element()
     }
 
     fn render_inspector(&self, cx: &mut Context<Self>) -> Option<AnyElement> {
@@ -454,6 +807,14 @@ impl GraphCanvas {
                         .child(div().font_semibold().child(title)),
                 )
                 .children(subtitle.map(|s| div().text_xs().text_color(muted).font_family(mono.clone()).child(s)))
+                // Above the properties: a node can have enough of them to push
+                // a walk's result out of sight.
+                .when_some(self.selected_node(), |this, id| {
+                    this.child(self.render_explorer(id, cx)).child(div().border_b_1().border_color(cx.theme().border))
+                })
+                .when_some(self.selected_evidence(selected), |this, record| {
+                    this.child(self.render_evidence(record, cx)).child(div().border_b_1().border_color(cx.theme().border))
+                })
                 .children(rows.into_iter().map(|(key, value)| {
                     let provenance = key.starts_with("khonsu_");
                     v_flex()
@@ -494,6 +855,7 @@ impl Render for GraphCanvas {
         let theme = cx.theme();
         let halo = theme.background;
         let muted = theme.muted_foreground;
+        let warning = theme.warning;
         let border = theme.border;
 
         let mut legend: BTreeMap<String, usize> = BTreeMap::new();
@@ -505,7 +867,10 @@ impl Render for GraphCanvas {
         let group_key = self.group_key.clone();
         let this = cx.entity().downgrade();
 
-        let note = if self.hidden > 0 {
+        let walk_warning = self.explorer.warning();
+        let note = if let Some(warning) = walk_warning.clone() {
+            warning
+        } else if self.hidden > 0 {
             trf("canvas.truncated", &[&self.nodes.len().to_string(), &(self.nodes.len() + self.hidden).to_string()])
         } else if self.compact {
             tr("canvas.compact_hint").to_string()
@@ -548,6 +913,15 @@ impl Render for GraphCanvas {
                                         this.graph.update(cx, |graph, cx| graph.relayout(cx));
                                     })),
                             )
+                            .when(self.explorer.can_go_back() && self.explorer.running.is_none(), |this_bar| {
+                                this_bar.child(
+                                    Button::new("explore-back")
+                                        .xsmall()
+                                        .outline()
+                                        .label(tr("explore.back"))
+                                        .on_click(cx.listener(|this, _, _, cx| this.go_back(cx))),
+                                )
+                            })
                             .when(!group_keys.is_empty() || group_key.is_some(), |this_bar| {
                                 let label = match &group_key {
                                     Some(key) => trf("canvas.group_by", &[key]),
@@ -658,7 +1032,7 @@ impl Render for GraphCanvas {
                             .border_color(border)
                             .bg(halo)
                             .text_xs()
-                            .text_color(muted)
+                            .text_color(if walk_warning.is_some() { warning } else { muted })
                             .whitespace_normal()
                             .child(note),
                     ),

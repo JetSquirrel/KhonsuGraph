@@ -2,8 +2,10 @@
 //! blocks on the engine; UI code reaches it through `smol::unblock`.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::AtomicBool;
 use std::sync::{LazyLock, Mutex, PoisonError};
 
+use khonsu_core::explore::{Exploration, ExploreRequest};
 use khonsu_core::{AccessMode, Graph, GraphData, GraphSchema, Language, OpenError, QueryError, QueryOptions, QueryResult};
 use serde_json::Map;
 
@@ -89,6 +91,12 @@ pub fn schema() -> Result<GraphSchema, QueryError> {
 
 pub fn neighbors(id: i64) -> Result<GraphData, QueryError> {
     with_graph(|g| g.neighbors(id, 200))
+}
+
+/// Holds the graph for the whole walk, as any call here does; `cancel` stops
+/// it between queries.
+pub fn explore(request: &ExploreRequest, cancel: &AtomicBool) -> Result<Exploration, QueryError> {
+    with_graph(|g| g.explore(request, cancel))
 }
 
 pub fn nodes_by_id(ids: &[i64]) -> Result<GraphData, QueryError> {

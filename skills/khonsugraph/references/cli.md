@@ -37,6 +37,44 @@ khonsu explain --db DIR --cypher "MATCH (n:Host) RETURN n"
 
 `{node_count, relationship_count, labels: [{name, count, properties}], relationship_types: [{name, count, properties, patterns: [[source, target]]}], tables: [{name, columns}]}`. Counts are exact; properties come from HawDB's statistics.
 
+## Explore
+
+```sh
+khonsu explore --db graphs/aws --from shop/cidr:internet --to shop/123456789012:us-east-1:i-web1 --type ROUTES_TO,FORWARDS_TO
+```
+
+| Option | Meaning | Default |
+|---|---|---|
+| `--from NODE` | A start: a `khonsu_id` or a numeric ID. Repeat for several | Required |
+| `--to NODE` | Report a fewest-hops `path` to this node among what was found | None |
+| `--direction out\|in\|both` | Along the arrows, against them, or both | `out` |
+| `--type A,B` | Follow only these relationship types | Every type |
+| `--max-hops N` | Steps from a start, at most 16 | 3 |
+| `--max-nodes N` | Nodes returned, starts included, at most 2,000 | 200 |
+| `--max-edges N` | Relationships returned, at most 5,000 | 500 |
+
+The output holds `complete`, `limits` (`hops`, `nodes`, `edges`), `depth_reached`, `starts`, `missing_starts`, `hops` (`depth`, `from`, `to`, `edge`, `rel_type`, `along`, `text`), `graph` and, with `--to`, `path` (`to`, `found`, `hops`). A value above a ceiling is refused, not lowered.
+
+## Evidence
+
+```sh
+khonsu evidence --db graphs/aws --node shop/123456789012:us-east-1:i-web1
+```
+
+`--node` and `--rel` each take a `khonsu_id` or a numeric ID and can be repeated. The output is `{"evidence": [...]}`, in the order: nodes, then relationships. A record that is not there exits 1 with kind `not_found`, and naming no record exits 2.
+
+| Field | Meaning |
+|---|---|
+| `evidence_id` | `node:<khonsu_id>` or `rel:<khonsu_id>`; `node-internal:<id>` when `stable` is false |
+| `kind`, `internal_id`, `types` | What it is: labels, or the relationship type |
+| `from`, `to` | A relationship's ends, by evidence ID |
+| `source`, `plugin` | What wrote it |
+| `record_written_at` | When it last changed, in Unix seconds; can predate the last sync |
+| `source_last_successful_sync` | From the source's settings; unknown when its last sync failed |
+| `source_snapshot`, `rule_id` | Unknown for now |
+| `assertion` | `explicit` (a source reported it), `derived`, or `unknown` |
+| `properties`, `redacted` | Its own properties, and the names masked as possible secrets |
+
 ## Graph analysis
 
 HawDB's Cypher has no shortest paths, centrality or communities; `khonsu analyze` computes them in memory, after networkx's definitions (results match networkx on the same graph).
