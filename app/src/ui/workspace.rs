@@ -1,6 +1,7 @@
 //! Center workspace, after DuckLocal's: query tabs (Cypher or SQL), the
 //! toolbar, the editor, and the tab's own results below a resizable split.
-//! With no graph open it is the welcome screen instead.
+//! The home page stands in for all that when no graph is open, when a graph
+//! opens with nothing to come back to, or when asked for. The tabs wait behind it.
 
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::input::{Editor, EditorState, InputEvent, TabSize};
@@ -24,10 +25,12 @@ use gpui_kit::component::{Disableable, WindowExt};
 use crate::i18n::{tr, trf};
 use crate::spec::view::{Dashboard, DashboardEvent};
 use crate::state::{AppState, GraphChanged, QueryStats};
-use crate::ui::results::ResultsPanel;
+use crate::ui::results::{ResultsPanel, View};
 use crate::ui::{ExplainQuery, RunQuery, SaveSpec, WORKSPACE_KEY_CONTEXT};
 
 const RESULTS_PANEL_DEFAULT: f32 = 540.;
+/// Node types named on the home page; the sidebar lists them all.
+const OVERVIEW_LABELS: usize = 8;
 /// Statements that may change labels, types or tables: the sidebar reloads
 /// after them.
 const WRITE_WORDS: &[&str] = &["CREATE", "MERGE", "DELETE", "SET", "INSERT", "DROP", "ALTER", "UPDATE", "REMOVE"];
@@ -111,6 +114,26 @@ fn default_text(language: Language) -> &'static str {
     }
 }
 
+/// Whether a query tab holds anything beyond what a new tab starts with.
+fn is_work(language: Language, text: &str) -> bool {
+    let text = text.trim();
+    !text.is_empty() && text != default_text(language).trim()
+}
+
+fn browse_query() -> &'static str {
+    "MATCH (n)\nRETURN n\nLIMIT 100"
+}
+
+/// A bounded sample for the canvas. A pattern with a relationship would find
+/// nothing in a graph that has only nodes, and read as an empty graph.
+fn graph_sample_query(relationships: u64) -> &'static str {
+    if relationships == 0 {
+        "MATCH (n)\nRETURN n\nLIMIT 200"
+    } else {
+        "MATCH (n)-[r]->(m)\nRETURN n, r, m\nLIMIT 200"
+    }
+}
+
 fn tabs_key(graph: &std::path::Path) -> String {
     format!("tabs:{}", graph.display())
 }
@@ -188,6 +211,9 @@ impl Workspace {
             .flatten()
             .and_then(|json| serde_json::from_str(&json).ok())
             .unwrap_or_default();
+        // Nothing to come back to: start from what's in the graph.
+        let home = !saved.iter().any(|tab: &SavedTab| tab.dashboard.is_some() || is_work(tab.language, &tab.text));
+        self.state.update(cx, |state, cx| state.set_home(home, cx));
         let mut problems = Vec::new();
         for saved in saved {
             match saved.dashboard {
@@ -209,7 +235,9 @@ impl Workspace {
         for path in problems {
             window.push_notification(trf("dashboard.restore.gone_path", &[&path]), cx);
         }
-        self.focus_active_editor(window, cx);
+        if !home {
+            self.focus_active_editor(window, cx);
+        }
         cx.notify();
     }
 
@@ -242,6 +270,7 @@ impl Workspace {
         if self.state.read(cx).graph.is_none() {
             return;
         }
+        self.leave_home(cx);
         let tab = self.new_tab(language, text.unwrap_or(""), window, cx);
         self.tabs.push(WorkspaceTab::Query(tab));
         self.active = self.tabs.len() - 1;
@@ -306,6 +335,7 @@ impl Workspace {
             self.activate_tab(ix, window, cx);
             return;
         }
+        self.leave_home(cx);
         self.push_dashboard(path, window, cx);
         self.active = self.tabs.len() - 1;
         self.remember_tabs(cx);
@@ -389,12 +419,13 @@ impl Workspace {
                 }),
             })
             .collect();
-        serde_json::json!({ "tabs": tabs })
+        serde_json::json!({ "home": self.state.read(cx).showing_home(), "tabs": tabs })
     }
 
     /// Put `text` in the active tab when it is empty and of the same
     /// language, otherwise in a new tab. Used by the sidebar and history.
     pub fn insert_query(&mut self, language: Language, text: &str, run: bool, window: &mut Window, cx: &mut Context<Self>) {
+        self.leave_home(cx);
         let reuse = self
             .tabs
             .get(self.active)
@@ -440,6 +471,7 @@ impl Workspace {
         if self.tabs.is_empty() {
             return;
         }
+        self.leave_home(cx);
         self.active = index.min(self.tabs.len() - 1);
         self.focus_active_editor(window, cx);
         cx.notify();
@@ -464,6 +496,8 @@ impl Workspace {
         if self.running || self.state.read(cx).is_opening() {
             return;
         }
+        // Whatever asked for this should see the result.
+        self.leave_home(cx);
         let Some(tab) = self.tabs.get(self.active).and_then(WorkspaceTab::as_query) else {
             return;
         };
@@ -756,33 +790,220 @@ impl Workspace {
             )
     }
 
-    fn render_welcome(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
-        let opening = self.state.read(cx).is_opening();
-        let recent = self.state.read(cx).recent.clone();
+    /// Whether any tab holds something of the person's.
+    fn has_work(&self, cx: &App) -> bool {
+        self.tabs.iter().any(|tab| match tab {
+            WorkspaceTab::Query(tab) => is_work(tab.language, &tab.editor.read(cx).value()),
+            WorkspaceTab::Dashboard(_) => true,
+        })
+    }
+
+    fn leave_home(&self, cx: &mut Context<Self>) {
+        self.state.update(cx, |state, cx| state.set_home(false, cx));
+    }
+
+    /// Back to the tabs just as they were.
+    fn continue_work(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.leave_home(cx);
+        self.focus_active_editor(window, cx);
+    }
+
+    /// Run a query the app wrote, in the tab if it holds nothing of the
+    /// person's, and show the result in `view`.
+    fn explore(&mut self, text: &str, view: View, window: &mut Window, cx: &mut Context<Self>) {
+        self.leave_home(cx);
+        let reuse = self
+            .tabs
+            .get(self.active)
+            .and_then(WorkspaceTab::as_query)
+            .filter(|tab| tab.language == Language::Cypher && !is_work(tab.language, &tab.editor.read(cx).value()))
+            .map(|tab| tab.editor.clone());
+        match reuse {
+            Some(editor) => editor.update(cx, |editor, cx| editor.set_value(text.to_string(), window, cx)),
+            None => self.add_tab(Language::Cypher, Some(text), window, cx),
+        }
+        if let Some(tab) = self.tabs.get(self.active).and_then(WorkspaceTab::as_query) {
+            tab.results.clone().update(cx, |results, cx| results.prefer_view(view, cx));
+        }
+        self.remember_tabs(cx);
+        self.run_active(window, cx);
+    }
+
+    /// What's in the open graph and what can be done with it.
+    fn render_overview(&mut self, info: &crate::db::GraphInfo, cx: &mut Context<Self>) -> AnyElement {
+        let muted = cx.theme().muted_foreground;
+        let (schema, schema_error) = {
+            let state = self.state.read(cx);
+            (state.schema.clone(), state.schema_error.clone())
+        };
+        let has_work = self.has_work(cx);
+        let read_only = info.read_only;
+        let card = v_flex()
+            .w(crate::ui::scale::design(520.))
+            .p_4()
+            .gap_3()
+            .rounded_lg()
+            .border_1()
+            .border_color(cx.theme().border)
+            .child(
+                v_flex()
+                    .gap_1()
+                    .child(
+                        h_flex()
+                            .gap_2()
+                            .items_center()
+                            .child(div().text_lg().font_weight(FontWeight::SEMIBOLD).child(info.name()))
+                            .when(read_only, |this| {
+                                this.child(div().text_xs().px_1p5().rounded_md().border_1().border_color(cx.theme().border).child(tr("title_bar.read_only")))
+                            }),
+                    )
+                    .child(
+                        div()
+                            .text_xs()
+                            .whitespace_normal()
+                            .font_family(cx.theme().mono_font_family.clone())
+                            .text_color(muted)
+                            .child(info.path.display().to_string()),
+                    ),
+            );
+        let Some(schema) = schema else {
+            return card
+                .child(match schema_error {
+                    Some(error) => div().text_sm().whitespace_normal().text_color(cx.theme().danger).child(error).into_any_element(),
+                    None => h_flex().gap_2().items_center().text_sm().text_color(muted).child(gpui_kit::component::spinner::Spinner::new().xsmall()).child(tr("sidebar.loading")).into_any_element(),
+                })
+                .into_any_element();
+        };
+        let has_nodes = schema.node_count > 0;
+        let nodes_only = has_nodes && schema.relationship_count == 0;
+        let mut labels = schema.labels.clone();
+        labels.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.name.cmp(&b.name)));
+        let more_labels = labels.len().saturating_sub(OVERVIEW_LABELS);
+        labels.truncate(OVERVIEW_LABELS);
+        card.child(div().text_sm().child(trf("home.counts", &[&schema.node_count.to_string(), &schema.relationship_count.to_string()])))
+            .when(!labels.is_empty(), |this| {
+                this.child(
+                    v_flex()
+                        .gap_1()
+                        .child(div().text_xs().text_color(muted).child(tr("home.labels")))
+                        .child(
+                            h_flex()
+                                .flex_wrap()
+                                .gap_1()
+                                .items_center()
+                                .children(labels.into_iter().enumerate().map(|(ix, label)| {
+                                    let sample = crate::ui::sidebar::sample_for_label(&label.name);
+                                    Button::new(("home-label", ix))
+                                        .outline()
+                                        .xsmall()
+                                        .label(format!("{} · {}", label.name, label.count))
+                                        .tooltip(tr("sidebar.sample_query"))
+                                        .on_click(cx.listener(move |this, _, window, cx| this.explore(&sample, View::Table, window, cx)))
+                                }))
+                                .when(more_labels > 0, |this| {
+                                    this.child(div().text_xs().text_color(muted).child(trf("home.more_labels", &[&more_labels.to_string()])))
+                                }),
+                        ),
+                )
+            })
+            .when(nodes_only, |this| this.child(div().text_sm().text_color(muted).child(tr("home.nodes_only"))))
+            .when(!has_nodes, |this| {
+                this.child(div().text_sm().whitespace_normal().text_color(muted).child(tr(if read_only { "home.empty_read_only" } else { "home.empty" })))
+            })
+            .child(
+                h_flex()
+                    .flex_wrap()
+                    .gap_2()
+                    .when(has_work, |this| {
+                        this.child(
+                            Button::new("home-continue")
+                                .primary()
+                                .small()
+                                .label(tr("home.continue"))
+                                .on_click(cx.listener(|this, _, window, cx| this.continue_work(window, cx))),
+                        )
+                    })
+                    .when(has_nodes, |this| {
+                        this.child(
+                            Button::new("home-browse")
+                                .map(|button| if has_work { button.outline() } else { button.primary() })
+                                .small()
+                                .label(tr("home.browse_nodes"))
+                                .on_click(cx.listener(|this, _, window, cx| this.explore(browse_query(), View::Table, window, cx))),
+                        )
+                        .child(Button::new("home-graph").outline().small().label(tr("home.view_graph")).on_click({
+                            let sample = graph_sample_query(schema.relationship_count);
+                            cx.listener(move |this, _, window, cx| this.explore(sample, View::Graph, window, cx))
+                        }))
+                    })
+                    .when(!has_nodes && !read_only, |this| {
+                        let state = self.state.clone();
+                        this.child(
+                            Button::new("home-add-data")
+                                .primary()
+                                .small()
+                                .label(tr("home.add_data"))
+                                .on_click(move |_, window, cx| crate::ui::sources::open_add(state.clone(), window, cx)),
+                        )
+                    })
+                    .child(
+                        Button::new("home-write")
+                            .outline()
+                            .small()
+                            .label(tr("home.write_query"))
+                            .on_click(cx.listener(|this, _, window, cx| this.continue_work(window, cx))),
+                    ),
+            )
+            .when(has_nodes, |this| this.child(div().text_xs().whitespace_normal().text_color(muted).child(tr("home.sample"))))
+            .into_any_element()
+    }
+
+    fn render_home(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
+        let (opening, recent, graph) = {
+            let state = self.state.read(cx);
+            (state.is_opening(), state.recent.clone(), state.graph.clone())
+        };
         let open_state = self.state.clone();
         let new_state = self.state.clone();
-        v_flex()
-            .size_full()
+        let import_state = self.state.clone();
+        let overview = graph.as_ref().map(|info| self.render_overview(info, cx));
+        let has_graph = graph.is_some();
+        div().id("home").size_full().overflow_y_scroll().child(v_flex()
+            .w_full()
+            .min_h_full()
             .items_center()
             .justify_center()
             .gap_4()
-            .child(img("brand/logo.png").size(px(96.)).rounded_xl())
-            .child(div().text_2xl().font_weight(FontWeight::BOLD).child("KhonsuGraph"))
-            .child(div().text_color(cx.theme().muted_foreground).child(tr("app.tagline")))
+            .py_6()
+            .when(!has_graph, |this| {
+                this.child(img("brand/logo.png").size(px(96.)).rounded_xl())
+                    .child(div().text_2xl().font_weight(FontWeight::BOLD).child("KhonsuGraph"))
+            })
+            .child(div().text_color(cx.theme().muted_foreground).child(tr("home.purpose")))
+            .children(overview)
             .child(
                 h_flex()
                     .gap_2()
                     .child(
                         Button::new("welcome-open")
-                            .primary()
+                            .map(|button| if has_graph { button.outline() } else { button.primary() })
                             .icon(IconName::FolderOpen)
                             .label(tr("title_bar.open_graph"))
                             .disabled(opening)
                             .on_click(move |_, window, cx| crate::ui::pick_graph(open_state.clone(), false, window, cx)),
                     )
                     .child(
-                        Button::new("welcome-new")
+                        Button::new("welcome-import")
                             .outline()
+                            .label(tr("home.import_csv"))
+                            .disabled(opening)
+                            .on_click(move |_, window, cx| {
+                                crate::ui::graph_dialog::show(import_state.clone(), crate::ui::graph_dialog::Purpose::ImportCsv, window, cx)
+                            }),
+                    )
+                    .child(
+                        Button::new("welcome-new")
+                            .ghost()
                             .icon(IconName::Plus)
                             .label(tr("title_bar.new_graph"))
                             .disabled(opening)
@@ -875,7 +1096,7 @@ impl Workspace {
                     .text_center()
                     .text_color(cx.theme().muted_foreground)
                     .child(tr("welcome.privacy")),
-            )
+            ))
     }
 }
 
@@ -923,7 +1144,7 @@ fn remove_secondary_enter_newline(editor: &Entity<EditorState>, window: &mut Win
 
 impl Render for Workspace {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let has_graph = self.state.read(cx).graph.is_some();
+        let home = self.state.read(cx).showing_home();
         let dashboard = self
             .tabs
             .get(self.active)
@@ -942,8 +1163,8 @@ impl Render for Workspace {
             .on_action(cx.listener(|this, _: &RunQuery, window, cx| this.run_active(window, cx)))
             .on_action(cx.listener(|this, _: &ExplainQuery, window, cx| this.explain_active(window, cx)))
             .on_action(cx.listener(|this, _: &SaveSpec, window, cx| this.save_active_dashboard(window, cx)))
-            .when(!has_graph, |this| this.child(self.render_welcome(cx)))
-            .when(has_graph, |this| {
+            .when(home, |this| this.child(self.render_home(cx)))
+            .when(!home, |this| {
                 let this = this.child(self.render_tab_bar(cx));
                 match (dashboard, query) {
                     (Some((path, host)), _) => this
@@ -979,6 +1200,28 @@ fn same_file(a: &std::path::Path, b: &std::path::Path) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::{browse_query, default_text, graph_sample_query, is_work, Language};
+
+    #[test]
+    fn a_new_tab_is_not_work_until_someone_changes_it() {
+        assert!(!is_work(Language::Cypher, ""));
+        assert!(!is_work(Language::Cypher, "  \n"));
+        assert!(!is_work(Language::Cypher, default_text(Language::Cypher)));
+        assert!(!is_work(Language::Sql, default_text(Language::Sql)));
+        assert!(is_work(Language::Cypher, "MATCH (n) RETURN n"));
+        // The other language's starting text was written by someone.
+        assert!(is_work(Language::Sql, default_text(Language::Cypher)));
+    }
+
+    #[test]
+    fn the_samples_are_bounded_and_a_nodes_only_graph_still_shows_nodes() {
+        for query in [browse_query(), graph_sample_query(0), graph_sample_query(5)] {
+            assert!(query.contains("LIMIT"), "{query}");
+        }
+        assert!(!graph_sample_query(0).contains("-[r]->"));
+        assert!(graph_sample_query(5).contains("-[r]->"));
+    }
+
     #[test]
     fn writes_are_recognised_as_whole_words() {
         assert!(super::changes_schema("MATCH (n) SET n.x = 1"));

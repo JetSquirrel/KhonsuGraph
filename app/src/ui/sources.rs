@@ -98,6 +98,26 @@ pub fn open_add(state: Entity<AppState>, window: &mut Window, cx: &mut App) {
         .detach();
 }
 
+/// The CSV form for the open graph, without choosing a plugin first. Falls back
+/// to the picker if the CSV plugin can't be found.
+pub fn open_csv(state: Entity<AppState>, window: &mut Window, cx: &mut App) {
+    window
+        .spawn(cx, async move |cx| {
+            let found = smol::unblock(|| {
+                let info = plugin::find("csv")?;
+                let describe = plugin::describe(&info)?;
+                Ok::<_, plugin::PluginError>((info, describe))
+            })
+            .await;
+            cx.update(move |window, cx| match found {
+                Ok((info, describe)) => begin_configure(state, info, describe, None, window, cx),
+                Err(_) => open_add(state, window, cx),
+            })
+            .ok();
+        })
+        .detach();
+}
+
 fn show_plugin_picker(
     state: Entity<AppState>,
     plugins: Vec<(PluginInfo, Result<Describe, String>)>,

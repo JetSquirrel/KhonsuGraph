@@ -163,7 +163,9 @@ impl KhonsuApp {
 
 impl Render for KhonsuApp {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let collapsed = self.state.read(cx).is_sidebar_collapsed();
+        // With no graph the sidebar has nothing to list, and the home page
+        // should have the attention.
+        let collapsed = self.state.read(cx).is_sidebar_collapsed() || self.state.read(cx).graph.is_none();
         v_flex()
             .size_full()
             .bg(cx.theme().background)
