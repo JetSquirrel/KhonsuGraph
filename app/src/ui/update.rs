@@ -448,6 +448,7 @@ fn replace_files(new: &Path, target: &Path) -> anyhow::Result<()> {
 /// What a replaced file is renamed to until the next launch deletes it.
 const OLD_SUFFIX: &str = ".update-old";
 
+#[cfg(not(target_os = "macos"))]
 fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
     let mut name = path.as_os_str().to_owned();
     name.push(suffix);
