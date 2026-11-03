@@ -54,7 +54,7 @@ treat it as you would the graph.
 - **Records with no stable ID aren't compared.** They're counted, and `warnings` says
   how many. A record written by hand usually has none.
 - **A diff lists records, not meanings.** It doesn't say which exposure findings or
-  paths changed. To see that, run `khonsu exposure` on the graph, or compare the
+  paths changed. To see that, run the analysis on the graph, such as `khonsu plugin analyze aws exposure`, or compare the
   relationships it lists.
 - **Snapshots are taken by hand.** Nothing takes one when a sync runs.
 - **The window has no snapshot or diff view yet.** It does warn when a reopened

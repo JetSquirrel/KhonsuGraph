@@ -26,6 +26,8 @@
 //! sync partial, so that it removes nothing; a service with nothing to report
 //! has a file with an empty list.
 
+mod exposure;
+
 use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
@@ -33,7 +35,7 @@ use std::path::PathBuf;
 use std::process::{Command, ExitCode};
 
 use khonsu_plugin_protocol::{
-    read_request, ConfigField, Describe, EdgeRecord, Emitter, FieldKind, Message, NodeRecord, Permissions, Request,
+    read_analyze_request, read_request, ConfigField, Describe, EdgeRecord, Emitter, FieldKind, Message, NodeRecord, Permissions, Request,
 };
 use serde_json::{json, Map, Value};
 
@@ -78,6 +80,7 @@ fn describe() -> Describe {
             .map(String::from)
             .to_vec(),
         supports_incremental: false,
+        analyses: vec![exposure::info()],
     }
 }
 
@@ -539,14 +542,25 @@ fn run<W: Write>(command: &str, out: &mut Emitter<W>, request: Option<Request>) 
             let gaps = source.gaps();
             out.emit(&Message::Done { nodes, edges, complete: gaps.is_empty(), gaps }).map_err(io)
         }
-        other => Err(format!("unknown command {other:?}; expected describe, test or sync")),
+        "analyze" => {
+            let request = read_analyze_request().map_err(|e| format!("cannot read the analysis request: {e}"))?;
+            if request.analysis != exposure::ANALYSIS {
+                return Err(format!("no analysis {:?}", request.analysis));
+            }
+            let (findings, subjects) = exposure::evaluate(&request);
+            for finding in findings {
+                out.emit(&Message::Finding(Box::new(finding))).map_err(io)?;
+            }
+            out.emit(&Message::AnalysisDone { subjects }).map_err(io)
+        }
+        other => Err(format!("unknown command {other:?}; expected describe, test, sync or analyze")),
     }
 }
 
 fn main() -> ExitCode {
     let mut out = Emitter::stdout();
     let command = std::env::args().nth(1).unwrap_or_default();
-    let request = if command == "describe" { None } else { read_request().ok() };
+    let request = if matches!(command.as_str(), "describe" | "analyze") { None } else { read_request().ok() };
     match run(&command, &mut out, request) {
         Ok(()) => ExitCode::SUCCESS,
         Err(message) => {

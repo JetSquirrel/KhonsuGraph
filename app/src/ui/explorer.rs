@@ -1,15 +1,16 @@
 //! Path Explorer's state, apart from the canvas that draws it: what to walk,
 //! what the last walk found, and the views to go back to.
 
-use std::collections::BTreeSet;
-use std::sync::atomic::AtomicBool;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use khonsu_core::evidence::{Assertion, Evidence, Field, SourceCoverage};
 use khonsu_core::settings::RunStatus;
-use khonsu_core::explore::{Direction, Exploration, ExploreRequest, Limit, DEFAULT_MAX_HOPS, MAX_HOPS};
-use khonsu_core::exposure::{Finding, Report, Status, Verdict, RULE_BALANCER, RULE_DIRECT, RULE_LATERAL};
+use khonsu_core::explore::{Direction, Exploration, ExploreRequest, Hop, Limit, DEFAULT_MAX_HOPS, MAX_HOPS};
 use khonsu_core::investigation::{GraphState, Investigation, RecordRef, Reopened};
+use khonsu_core::plugin_analysis::{Finding, Offered, Report};
+use khonsu_core::protocol::{AnalysisInfo, ConditionStatus, HopRef};
 use khonsu_core::util::format_unix_time;
 use khonsu_core::{GraphData, GraphEdge, GraphNode};
 
@@ -100,12 +101,18 @@ pub struct Explorer {
     pub walk: Option<Exploration>,
     /// A walk that failed; the canvas keeps what it had.
     pub error: Option<String>,
-    /// The last exposure check, kept until the canvas gets a new result.
-    pub exposure: Option<Report>,
-    pub checking_exposure: bool,
-    pub exposure_error: Option<String>,
+    /// Analyses that plugins offer, and which apply is up to their labels.
+    pub analyses: Vec<Offered>,
+    /// The last run of each analysis by [`analysis_key`], kept until the canvas
+    /// gets a new result.
+    pub reports: BTreeMap<String, Report>,
+    /// Those running; setting the flag ends the plugin.
+    pub checking: BTreeMap<String, Arc<AtomicBool>>,
+    pub analysis_errors: BTreeMap<String, String>,
     /// The reopened investigation this walk came from.
     pub restored: Option<Restored>,
+    /// The finding path on the canvas, as hops and as what to save for it.
+    pub finding_path: Option<(Vec<Hop>, Vec<HopRef>)>,
     history: Vec<View>,
 }
 
@@ -120,10 +127,12 @@ impl Default for Explorer {
             running: None,
             walk: None,
             error: None,
-            exposure: None,
-            checking_exposure: false,
-            exposure_error: None,
+            analyses: Vec::new(),
+            reports: BTreeMap::new(),
+            checking: BTreeMap::new(),
+            analysis_errors: BTreeMap::new(),
             restored: None,
+            finding_path: None,
             history: Vec::new(),
         }
     }
@@ -181,9 +190,14 @@ impl Explorer {
     pub fn forget_walks(&mut self) {
         self.walk = None;
         self.error = None;
-        self.exposure = None;
-        self.exposure_error = None;
+        self.reports.clear();
+        self.analysis_errors.clear();
+        // What they would report no longer describes the canvas.
+        for (_, cancel) in std::mem::take(&mut self.checking) {
+            cancel.store(true, Ordering::Relaxed);
+        }
         self.restored = None;
+        self.finding_path = None;
         self.starts.clear();
         self.history.clear();
     }
@@ -281,47 +295,46 @@ pub fn findings_for<'a>(report: &'a Report, node: &GraphNode) -> Vec<&'a Finding
     report.findings.iter().filter(|finding| finding.resource == resource).collect()
 }
 
-pub fn verdict_key(verdict: Verdict) -> &'static str {
-    match verdict {
-        Verdict::PotentialExposure => "exposure.verdict.potential",
-        Verdict::InsufficientData => "exposure.verdict.insufficient",
-        Verdict::NotIndicated => "exposure.verdict.not_indicated",
+impl Explorer {
+    /// What to save as the exact path when saving at `node`: the finding path, if
+    /// the walk is still that path and `node` is where it ends.
+    pub fn exact_path_to(&self, node: i64) -> Vec<HopRef> {
+        let current = self.walk.as_ref().map(|walk| walk.hops.as_slice());
+        match &self.finding_path {
+            Some((hops, refs)) if current == Some(hops.as_slice()) && hops.last().is_some_and(|hop| hop.to == node) => refs.clone(),
+            _ => Vec::new(),
+        }
     }
 }
 
-pub fn status_key(status: Status) -> &'static str {
+/// Which run of an analysis this is about: plugins each name their own.
+pub fn analysis_key(offered: &Offered) -> String {
+    format!("{}/{}", offered.plugin.id(), offered.info.id)
+}
+
+/// A plugin's text in the window's language, falling back on what it wrote.
+pub fn analysis_text(info: &AnalysisInfo, key: &str, fallback: &str) -> String {
+    info.translated(crate::i18n::current().code(), key).unwrap_or(fallback).to_string()
+}
+
+/// A verdict's words, from the analysis that gave it.
+pub fn verdict_text(info: &AnalysisInfo, id: &str) -> String {
+    let title = info.verdicts.iter().find(|verdict| verdict.id == id).map_or(id, |verdict| verdict.title.as_str());
+    analysis_text(info, &format!("verdict.{id}"), title)
+}
+
+/// A rule's title, from the analysis that has it.
+pub fn rule_text(info: &AnalysisInfo, id: &str) -> String {
+    let title = info.rules.iter().find(|rule| rule.rule_id == id).map_or(id, |rule| rule.title.as_str());
+    analysis_text(info, &format!("rule.{id}"), title)
+}
+
+pub fn status_key(status: ConditionStatus) -> &'static str {
     match status {
-        Status::Met => "exposure.status.met",
-        Status::NotMet => "exposure.status.not_met",
-        Status::Unknown => "exposure.status.unknown",
+        ConditionStatus::Met => "analysis.status.met",
+        ConditionStatus::NotMet => "analysis.status.not_met",
+        ConditionStatus::Unknown => "analysis.status.unknown",
     }
-}
-
-/// A rule's title in the window's language.
-pub fn rule_key(rule_id: &str) -> Option<&'static str> {
-    match rule_id {
-        RULE_DIRECT => Some("exposure.rule.direct"),
-        RULE_BALANCER => Some("exposure.rule.balancer"),
-        RULE_LATERAL => Some("exposure.rule.lateral"),
-        _ => None,
-    }
-}
-
-/// A condition's statement in the window's language.
-pub fn condition_key(id: &str) -> Option<&'static str> {
-    Some(match id {
-        "instance-running" => "exposure.cond.running",
-        "public-address" => "exposure.cond.address",
-        "open-inbound-rule" => "exposure.cond.open_rule",
-        "internet-route" => "exposure.cond.route",
-        "internet-facing" => "exposure.cond.facing",
-        "balancer-open-rule" => "exposure.cond.balancer_open",
-        "target-healthy" => "exposure.cond.healthy",
-        "target-allows-balancer" => "exposure.cond.target_allows",
-        "source-potentially-exposed" => "exposure.cond.source",
-        "group-allows-source" => "exposure.cond.group_allows",
-        _ => return None,
-    })
 }
 
 /// Only the nodes and relationships on the path to `target`.
@@ -385,89 +398,101 @@ mod tests {
         }
     }
 
-    /// A public balancer in front of `app`, and `db` allowing `app`'s group, so
-    /// that every rule produces a finding.
-    fn exposure_report() -> Report {
-        let at = |id: i64, label: &str, extra: serde_json::Value| GraphNode {
-            id,
-            labels: vec![label.into()],
-            properties: extra.as_object().unwrap().clone(),
-        };
-        let link = |id: i64, source: i64, rel: &str, target: i64, extra: serde_json::Value| GraphEdge {
-            id,
-            source,
-            target,
-            rel_type: rel.into(),
-            properties: extra.as_object().unwrap().clone(),
-        };
-        let data = GraphData {
-            nodes: vec![
-                at(1, "Cidr", json!({"khonsu_id": "net", "cidr": "0.0.0.0/0"})),
-                at(2, "SecurityGroup", json!({"khonsu_id": "sg-lb"})),
-                at(3, "SecurityGroup", json!({"khonsu_id": "sg-app"})),
-                at(4, "SecurityGroup", json!({"khonsu_id": "sg-db"})),
-                at(5, "LoadBalancer", json!({"khonsu_id": "lb", "scheme": "internet-facing"})),
-                at(6, "TargetGroup", json!({"khonsu_id": "tg", "port": 80})),
-                at(7, "Instance", json!({"khonsu_id": "app", "name": "app", "state": "running"})),
-                at(8, "Instance", json!({"khonsu_id": "db", "name": "db", "state": "running"})),
-            ],
-            edges: vec![
-                link(1, 1, "ROUTES_TO", 5, json!({"khonsu_id": "a"})),
-                link(2, 1, "ALLOWS", 2, json!({"khonsu_id": "b", "protocol": "tcp", "ports": "80"})),
-                link(3, 5, "PROTECTED_BY", 2, json!({"khonsu_id": "c"})),
-                link(4, 5, "FORWARDS_TO", 6, json!({"khonsu_id": "d"})),
-                link(5, 6, "ROUTES_TO", 7, json!({"khonsu_id": "e", "health": "healthy"})),
-                link(6, 7, "PROTECTED_BY", 3, json!({"khonsu_id": "f"})),
-                link(7, 2, "ALLOWS", 3, json!({"khonsu_id": "g", "protocol": "tcp", "ports": "80"})),
-                link(8, 8, "PROTECTED_BY", 4, json!({"khonsu_id": "h"})),
-                link(9, 3, "ALLOWS", 4, json!({"khonsu_id": "i", "protocol": "tcp", "ports": "5432"})),
-            ],
-        };
-        khonsu_core::exposure::evaluate(&data, &[], true)
+    fn offered() -> Offered {
+        Offered {
+            plugin: khonsu_core::plugin::PluginInfo {
+                manifest: serde_json::from_value(json!({"id": "demo", "name": "Demo", "version": "1", "protocol": 1, "entry": ["demo"]})).unwrap(),
+                dir: Default::default(),
+                builtin: true,
+            },
+            info: serde_json::from_value(json!({
+                "id": "links",
+                "title": "Links",
+                "subject_labels": ["Thing"],
+                "verdicts": [{"id": "flagged", "title": "Flagged", "tone": "attention"}],
+                "rules": [{"rule_id": "demo.rule", "title": "A rule", "statement": "It holds."}],
+                "translations": {"zh": {"verdict.flagged": "\u{5df2}\u{6807}\u{8bb0}"}},
+            }))
+            .unwrap(),
+        }
+    }
+
+    fn report() -> Report {
+        let finding: Finding = serde_json::from_value(json!({
+            "finding_id": "f", "rule_id": "demo.rule", "verdict": "flagged",
+            "resource": "node:db", "resource_name": "db",
+            "conditions": [], "unknowns": [], "assumptions": [],
+            "path": null, "walk": null, "contributing": [], "evidence": [],
+        }))
+        .unwrap();
+        Report {
+            plugin: "demo".into(),
+            analysis: "links".into(),
+            title: "Links".into(),
+            claim: String::new(),
+            order: String::new(),
+            verdicts: vec![],
+            rules: vec![],
+            subjects: 1,
+            summary: BTreeMap::new(),
+            complete: true,
+            sources: BTreeMap::new(),
+            findings: vec![finding],
+        }
     }
 
     #[test]
-    fn every_rule_and_condition_has_words_in_the_window() {
-        let report = exposure_report();
-        assert_eq!(report.summary.potential_exposure, 2, "{report:#?}");
-        let rules: BTreeSet<&str> = report.findings.iter().map(|finding| finding.rule_id.as_str()).collect();
-        assert_eq!(rules.len(), 3, "the test should reach every rule: {rules:?}");
-        for finding in &report.findings {
-            let title = rule_key(&finding.rule_id).unwrap_or_else(|| panic!("no title for {}", finding.rule_id));
-            assert_ne!(tr(title), title, "{title} is not in the table");
-            for condition in &finding.conditions {
-                let key = condition_key(&condition.id).unwrap_or_else(|| panic!("no words for {}", condition.id));
-                assert_ne!(tr(key), key, "{key} is not in the table");
+    fn a_plugins_words_are_used_with_its_own_as_the_fallback() {
+        let info = offered().info;
+        assert_eq!(analysis_text(&info, "no.such.key", "fallback"), "fallback");
+        assert_eq!(rule_text(&info, "demo.rule"), "A rule");
+        assert_eq!(rule_text(&info, "unheard.of"), "unheard.of", "an ID is better than nothing");
+        assert_eq!(verdict_text(&info, "unheard_of"), "unheard_of");
+        assert_eq!(analysis_key(&offered()), "demo/links");
+        for status in [ConditionStatus::Met, ConditionStatus::NotMet, ConditionStatus::Unknown] {
+            assert!(!tr(status_key(status)).is_empty());
+        }
+    }
+
+    /// The window goes by what a plugin declares, so a label it never heard of
+    /// is offered the same way as any other.
+    #[test]
+    fn an_analysis_is_offered_on_the_labels_it_declares_and_nothing_is_hard_coded() {
+        let on = offered();
+        assert!(on.applies_to(&["Thing".to_string()]));
+        assert!(!on.applies_to(&["Instance".to_string()]));
+        for (name, source) in [("explorer", include_str!("explorer.rs")), ("canvas", include_str!("canvas.rs"))] {
+            let code = source.split("#[cfg(test)]").next().unwrap();
+            for provider in ["aws.exposure", "\"Instance\"", "SecurityGroup", "potential_exposure"] {
+                assert!(!code.contains(provider), "{name} names {provider}");
             }
-        }
-        for key in [Verdict::PotentialExposure, Verdict::InsufficientData, Verdict::NotIndicated].map(verdict_key) {
-            assert_ne!(tr(key), key);
-        }
-        for key in [Status::Met, Status::NotMet, Status::Unknown].map(status_key) {
-            assert_ne!(tr(key), key);
         }
     }
 
     #[test]
     fn findings_are_matched_to_the_selected_node_and_a_new_result_drops_them() {
-        let report = exposure_report();
+        let report = report();
         let db = GraphNode {
             id: 8,
-            labels: vec!["Instance".into()],
+            labels: vec!["Thing".into()],
             properties: Map::from_iter([("khonsu_id".to_string(), json!("db"))]),
         };
         let found = findings_for(&report, &db);
-        assert!(!found.is_empty());
-        assert!(found.iter().all(|finding| finding.resource == "node:db"));
+        assert_eq!(found.len(), 1);
         assert!(findings_for(&report, &node(99, "elsewhere")).is_empty());
 
+        let running = Arc::new(AtomicBool::new(false));
         let mut explorer = Explorer {
-            exposure: Some(report),
-            exposure_error: Some("x".into()),
+            reports: BTreeMap::from([("demo/links".to_string(), report)]),
+            analysis_errors: BTreeMap::from([("demo/links".to_string(), "x".to_string())]),
+            checking: BTreeMap::from([("demo/links".to_string(), running.clone())]),
+            analyses: vec![offered()],
             ..Explorer::default()
         };
         explorer.forget_walks();
-        assert!(explorer.exposure.is_none() && explorer.exposure_error.is_none(), "the graph may have changed");
+        assert!(explorer.reports.is_empty() && explorer.analysis_errors.is_empty(), "the graph may have changed");
+        assert!(explorer.checking.is_empty() && running.load(Ordering::Relaxed), "and what is running is stopped");
+        assert_eq!(explorer.analyses.len(), 1, "what plugins offer has not changed");
     }
 
     fn restored() -> Restored {
@@ -534,6 +559,25 @@ mod tests {
 
         explorer.forget_walks();
         assert!(explorer.restored.is_none() && explorer.warning().is_none());
+    }
+
+    /// Saving a finding's path keeps that path, not the fewest hops a walk
+    /// would find. Once the walk or the selection moves on it is a normal save.
+    #[test]
+    fn only_the_finding_path_still_on_the_canvas_is_saved_exactly() {
+        let hops = vec![hop(1, 1, 2, 10), hop(2, 2, 3, 11)];
+        let refs = vec![HopRef { edge: "rel:ab".into(), along: true }, HopRef { edge: "rel:bc".into(), along: true }];
+        let mut explorer = Explorer {
+            walk: Some(Exploration { hops: hops.clone(), ..Exploration::default() }),
+            finding_path: Some((hops, refs.clone())),
+            ..Explorer::default()
+        };
+        assert_eq!(explorer.exact_path_to(3), refs);
+        assert!(explorer.exact_path_to(2).is_empty(), "another node on it means the path to that node");
+        explorer.walk = Some(walk());
+        assert!(explorer.exact_path_to(3).is_empty(), "another walk replaced it");
+        explorer.forget_walks();
+        assert!(explorer.finding_path.is_none());
     }
 
     #[test]

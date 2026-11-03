@@ -22,7 +22,7 @@ enum DirectionArg {
 #[derive(Subcommand)]
 pub enum InvestigationCommand {
     /// Save a walk, a path, a query and a dashboard to a file of its own. The graph is not changed.
-    Save(SaveArgs),
+    Save(Box<SaveArgs>),
     /// Run a saved walk again, and say what differs from when it was saved.
     Reopen(ReopenArgs),
 }
@@ -53,6 +53,10 @@ pub struct SaveArgs {
     /// The node whose path to keep. Needs --from.
     #[arg(long)]
     to: Option<String>,
+    /// An exact path to keep, as JSON: a finding's `path_refs`. Reopening looks up these
+    /// records rather than walking, so it keeps a path that isn't the fewest hops.
+    #[arg(long, conflicts_with_all = ["from", "to"])]
+    path_refs: Option<String>,
     /// A Cypher query to keep with it. Saved as typed, so leave out anything secret.
     #[arg(long, conflicts_with = "sql")]
     cypher: Option<String>,
@@ -78,7 +82,7 @@ pub struct ReopenArgs {
 
 pub fn investigation(command: InvestigationCommand) -> Result<Value, CliError> {
     match command {
-        InvestigationCommand::Save(args) => save(args),
+        InvestigationCommand::Save(args) => save(*args),
         InvestigationCommand::Reopen(args) => reopen(args),
     }
 }
@@ -115,11 +119,16 @@ fn save(args: SaveArgs) -> Result<Value, CliError> {
         _ => None,
     };
     let name = args.name.unwrap_or_else(|| args.file.file_stem().map(|stem| stem.to_string_lossy().into_owned()).unwrap_or_default());
+    let path_refs = match &args.path_refs {
+        Some(text) => serde_json::from_str(text).map_err(|error| CliError::usage(format!("--path-refs is not a list of hops: {error}")))?,
+        None => Vec::new(),
+    };
     let capture = Capture {
         name,
         query,
         walk,
         target,
+        path_refs,
         dashboard: args.dashboard.as_deref().map(normalize_path),
     };
     let saved = graph.capture_investigation(&path, capture, &settings::load_sources(), &AtomicBool::new(false))?;
