@@ -13,7 +13,7 @@ use crate::explore::{Direction, Exploration, ExploreRequest, Hop, DEFAULT_MAX_ED
 use crate::merge::{ID_PROPERTY, PLUGIN_PROPERTY, SOURCE_PROPERTY, SYNCED_AT_PROPERTY};
 use crate::protocol::HopRef;
 use crate::result::{value_to_json, GraphCollector, GraphData, GraphNode};
-use crate::settings::Source;
+use crate::settings::{RunStatus, Source};
 use crate::util::unix_now;
 use hawdb::Value;
 use serde::{Deserialize, Serialize};
@@ -203,6 +203,8 @@ pub struct Reopened {
     pub path: Option<PathEvidence>,
     /// Whether the path rests on the saved records. `None` when none was saved.
     pub path_same: Option<bool>,
+    /// Sources in the graph whose last sync was not complete, in words.
+    pub incomplete_sources: Vec<String>,
     /// The saved exact path was found whole, so `walk` is that path alone.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub exact_path: bool,
@@ -351,7 +353,17 @@ impl Graph {
             let now: &[String] = path.as_ref().map_or(&[], |path| path.supporting.as_slice());
             saved_path.supporting == now
         });
+        let incomplete_sources = now
+            .sources
+            .iter()
+            .filter_map(|source| {
+                let coverage = evidence::coverage_of(source, sources);
+                let coverage = coverage.known()?;
+                (coverage.status != RunStatus::Complete).then(|| format!("Source {source}'s last sync ({}) was {}.", coverage.run_id, coverage.status.word()))
+            })
+            .collect();
         Ok(Reopened {
+            incomplete_sources,
             graph_state,
             differences,
             now,

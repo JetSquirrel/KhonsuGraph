@@ -168,6 +168,26 @@ pub struct AnalyzeRequest {
     /// say nothing.
     #[serde(default = "default_complete")]
     pub complete: bool,
+    /// How much of each source its last sync covered, where that is known. What
+    /// an incomplete source left out can be what would have met a condition.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub coverage: BTreeMap<String, SourceCoverage>,
+}
+
+/// A source's last sync, as far as an analysis needs it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct SourceCoverage {
+    pub run_id: String,
+    /// `complete`, `partial`, `failed` or `cancelled`.
+    pub status: String,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub gaps: Vec<String>,
+}
+
+impl SourceCoverage {
+    pub fn is_complete(&self) -> bool {
+        self.status == "complete"
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -179,6 +199,9 @@ pub struct AnalysisNode {
     /// What people call it.
     #[serde(default)]
     pub name: String,
+    /// The source that wrote it, when one did. See `AnalyzeRequest::coverage`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
     #[serde(default)]
     pub properties: Map<String, Value>,
 }
@@ -191,6 +214,9 @@ pub struct AnalysisEdge {
     pub from: String,
     pub to: String,
     pub rel_type: String,
+    /// The source that wrote it, when one did. See `AnalyzeRequest::coverage`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source: Option<String>,
     #[serde(default)]
     pub properties: Map<String, Value>,
 }
@@ -377,6 +403,14 @@ pub enum Message {
         nodes: u64,
         #[serde(default)]
         edges: u64,
+        /// False when part of the source could not be enumerated, so what is
+        /// absent from this sync may still exist. A full sync then removes
+        /// nothing. Absent means complete, as for plugins older than this.
+        #[serde(default = "default_complete", skip_serializing_if = "is_true")]
+        complete: bool,
+        /// What was not enumerated, in words, when `complete` is false.
+        #[serde(default, skip_serializing_if = "Vec::is_empty")]
+        gaps: Vec<String>,
     },
     Error { message: String },
     /// One finding of an `analyze`.
@@ -391,6 +425,10 @@ pub enum Message {
 
 fn default_complete() -> bool {
     true
+}
+
+fn is_true(value: &bool) -> bool {
+    *value
 }
 
 /// Helper for plugin authors: writes messages as JSON lines to stdout.

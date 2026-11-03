@@ -127,6 +127,19 @@ A sync that ends without `done` is reported as failed. Records already
 written are kept and the next sync reconciles them. To fail on purpose, send
 `{"type": "error", "message": "..."}`; the person sees the message.
 
+A full sync removes records it did not see, so only finish with a plain `done`
+when you enumerated the whole source. If part of it could not be read and you
+still have something useful to send, say so:
+
+```json
+{"type": "done", "nodes": 2, "edges": 1, "complete": false, "gaps": ["page 3 timed out"]}
+```
+
+The sync is then recorded as `partial`: nothing is removed, the cursor doesn't
+move, and exposure findings can't read the absence of a record as a clear result.
+Leaving out `complete` means complete. Don't put secrets in `gaps` or in messages;
+values from the source's secret fields are masked before they are kept.
+
 ## Offering an analysis
 
 A plugin can also say something about a graph, as well as fill one. This is
@@ -179,6 +192,18 @@ List what you offer in `describe`:
 It holds no source configuration or secrets, and properties that look like secrets
 are masked. `complete` is false when the graph held more than 50,000 records of one
 label or type, and then a record's absence says nothing.
+
+A record's `source` says which data source wrote it, and `coverage` says how much of
+each source its last sync covered, where that is known:
+
+```json
+{"coverage": {"shop": {"run_id": "shop#3", "status": "partial", "gaps": ["page 3 timed out"]}}}
+```
+
+What an incomplete source left out could be what your rule was looking for, so don't
+let it clear anything. KhonsuGraph lists the incomplete sources behind each finding
+in `incomplete_sources` and marks the report incomplete whatever you decide, but the
+verdict is yours.
 
 Answer with one line per finding, then `analysis_done`:
 

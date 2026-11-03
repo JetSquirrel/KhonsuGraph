@@ -8,7 +8,8 @@
 //! any provider's labels, rules or verdicts. See `docs/plugins.md`.
 
 use crate::engine::{Graph, QueryError};
-use crate::evidence::{self, Evidence, Field, PathEvidence};
+use crate::evidence::{self, Evidence, Field, PathEvidence, SourceCoverage};
+use crate::merge::SOURCE_PROPERTY;
 use crate::explore::{is_identifier, node_name, Direction, Exploration, Hop};
 use crate::plugin::{self, PluginError, PluginInfo, SyncEvent};
 use crate::protocol::{
@@ -16,7 +17,7 @@ use crate::protocol::{
     PROTOCOL_VERSION,
 };
 use crate::result::{value_to_json, GraphCollector, GraphData, GraphEdge, GraphNode};
-use crate::settings::Source;
+use crate::settings::{RunStatus, Source};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value as Json};
 use std::collections::{BTreeMap, BTreeSet};
@@ -87,6 +88,10 @@ pub struct Finding {
     /// The finding this one rests on.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub depends_on: Option<String>,
+    /// Sources behind its records whose last sync was not complete. Worked out
+    /// here, so it shows whatever the plugin made of it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub incomplete_sources: Vec<String>,
     /// The evidence IDs of every record the conditions read or the path crosses.
     pub contributing: Vec<String>,
     pub evidence: Vec<Evidence>,
@@ -120,9 +125,11 @@ pub struct Report {
     pub subjects: u64,
     /// Findings by verdict, counting any cut by a cap.
     pub summary: BTreeMap<String, usize>,
-    /// False when the graph was too large to read whole: a missing finding then
-    /// means nothing.
+    /// False when the graph was too large to read whole, or a source's last
+    /// sync was not complete: a missing finding then means nothing.
     pub complete: bool,
+    /// How much of each source its last sync covered.
+    pub sources: BTreeMap<String, Field<SourceCoverage>>,
     pub findings: Vec<Finding>,
 }
 
@@ -196,6 +203,8 @@ pub struct AnalysisInput {
     pub data: GraphData,
     /// False when more was there than was read.
     pub complete: bool,
+    /// The graph it came from.
+    pub graph: std::path::PathBuf,
 }
 
 impl Graph {
@@ -220,18 +229,40 @@ impl Graph {
         for name in &info.relationship_types {
             complete &= read(&mut collector, format!("MATCH (a)-[r:{name}]->(b) RETURN a, r, b ORDER BY id(r) LIMIT {limit}"))?;
         }
-        Ok(AnalysisInput { data: collector.finish().unwrap_or_default(), complete })
+        Ok(AnalysisInput { data: collector.finish().unwrap_or_default(), complete, graph: self.path().to_path_buf() })
     }
+}
+
+/// A last sync known to have missed something. Unknown is not counted: a source
+/// synced before runs were kept says nothing either way.
+fn is_incomplete(coverage: &Field<SourceCoverage>) -> bool {
+    coverage.known().is_some_and(|coverage| coverage.status != RunStatus::Complete)
+}
+
+/// How much of each source behind `input` its last sync covered. That includes a
+/// source of this graph with nothing in it: its sync can have failed before
+/// writing anything.
+fn coverage_of_sources(input: &AnalysisInput, sources: &[Source]) -> BTreeMap<String, Field<SourceCoverage>> {
+    let properties = input.data.nodes.iter().map(|node| &node.properties).chain(input.data.edges.iter().map(|edge| &edge.properties));
+    let named: BTreeSet<&str> = properties.filter_map(|properties| properties.get(SOURCE_PROPERTY).and_then(Json::as_str)).collect();
+    let here = crate::engine::normalize_path(&input.graph);
+    let of_this_graph = sources.iter().filter(|source| crate::engine::normalize_path(&source.graph) == here).map(|source| source.id.as_str());
+    named.into_iter().chain(of_this_graph).map(|source| (source.to_string(), evidence::coverage_of(source, sources))).collect()
+}
+
+fn source_of(properties: &serde_json::Map<String, Json>) -> Option<String> {
+    properties.get(SOURCE_PROPERTY).and_then(Json::as_str).map(String::from)
 }
 
 /// The request for `input`. Record properties have bookkeeping left out and
 /// secrets masked, as they are in evidence.
-fn request_for(info: &AnalysisInfo, input: &AnalysisInput) -> AnalyzeRequest {
+fn request_for(info: &AnalysisInfo, input: &AnalysisInput, sources: &[Source]) -> AnalyzeRequest {
     let refs: BTreeMap<i64, String> = input.data.nodes.iter().map(|node| (node.id, evidence::node_evidence_id(node))).collect();
     let nodes = input.data.nodes.iter().map(|node| AnalysisNode {
         reference: evidence::node_evidence_id(node),
         labels: node.labels.clone(),
         name: node_name(node),
+        source: source_of(&node.properties),
         properties: evidence::own_properties(&node.properties).0,
     });
     let edges = input.data.edges.iter().filter_map(|edge| {
@@ -240,6 +271,7 @@ fn request_for(info: &AnalysisInfo, input: &AnalysisInput) -> AnalyzeRequest {
             from: refs.get(&edge.source)?.clone(),
             to: refs.get(&edge.target)?.clone(),
             rel_type: edge.rel_type.clone(),
+            source: source_of(&edge.properties),
             properties: evidence::own_properties(&edge.properties).0,
         })
     });
@@ -249,13 +281,20 @@ fn request_for(info: &AnalysisInfo, input: &AnalysisInput) -> AnalyzeRequest {
         nodes: nodes.collect(),
         edges: edges.collect(),
         complete: input.complete,
+        coverage: coverage_of_sources(input, sources)
+            .into_iter()
+            .filter_map(|(source, coverage)| {
+                let coverage = coverage.known()?;
+                Some((source, crate::protocol::SourceCoverage { run_id: coverage.run_id.clone(), status: coverage.status.word().to_string(), gaps: coverage.gaps.clone() }))
+            })
+            .collect(),
     }
 }
 
 /// Runs an analysis over what was read and checks the result. It holds no graph,
 /// so a long analysis does not keep the window from using it.
 pub fn run(offered: &Offered, input: &AnalysisInput, sources: &[Source], cancel: &AtomicBool, on_event: impl FnMut(SyncEvent)) -> Result<Report, PluginError> {
-    let request = request_for(&offered.info, input);
+    let request = request_for(&offered.info, input, sources);
     let end = plugin::run_analyze(&offered.plugin, &request, cancel, on_event)?;
     report_from(offered, input, sources, end.findings, end.subjects).map_err(|message| PluginError::Failed {
         plugin: offered.plugin.id().to_string(),
@@ -383,6 +422,8 @@ fn report_from(offered: &Offered, input: &AnalysisInput, sources: &[Source], rec
         .map(|verdict| (verdict.id.clone(), findings.iter().filter(|finding| finding.verdict == verdict.id).count()))
         .collect();
     let names: Vec<&str> = info.verdicts.iter().map(|verdict| verdict.id.as_str()).collect();
+    let coverage = coverage_of_sources(input, sources);
+    let complete = input.complete && coverage.values().all(|coverage| !is_incomplete(coverage));
     Ok(Report {
         plugin: offered.plugin.id().to_string(),
         analysis: info.id.clone(),
@@ -393,7 +434,8 @@ fn report_from(offered: &Offered, input: &AnalysisInput, sources: &[Source], rec
         rules: info.rules.clone(),
         subjects,
         summary,
-        complete: input.complete,
+        complete,
+        sources: coverage,
         findings,
     })
 }
@@ -458,6 +500,8 @@ fn check_finding(info: &AnalysisInfo, lookup: &Records, sources: &[Source], reco
     let rest: Vec<String> = cited.into_iter().filter(|id| !contributing.contains(id)).collect();
     contributing.extend(rest);
     let records: Vec<Evidence> = contributing.iter().filter_map(|id| lookup.evidence(id, sources)).collect();
+    let behind: BTreeSet<&str> = records.iter().filter_map(|record| record.source.known().map(String::as_str)).collect();
+    let incomplete_sources = behind.into_iter().filter(|source| is_incomplete(&evidence::coverage_of(source, sources))).map(String::from).collect();
 
     Ok(Finding {
         finding_id: record.finding_id.clone(),
@@ -474,6 +518,7 @@ fn check_finding(info: &AnalysisInfo, lookup: &Records, sources: &[Source], reco
         path_graph: lookup.path_graph(&hops),
         hops,
         depends_on: record.depends_on.clone(),
+        incomplete_sources,
         contributing,
         evidence: records,
     })
@@ -499,6 +544,7 @@ mod tests {
         AnalysisInput {
             data: GraphData { nodes: vec![node(1, "a"), node(2, "b"), node(3, "c")], edges: vec![edge(10, 1, 2, "e1"), edge(11, 2, 3, "e2")] },
             complete: true,
+            graph: PathBuf::from("g"),
         }
     }
 
@@ -641,14 +687,14 @@ mod tests {
         large.complete = false;
         let report = report_from(&offered(), &large, &[], vec![], 0).unwrap();
         assert!(!report.complete);
-        assert!(!request_for(&offered().info, &large).complete);
+        assert!(!request_for(&offered().info, &large, &[]).complete);
     }
 
     #[test]
     fn what_a_plugin_is_sent_has_no_bookkeeping_or_secrets() {
         let mut given = input();
-        given.data.nodes[0].properties.insert("khonsu_source".into(), json!("private"));
-        let request = request_for(&offered().info, &given);
+        given.data.nodes[0].properties.insert("khonsu_hash".into(), json!("private"));
+        let request = request_for(&offered().info, &given, &[]);
         assert_eq!(request.nodes[0].reference, "node:a");
         assert_eq!(request.nodes[0].name, "a");
         assert_eq!(request.edges[0].from, "node:a");
@@ -656,6 +702,67 @@ mod tests {
         let text = serde_json::to_string(&request).unwrap();
         assert!(!text.contains("abc123"), "{text}");
         assert!(!text.contains("private"), "{text}");
+    }
+
+    fn source_with(status: RunStatus) -> Source {
+        serde_json::from_value(json!({
+            "id": "shop", "name": "shop", "plugin": "demo", "graph": "g",
+            "runs": [{
+                "run_id": "shop#1", "number": 1, "mode": "full", "started_at": 1, "ended_at": 2,
+                "status": status, "plugin": "demo@0", "received_nodes": 0, "received_edges": 0,
+                "removals_applied": false, "cursor_advanced": false, "gaps": ["page 3"],
+            }],
+        }))
+        .unwrap()
+    }
+
+    fn tagged() -> AnalysisInput {
+        let mut given = input();
+        for node in &mut given.data.nodes {
+            node.properties.insert(SOURCE_PROPERTY.into(), json!("shop"));
+        }
+        for edge in &mut given.data.edges {
+            edge.properties.insert(SOURCE_PROPERTY.into(), json!("shop"));
+        }
+        given
+    }
+
+    /// A plugin that ignores coverage altogether: the result still shows it.
+    #[test]
+    fn an_incomplete_source_stays_visible_whatever_the_plugin_says() {
+        for status in [RunStatus::Partial, RunStatus::Failed, RunStatus::Cancelled] {
+            let sources = [source_with(status)];
+            let report = report_from(&offered(), &tagged(), &sources, vec![finding("f", "clear", "node:a")], 1).unwrap();
+            assert!(!report.complete, "{status:?}");
+            assert_eq!(report.findings[0].incomplete_sources, ["shop"], "{status:?}");
+            assert_eq!(report.findings[0].verdict, "clear", "the verdict is the plugin's to set");
+            let sent = request_for(&offered().info, &tagged(), &sources);
+            assert_eq!(sent.coverage["shop"].status, status.word());
+            assert_eq!(sent.coverage["shop"].gaps, ["page 3"]);
+            assert_eq!(sent.nodes[0].source.as_deref(), Some("shop"));
+            assert!(!sent.coverage["shop"].is_complete());
+        }
+        let whole = [source_with(RunStatus::Complete)];
+        let report = report_from(&offered(), &tagged(), &whole, vec![finding("f", "clear", "node:a")], 1).unwrap();
+        assert!(report.complete);
+        assert!(report.findings[0].incomplete_sources.is_empty());
+    }
+
+    #[test]
+    fn a_source_with_no_record_of_its_runs_is_not_called_incomplete() {
+        let report = report_from(&offered(), &tagged(), &[], vec![], 0).unwrap();
+        assert!(report.complete);
+        assert_eq!(report.sources["shop"], Field::Unknown);
+        assert!(request_for(&offered().info, &tagged(), &[]).coverage.is_empty());
+    }
+
+    /// Its sync can have failed before writing anything, so it has no record to
+    /// be found by, and the absence of its records must not read as clear.
+    #[test]
+    fn a_source_of_this_graph_with_nothing_in_it_still_counts() {
+        let report = report_from(&offered(), &input(), &[source_with(RunStatus::Failed)], vec![], 0).unwrap();
+        assert!(!report.complete);
+        assert!(report.sources.contains_key("shop"));
     }
 
     #[test]

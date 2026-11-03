@@ -43,6 +43,8 @@ A changed answer doesn't replace the saved one silently:
   stands in for them, and the walk runs from the seeds that remain.
 - `unsure` lists records found by an internal ID on a changed graph. A record
   written by hand has no stable ID, so the same number may now mean something else.
+- `incomplete_sources` names sources whose last sync wasn't complete, so the graph
+  may be missing records whatever `graph_state` says.
 
 A saved query is returned, not run.
 

@@ -5,7 +5,7 @@
 
 use crate::engine::Language;
 use crate::merge::EdgePattern;
-use khonsu_plugin_protocol::Permissions;
+use khonsu_plugin_protocol::{Permissions, SyncMode};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value as Json};
@@ -129,6 +129,58 @@ pub struct LastSync {
     pub message: String,
 }
 
+/// How one sync ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RunStatus {
+    /// The plugin enumerated the whole source.
+    Complete,
+    /// It finished, and said part of the source could not be enumerated.
+    Partial,
+    /// It stopped early. Records written before that are kept.
+    Failed,
+    Cancelled,
+}
+
+impl RunStatus {
+    pub fn word(self) -> &'static str {
+        match self {
+            RunStatus::Complete => "complete",
+            RunStatus::Partial => "partial",
+            RunStatus::Failed => "failed",
+            RunStatus::Cancelled => "cancelled",
+        }
+    }
+}
+
+/// One sync of a source. The plugin's cursor is not copied here: it stays on
+/// the source, and only whether it moved is recorded.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SyncRun {
+    /// `<source>#<number>`, counting this source's syncs.
+    pub run_id: String,
+    pub number: u64,
+    pub mode: SyncMode,
+    pub started_at: u64,
+    pub ended_at: u64,
+    pub status: RunStatus,
+    /// `<plugin id>@<plugin version>`: what mapped the source to records.
+    pub plugin: String,
+    pub received_nodes: u64,
+    pub received_edges: u64,
+    /// Whether records this sync did not see were removed.
+    pub removals_applied: bool,
+    pub cursor_advanced: bool,
+    /// What the plugin said it could not enumerate.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub gaps: Vec<String>,
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub message: String,
+}
+
+/// Runs kept per source; the oldest goes first.
+pub const MAX_RUNS: usize = 20;
+
 /// A configured data source: one plugin instance writing into one graph.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct Source {
@@ -149,6 +201,27 @@ pub struct Source {
     pub patterns: Vec<EdgePattern>,
     #[serde(default)]
     pub last_sync: Option<LastSync>,
+    /// The latest syncs, oldest first. Empty for a source last synced before
+    /// these were kept.
+    #[serde(default)]
+    pub runs: Vec<SyncRun>,
+}
+
+impl Source {
+    pub fn last_run(&self) -> Option<&SyncRun> {
+        self.runs.last()
+    }
+
+    pub fn last_complete_run(&self) -> Option<&SyncRun> {
+        self.runs.iter().rev().find(|run| run.status == RunStatus::Complete)
+    }
+
+    /// Adds a run, dropping the oldest beyond [`MAX_RUNS`].
+    pub fn push_run(&mut self, run: SyncRun) {
+        self.runs.push(run);
+        let extra = self.runs.len().saturating_sub(MAX_RUNS);
+        self.runs.drain(..extra);
+    }
 }
 
 pub fn load_sources() -> Vec<Source> {

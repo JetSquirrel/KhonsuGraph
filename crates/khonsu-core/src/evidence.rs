@@ -8,7 +8,7 @@
 use crate::explore::{explain_hop, Exploration, Hop};
 use crate::merge::{ID_PROPERTY, PLUGIN_PROPERTY, SOURCE_PROPERTY, SYNCED_AT_PROPERTY};
 use crate::result::{GraphData, GraphEdge, GraphNode};
-use crate::settings::Source;
+use crate::settings::{RunStatus, Source};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value as Json};
 
@@ -17,6 +17,28 @@ const REDACTED: &str = "[redacted]";
 const SECRET_NAMES: &[&str] = &[
     "password", "passwd", "secret", "token", "credential", "apikey", "accesskey", "privatekey", "authorization", "cookie",
 ];
+
+/// How much of a source its last sync covered, and so how far its records can
+/// be taken as the whole picture.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SourceCoverage {
+    pub run_id: String,
+    pub status: RunStatus,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub gaps: Vec<String>,
+}
+
+/// The coverage of a source. Unknown when it is not configured here or was last
+/// synced before runs were kept.
+pub fn coverage_of(source: &str, sources: &[Source]) -> Field<SourceCoverage> {
+    let run = sources.iter().find(|configured| configured.id == source).and_then(Source::last_run);
+    run.map(|run| SourceCoverage {
+        run_id: run.run_id.clone(),
+        status: run.status,
+        gaps: run.gaps.clone(),
+    })
+    .into()
+}
 
 /// A value that was supplied, or a plain statement that it was not.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -85,9 +107,10 @@ pub struct Evidence {
     /// unchanged relationship is not rewritten by a sync, so this can be older
     /// than the last sync that saw it.
     pub record_written_at: Field<u64>,
-    /// When the source last synced successfully, in Unix seconds. Unknown when
-    /// its last sync failed: a failure overwrites the earlier result.
+    /// When the source last synced completely, in Unix seconds.
     pub source_last_successful_sync: Field<u64>,
+    /// How much of the source its last sync covered.
+    pub source_coverage: Field<SourceCoverage>,
     /// Which snapshot of the source this came from. Not recorded yet.
     pub source_snapshot: Field<String>,
     pub assertion: Assertion,
@@ -209,12 +232,14 @@ pub(crate) fn for_hops(hops: &[Hop], graph: &GraphData, sources: &[Source], deri
 
 /// The fields a node and a relationship share.
 fn provenance(properties: &Map<String, Json>, source: Option<String>, sources: &[Source], own: Map<String, Json>, redacted: Vec<String>) -> Evidence {
-    let last_ok = source
-        .as_deref()
-        .and_then(|id| sources.iter().find(|configured| configured.id == id))
-        .and_then(|configured| configured.last_sync.as_ref())
-        .filter(|sync| sync.ok)
-        .map(|sync| sync.at);
+    let configured = source.as_deref().and_then(|id| sources.iter().find(|configured| configured.id == id));
+    let last_ok = configured.and_then(|configured| match configured.last_complete_run() {
+        Some(run) => Some(run.started_at),
+        // A source last synced before runs were kept.
+        None if configured.runs.is_empty() => configured.last_sync.as_ref().filter(|sync| sync.ok).map(|sync| sync.at),
+        None => None,
+    });
+    let coverage = source.as_deref().map_or(Field::Unknown, |id| coverage_of(id, sources));
     Evidence {
         evidence_id: String::new(),
         stable: false,
@@ -228,6 +253,7 @@ fn provenance(properties: &Map<String, Json>, source: Option<String>, sources: &
         plugin: text(properties, PLUGIN_PROPERTY).into(),
         record_written_at: properties.get(SYNCED_AT_PROPERTY).and_then(Json::as_u64).into(),
         source_last_successful_sync: last_ok.into(),
+        source_coverage: coverage,
         source_snapshot: Field::Unknown,
         rule_id: Field::Unknown,
         properties: own,
@@ -381,6 +407,44 @@ mod tests {
         assert_eq!(for_node(&host, &[source(false)]).source_last_successful_sync, Field::Unknown);
         assert_eq!(for_node(&host, &[]).source_last_successful_sync, Field::Unknown);
         assert_eq!(for_node(&host, &[]).source, Field::Known("shop".to_string()), "the record still names it");
+    }
+
+    fn run(number: u64, status: RunStatus) -> crate::settings::SyncRun {
+        crate::settings::SyncRun {
+            run_id: format!("shop#{number}"),
+            number,
+            mode: crate::protocol::SyncMode::Full,
+            started_at: number * 100,
+            ended_at: number * 100 + 1,
+            status,
+            plugin: "aws@0.2.0".into(),
+            received_nodes: 0,
+            received_edges: 0,
+            removals_applied: false,
+            cursor_advanced: false,
+            gaps: vec!["no route tables".into()],
+            message: String::new(),
+        }
+    }
+
+    #[test]
+    fn a_record_says_how_much_of_its_source_the_last_sync_covered() {
+        let host = node(1, json!({"khonsu_id": "shop/h1"}));
+        let mut configured = source(false);
+        configured.runs = vec![run(1, RunStatus::Complete), run(2, RunStatus::Partial)];
+        let record = for_node(&host, std::slice::from_ref(&configured));
+        let coverage = record.source_coverage.known().unwrap();
+        assert_eq!((coverage.run_id.as_str(), coverage.status), ("shop#2", RunStatus::Partial));
+        assert_eq!(coverage.gaps, ["no route tables"]);
+        assert_eq!(record.source_last_successful_sync, Field::Known(100), "the last complete one, not the last one");
+
+        configured.runs = vec![run(1, RunStatus::Failed)];
+        let record = for_node(&host, std::slice::from_ref(&configured));
+        assert_eq!(record.source_last_successful_sync, Field::Unknown, "no complete run, whatever last_sync says");
+
+        // Without the source configured, or synced before runs were kept.
+        assert_eq!(for_node(&host, &[]).source_coverage, Field::Unknown);
+        assert_eq!(for_node(&host, &[source(true)]).source_coverage, Field::Unknown);
     }
 
     #[test]

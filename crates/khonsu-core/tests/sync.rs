@@ -79,6 +79,7 @@ fn csv_source_syncs_counts_match_rows_and_resync_is_idempotent() {
         cursor: None,
         patterns: Vec::new(),
         last_sync: None,
+        runs: Vec::new(),
     };
     settings::upsert_source(source.clone()).unwrap();
 

@@ -599,6 +599,7 @@ impl SourceForm {
             cursor: self.existing.as_ref().and_then(|s| s.cursor.clone()),
             patterns: self.existing.as_ref().map(|s| s.patterns.clone()).unwrap_or_default(),
             last_sync: self.existing.as_ref().and_then(|s| s.last_sync.clone()),
+            runs: self.existing.as_ref().map(|s| s.runs.clone()).unwrap_or_default(),
         };
         if let Err(e) = settings::upsert_source(source.clone()) {
             self.message = Some((false, e.to_string()));

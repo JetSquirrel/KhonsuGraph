@@ -478,7 +478,7 @@ fn main() -> ExitCode {
             .map_err(|e| e.to_string())
             .and_then(|r| parse_config(&r))
             .and_then(|c| sync(&c, &mut out))
-            .and_then(|(nodes, edges)| out.emit(&Message::Done { nodes, edges }).map_err(|e| e.to_string())),
+            .and_then(|(nodes, edges)| out.emit(&Message::Done { nodes, edges, complete: true, gaps: Vec::new() }).map_err(|e| e.to_string())),
         other => Err(format!("unknown command {other:?}; expected describe, test or sync")),
     };
     match result {

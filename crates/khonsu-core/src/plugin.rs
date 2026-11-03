@@ -8,7 +8,7 @@
 
 use crate::engine::{Graph, QueryError};
 use crate::merge::{next_sync_stamp, EdgePattern, MergeStats, Merger};
-use crate::settings::{self, LastSync, Source};
+use crate::settings::{self, LastSync, RunStatus, Source, SyncRun};
 use crate::{secrets, util};
 use khonsu_plugin_protocol::{
     parse_line, Describe, EdgeRecord, Manifest, Message, NodeRecord, Permissions, Request, SyncMode, MANIFEST_FILE,
@@ -457,13 +457,22 @@ pub enum SyncEvent {
 
 /// Runs `sync` and hands each record to `on_record`. Terminates the plugin
 /// when `cancel` is set. Returns the reported cursor, if any.
+/// How a plugin finished a sync it did finish.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SyncEnd {
+    pub cursor: Option<serde_json::Value>,
+    /// False when the plugin said part of the source was not enumerated.
+    pub complete: bool,
+    pub gaps: Vec<String>,
+}
+
 pub fn run_sync(
     plugin: &PluginInfo,
     request: &Request,
     cancel: &AtomicBool,
     mut on_event: impl FnMut(SyncEvent),
     mut on_record: impl FnMut(Record) -> Result<(), PluginError>,
-) -> Result<Option<serde_json::Value>, PluginError> {
+) -> Result<SyncEnd, PluginError> {
     let mut child = spawn(plugin, "sync", request)?;
     let stderr = drain_stderr(&mut child);
     let stdout = child.stdout.take().expect("stdout is piped");
@@ -480,6 +489,7 @@ pub fn run_sync(
 
     let mut cursor = None;
     let mut done = false;
+    let (mut complete, mut gaps) = (true, Vec::new());
     let (mut nodes, mut edges) = (0u64, 0u64);
     let result = loop {
         if cancel.load(Ordering::Relaxed) {
@@ -520,8 +530,10 @@ pub fn run_sync(
                 cursor = Some(value);
                 Ok(())
             }
-            Message::Done { .. } => {
+            Message::Done { complete: whole, gaps: missing, .. } => {
                 done = true;
+                complete = whole;
+                gaps = missing;
                 Ok(())
             }
             Message::Error { message } => {
@@ -548,7 +560,7 @@ pub fn run_sync(
         ));
     }
     on_event(SyncEvent::Counts { nodes, edges });
-    Ok(cursor)
+    Ok(SyncEnd { cursor, complete, gaps })
 }
 
 #[derive(Debug, Clone)]
@@ -602,6 +614,8 @@ pub struct SyncReport {
     pub received_edges: u64,
     pub merge: MergeStats,
     pub elapsed_ms: u64,
+    /// This sync as kept on the source. `status` says whether it was complete.
+    pub run: SyncRun,
 }
 
 /// Builds the request a source sends to its plugin, secrets included.
@@ -734,7 +748,16 @@ pub fn sync_source(
     let plugin_tag = format!("{}@{}", plugin.id(), describe.version);
     let mut merger = Merger::new(graph, &source.id, &plugin_tag, synced_at);
     let (mut received_nodes, mut received_edges) = (0, 0);
-    let outcome = run_sync(&plugin, &request, cancel, on_event, |record| {
+    let secret_values = request.secrets.clone();
+    let mut on_event = on_event;
+    let scrubbed_events = |event: SyncEvent| {
+        on_event(match event {
+            SyncEvent::Progress { message, current, total } => SyncEvent::Progress { message: scrub(&message, &secret_values), current, total },
+            SyncEvent::Log { level, message } => SyncEvent::Log { level, message: scrub(&message, &secret_values) },
+            other => other,
+        });
+    };
+    let outcome = run_sync(&plugin, &request, cancel, scrubbed_events, |record| {
         match record {
             Record::Node(node) => {
                 received_nodes += 1;
@@ -747,17 +770,39 @@ pub fn sync_source(
         }
         Ok(())
     })
-    .and_then(|cursor| {
-        let (merge, patterns) = merger.finish(mode == SyncMode::Full, &source.patterns)?;
-        Ok((cursor, merge, patterns))
+    .and_then(|end| {
+        // Only a source enumerated whole can say that something has gone.
+        let (merge, patterns) = merger.finish(mode == SyncMode::Full && end.complete, &source.patterns)?;
+        Ok((end, merge, patterns))
     });
 
+    let number = source.last_run().map_or(1, |run| run.number + 1);
+    let run = |status: RunStatus, removals_applied: bool, cursor_advanced: bool, gaps: Vec<String>, message: String| SyncRun {
+        run_id: format!("{}#{number}", source.id),
+        number,
+        mode,
+        started_at: synced_at as u64,
+        ended_at: util::unix_now(),
+        status,
+        plugin: plugin_tag.clone(),
+        received_nodes,
+        received_edges,
+        removals_applied,
+        cursor_advanced,
+        gaps,
+        message,
+    };
     let mut updated = source.clone();
     let report = match outcome {
-        Ok((cursor, merge, patterns)) => {
-            if cursor.is_some() {
-                updated.cursor = cursor;
+        Ok((end, merge, patterns)) => {
+            // A partial sync may have missed changes before its cursor, so the
+            // next one starts from the same place.
+            let advanced = end.complete && end.cursor.is_some();
+            if advanced {
+                updated.cursor = end.cursor;
             }
+            let gaps: Vec<String> = end.gaps.iter().map(|gap| scrub(gap, &request.secrets)).collect();
+            let status = if end.complete { RunStatus::Complete } else { RunStatus::Partial };
             let mut all: Vec<EdgePattern> = updated.patterns.clone();
             all.extend(patterns);
             all.sort();
@@ -765,11 +810,13 @@ pub fn sync_source(
             updated.patterns = all;
             updated.last_sync = Some(LastSync {
                 at: synced_at as u64,
-                ok: true,
+                ok: end.complete,
                 nodes: merge.nodes_written,
                 edges: merge.edges_written,
-                message: String::new(),
+                message: gaps.join("; "),
             });
+            let this_run = run(status, mode == SyncMode::Full && end.complete, advanced, gaps, String::new());
+            updated.push_run(this_run.clone());
             Ok(SyncReport {
                 source: source.id.clone(),
                 mode,
@@ -777,16 +824,20 @@ pub fn sync_source(
                 received_edges,
                 merge,
                 elapsed_ms: started.elapsed().as_millis() as u64,
+                run: this_run,
             })
         }
         Err(err) => {
+            let message = scrub(&err.to_string(), &request.secrets);
             updated.last_sync = Some(LastSync {
                 at: synced_at as u64,
                 ok: false,
                 nodes: 0,
                 edges: 0,
-                message: err.to_string(),
+                message: message.clone(),
             });
+            let status = if matches!(err, PluginError::Cancelled) { RunStatus::Cancelled } else { RunStatus::Failed };
+            updated.push_run(run(status, false, false, Vec::new(), message));
             Err(err)
         }
     };
@@ -794,9 +845,26 @@ pub fn sync_source(
     report
 }
 
+/// `text` with any secret value this source holds masked: what a plugin says
+/// is kept in settings and shown to people.
+fn scrub(text: &str, secrets: &serde_json::Map<String, serde_json::Value>) -> String {
+    secrets
+        .values()
+        .filter_map(serde_json::Value::as_str)
+        .filter(|secret| !secret.is_empty())
+        .fold(text.to_string(), |text, secret| text.replace(secret, "[redacted]"))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_secret_a_plugin_repeats_is_masked_before_it_is_kept() {
+        let secrets = serde_json::json!({"secret_access_key": "abc123", "empty": ""}).as_object().unwrap().clone();
+        assert_eq!(scrub("denied for abc123 and abc123", &secrets), "denied for [redacted] and [redacted]");
+        assert_eq!(scrub("nothing here", &secrets), "nothing here", "an empty secret must not match everywhere");
+    }
 
     fn plugin_with_entry(entry: &str) -> PluginInfo {
         PluginInfo {

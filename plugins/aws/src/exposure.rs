@@ -18,7 +18,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use khonsu_plugin_protocol::{
-    fnv1a, AnalysisEdge, AnalysisInfo, AnalysisNode, AnalyzeRequest, ConditionRecord, ConditionStatus as Status, FieldRef, FindingRecord, HopRef, PathRef, RuleInfo, VerdictInfo, VerdictTone,
+    fnv1a, AnalysisEdge, AnalysisInfo, AnalysisNode, AnalyzeRequest, ConditionRecord, ConditionStatus as Status, FieldRef, FindingRecord, HopRef, PathRef, RuleInfo, SourceCoverage, VerdictInfo, VerdictTone,
 };
 use serde_json::Value;
 
@@ -29,7 +29,8 @@ const RULE_LATERAL: &str = "aws.exposure.security-group-lateral";
 
 /// Every condition is met by configuration. There is deliberately no "reachable".
 const POTENTIAL_EXPOSURE: &str = "potential_exposure";
-/// None ruled it out and at least one could not be evaluated.
+/// None ruled it out and at least one could not be evaluated, or a source behind
+/// its records was not read completely.
 const INSUFFICIENT_DATA: &str = "insufficient_data";
 /// A condition is not met, so this rule does not point at it.
 const NOT_INDICATED: &str = "not_indicated";
@@ -376,7 +377,7 @@ fn against(edge: &AnalysisEdge) -> HopRef {
     HopRef { edge: edge.reference.clone(), along: false }
 }
 
-fn direct(index: &Index, instance: &AnalysisNode) -> Built {
+fn direct(request: &AnalyzeRequest, index: &Index, instance: &AnalysisNode) -> Built {
     let protected = index.out_of(&instance.reference, "PROTECTED_BY");
     let open = open_rule(index, "open-inbound-rule", "The instance", protected, "ec2 describe-instances: SecurityGroups[].GroupId");
     let (route, route_records) = internet_route(index, instance);
@@ -391,10 +392,10 @@ fn direct(index: &Index, instance: &AnalysisNode) -> Built {
     records.push(instance.reference.clone());
     records.extend(protected.iter().map(|edge| edge.reference.clone()));
     records.extend(index.internet_rules(protected).iter().map(|rule| rule.reference.clone()));
-    build(instance, RULE_DIRECT, conditions, hops.unwrap_or_default(), records, None)
+    build(request, instance, RULE_DIRECT, conditions, hops.unwrap_or_default(), records, None)
 }
 
-fn behind_balancer(index: &Index, instance: &AnalysisNode, balancer: &AnalysisNode, group: &AnalysisNode, to_target: &AnalysisEdge, forwards: &AnalysisEdge) -> Built {
+fn behind_balancer(request: &AnalyzeRequest, index: &Index, instance: &AnalysisNode, balancer: &AnalysisNode, group: &AnalysisNode, to_target: &AnalysisEdge, forwards: &AnalysisEdge) -> Built {
     let balancer_groups = index.out_of(&balancer.reference, "PROTECTED_BY");
     let instance_groups = index.out_of(&instance.reference, "PROTECTED_BY");
 
@@ -422,7 +423,7 @@ fn behind_balancer(index: &Index, instance: &AnalysisNode, balancer: &AnalysisNo
     let mut records = vec![instance.reference.clone(), balancer.reference.clone(), group.reference.clone(), to_target.reference.clone(), forwards.reference.clone()];
     records.extend(balancer_groups.iter().map(|edge| edge.reference.clone()));
     records.extend(index.internet_rules(balancer_groups).iter().map(|rule| rule.reference.clone()));
-    build(instance, RULE_BALANCER, conditions, hops, records, Some(format!("{}\n{}", balancer.reference, group.reference)))
+    build(request, instance, RULE_BALANCER, conditions, hops, records, Some(format!("{}\n{}", balancer.reference, group.reference)))
 }
 
 /// Whether the target's groups let the balancer in on the target group's port.
@@ -476,7 +477,7 @@ fn target_allows_balancer(index: &Index, group: &AnalysisNode, balancer_groups: 
 /// One finding for each instance one group rule behind an instance that a rule
 /// left potentially exposed or undecided. Findings about instances the rules
 /// do not point at would only be noise.
-fn lateral_findings(index: &Index, findings: &[Built]) -> Vec<Built> {
+fn lateral_findings(request: &AnalyzeRequest, index: &Index, findings: &[Built]) -> Vec<Built> {
     // The strongest finding on each instance, first by verdict then by rule.
     let mut best: BTreeMap<&str, &Built> = BTreeMap::new();
     for found in findings.iter().filter(|found| found.record.verdict != NOT_INDICATED) {
@@ -503,13 +504,13 @@ fn lateral_findings(index: &Index, findings: &[Built]) -> Vec<Built> {
         }
         for (target, (own, protected, rules)) in pairs {
             let Some(instance) = index.node(target) else { continue };
-            out.push(lateral(instance, source, found, own, protected, &rules));
+            out.push(lateral(request, instance, source, found, own, protected, &rules));
         }
     }
     out
 }
 
-fn lateral(instance: &AnalysisNode, source: &AnalysisNode, found: &Built, own: &AnalysisEdge, protected: &AnalysisEdge, rules: &[&AnalysisEdge]) -> Built {
+fn lateral(request: &AnalyzeRequest, instance: &AnalysisNode, source: &AnalysisNode, found: &Built, own: &AnalysisEdge, protected: &AnalysisEdge, rules: &[&AnalysisEdge]) -> Built {
     let name = &source.name;
     let rule_id = &found.record.rule_id;
     let (status, detail) = match found.record.verdict.as_str() {
@@ -539,7 +540,7 @@ fn lateral(instance: &AnalysisNode, source: &AnalysisNode, found: &Built, own: &
     }
     let mut records = vec![instance.reference.clone(), source.reference.clone(), own.reference.clone(), protected.reference.clone()];
     records.extend(rules.iter().map(|rule| rule.reference.clone()));
-    let mut built = build(instance, RULE_LATERAL, conditions, hops, records, Some(source.reference.clone()));
+    let mut built = build(request, instance, RULE_LATERAL, conditions, hops, records, Some(source.reference.clone()));
     built.record.depends_on = Some(found.record.finding_id.clone());
     built
 }
@@ -550,15 +551,42 @@ struct Built {
     hops: Vec<HopRef>,
 }
 
-fn build(instance: &AnalysisNode, rule_id: &str, conditions: Vec<ConditionRecord>, hops: Vec<HopRef>, records: Vec<String>, subject: Option<String>) -> Built {
-    let unknowns: Vec<String> = conditions.iter().filter(|condition| condition.status == Status::Unknown).map(|condition| condition.statement.clone()).collect();
+/// The sources behind every record a finding rests on, whose last sync was not
+/// complete, with what that sync was.
+fn incomplete_sources<'a>(request: &'a AnalyzeRequest, conditions: &[ConditionRecord], hops: &[HopRef], records: &[String]) -> Vec<(&'a str, &'a SourceCoverage)> {
+    let mut cited: BTreeSet<&str> = records.iter().map(String::as_str).collect();
+    cited.extend(conditions.iter().flat_map(|condition| condition.fields.iter().map(|field| field.record.as_str())));
+    for hop in hops {
+        cited.insert(&hop.edge);
+        if let Some(edge) = request.edges.iter().find(|edge| edge.reference == hop.edge) {
+            cited.extend([edge.from.as_str(), edge.to.as_str()]);
+        }
+    }
+    let of_nodes = request.nodes.iter().filter(|node| cited.contains(node.reference.as_str())).filter_map(|node| node.source.as_deref());
+    let of_edges = request.edges.iter().filter(|edge| cited.contains(edge.reference.as_str())).filter_map(|edge| edge.source.as_deref());
+    let behind: BTreeSet<&str> = of_nodes.chain(of_edges).collect();
+    behind.into_iter().filter_map(|source| Some((source, request.coverage.get(source).filter(|coverage| !coverage.is_complete())?))).collect()
+}
+
+fn build(request: &AnalyzeRequest, instance: &AnalysisNode, rule_id: &str, conditions: Vec<ConditionRecord>, hops: Vec<HopRef>, records: Vec<String>, subject: Option<String>) -> Built {
+    let mut unknowns: Vec<String> = conditions.iter().filter(|condition| condition.status == Status::Unknown).map(|condition| condition.statement.clone()).collect();
+    let mut verdict = verdict_of(&conditions);
+    // What a partial source left out can be what would have met a condition,
+    // so it cannot rule anything out. What it did report still stands.
+    let incomplete = incomplete_sources(request, &conditions, &hops, &records);
+    for (source, coverage) in &incomplete {
+        unknowns.push(format!("Source {source}'s last sync ({}) was {}, so records may be missing or out of date.", coverage.run_id, coverage.status));
+    }
+    if !incomplete.is_empty() && verdict == NOT_INDICATED {
+        verdict = INSUFFICIENT_DATA;
+    }
     let id_text = [Some(rule_id.to_string()), Some(instance.reference.clone()), subject].into_iter().flatten().collect::<Vec<_>>().join("\n");
     let assumptions = rules().into_iter().find(|rule| rule.rule_id == rule_id).map(|rule| rule.assumptions).unwrap_or_default();
     Built {
         record: FindingRecord {
             finding_id: format!("finding:{:016x}", fnv1a(&id_text)),
             rule_id: rule_id.into(),
-            verdict: verdict_of(&conditions).into(),
+            verdict: verdict.into(),
             resource: instance.reference.clone(),
             conditions,
             unknowns,
@@ -578,12 +606,12 @@ pub fn evaluate(request: &AnalyzeRequest) -> (Vec<FindingRecord>, u64) {
     let instances = index.with_label("Instance");
     let mut findings = Vec::new();
     for instance in &instances {
-        findings.push(direct(&index, instance));
+        findings.push(direct(request, &index, instance));
         for (balancer, group, to_target, forwards) in index.balancers_of(instance) {
-            findings.push(behind_balancer(&index, instance, balancer, group, to_target, forwards));
+            findings.push(behind_balancer(request, &index, instance, balancer, group, to_target, forwards));
         }
     }
-    let lateral = lateral_findings(&index, &findings);
+    let lateral = lateral_findings(request, &index, &findings);
     findings.extend(lateral);
     let mut records: Vec<FindingRecord> = findings.into_iter().map(|built| built.record).collect();
     records.sort_by(|a, b| (rank(&a.verdict), &a.rule_id, &a.resource, &a.finding_id).cmp(&(rank(&b.verdict), &b.rule_id, &b.resource, &b.finding_id)));
@@ -608,7 +636,7 @@ mod tests {
     impl Builder {
         fn node(mut self, id: &str, label: &str, extra: Value) -> Self {
             let name = extra.get("name").and_then(Value::as_str).unwrap_or(id).to_string();
-            self.request.nodes.push(AnalysisNode { reference: format!("node:{id}"), labels: vec![label.into()], name, properties: props(extra) });
+            self.request.nodes.push(AnalysisNode { reference: format!("node:{id}"), labels: vec![label.into()], name, source: None, properties: props(extra) });
             self
         }
 
@@ -617,7 +645,7 @@ mod tests {
                 assert!(self.request.nodes.iter().any(|node| node.reference == format!("node:{end}")), "no node {end}");
             }
             let reference = format!("rel:{from}|{rel_type}|{to}|{extra}");
-            self.request.edges.push(AnalysisEdge { reference, from: format!("node:{from}"), to: format!("node:{to}"), rel_type: rel_type.into(), properties: props(extra) });
+            self.request.edges.push(AnalysisEdge { reference, from: format!("node:{from}"), to: format!("node:{to}"), rel_type: rel_type.into(), source: None, properties: props(extra) });
             self
         }
 
@@ -985,6 +1013,56 @@ mod tests {
         // The ID format, so that changing it shows up here.
         let id_text = format!("{RULE_DIRECT}\nnode:web");
         assert_eq!(only(&report, RULE_DIRECT, "web").finding_id, format!("finding:{:016x}", fnv1a(&id_text)));
+    }
+
+    fn tagged(mut builder: Builder, status: &str) -> Builder {
+        for node in &mut builder.request.nodes {
+            node.source = Some("shop".into());
+        }
+        for edge in &mut builder.request.edges {
+            edge.source = Some("shop".into());
+        }
+        builder.request.coverage.insert("shop".into(), SourceCoverage { run_id: "shop#1".into(), status: status.into(), gaps: vec![] });
+        builder
+    }
+
+    #[test]
+    fn a_partial_source_cannot_clear_anything() {
+        // No public address, so the rule would not point here on complete data.
+        let bare = || set(exposed(), "web", "public_ip", None);
+        let whole = tagged(bare(), "complete").report();
+        assert_eq!(only(&whole, RULE_DIRECT, "web").verdict, NOT_INDICATED);
+
+        for status in ["partial", "failed", "cancelled"] {
+            let report = tagged(bare(), status).report();
+            let finding = only(&report, RULE_DIRECT, "web");
+            assert_eq!(finding.verdict, INSUFFICIENT_DATA, "{status}");
+            assert!(finding.unknowns.iter().any(|text| text.contains("shop#1") && text.contains(status)), "{:?}", finding.unknowns);
+        }
+    }
+
+    #[test]
+    fn what_a_partial_source_did_report_still_counts() {
+        let report = tagged(exposed(), "partial").report();
+        assert_eq!(only(&report, RULE_DIRECT, "web").verdict, POTENTIAL_EXPOSURE);
+    }
+
+    #[test]
+    fn a_source_with_no_record_of_its_runs_is_not_called_incomplete() {
+        let mut builder = tagged(set(exposed(), "web", "public_ip", None), "complete");
+        builder.request.coverage.clear();
+        assert_eq!(only(&builder.report(), RULE_DIRECT, "web").verdict, NOT_INDICATED);
+    }
+
+    #[test]
+    fn a_partial_source_behind_a_path_counts_even_when_no_condition_read_it() {
+        // Only the node a hop arrives at comes from the partial source.
+        let mut builder = set(exposed(), "web", "public_ip", None);
+        let internet = builder.request.nodes.iter_mut().find(|node| node.reference == "node:internet").unwrap();
+        internet.source = Some("other".into());
+        builder.request.coverage.insert("other".into(), SourceCoverage { run_id: "other#2".into(), status: "partial".into(), gaps: vec![] });
+        let report = builder.report();
+        assert_eq!(only(&report, RULE_DIRECT, "web").verdict, INSUFFICIENT_DATA);
     }
 
     #[test]

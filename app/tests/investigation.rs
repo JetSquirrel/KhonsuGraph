@@ -198,6 +198,11 @@ fn build_plugins() {
             .status()
             .unwrap();
         assert!(status.success());
+        let status = Command::new(env!("CARGO"))
+            .args(["build", "-q", "--locked", "-p", "khonsu-plugin-protocol", "--example", "scripted"])
+            .status()
+            .unwrap();
+        assert!(status.success());
     });
 }
 
@@ -208,7 +213,7 @@ fn normalize(value: &Value) -> Value {
     match value {
         Value::Object(map) => Value::Object(
             map.iter()
-                .filter(|(key, _)| !matches!(key.as_str(), "elapsed_ms" | "load_ms" | "khonsu_synced_at" | "khonsu_plugin" | "plugin" | "file" | "line" | "record_written_at" | "source_last_successful_sync"))
+                .filter(|(key, _)| !matches!(key.as_str(), "started_at" | "ended_at" | "elapsed_ms" | "load_ms" | "khonsu_synced_at" | "khonsu_plugin" | "plugin" | "file" | "line" | "record_written_at" | "source_last_successful_sync"))
                 .map(|(key, value)| (key.clone(), normalize(value)))
                 .collect(),
         ),
@@ -632,32 +637,48 @@ fn a_finding_opens_in_path_explorer_and_its_records_resolve_as_evidence() {
     assert!(walked >= 3, "{report}");
 }
 
-/// A response that is missing reads as empty (#38), so the rules must not read
-/// the records it would have given as absent from the account.
+/// #38: a response missing from the start leaves a condition unknown, and one
+/// that goes missing later removes nothing and clears nothing.
 #[test]
 fn a_missing_response_makes_a_finding_undecided_rather_than_clearing_it() {
+    // Never there: nothing to read the route from.
+    let env = Env::new();
+    let saved = env.path("saved");
+    copy_dir(&exposure_fixture(), &saved);
+    std::fs::remove_file(saved.join("us-east-1/ec2-describe-route-tables.json")).unwrap();
+    let db = env.path("graph");
+    env.add_source(&db, &saved);
+    let out = env.ok(&["plugin", "sync", "--source", "shop"]);
+    assert_eq!(out["run"]["status"], "partial", "{out}");
+    let report = env.ok(&["plugin", "analyze", "aws", "exposure", "-d", text(&db)]);
+    let web = finding(&report, DIRECT, &instance("i-web1"));
+    assert_eq!(web["verdict"], "insufficient_data", "{web}");
+    assert_eq!(condition_status(web, "internet-route"), "unknown");
+    assert_eq!(report["complete"], false, "{report}");
+
+    // Goes missing later: the graph keeps what it knew, and says how far to trust it.
     let env = Env::new();
     let saved = env.path("saved");
     copy_dir(&exposure_fixture(), &saved);
     let db = env.path("graph");
     env.add_source(&db, &saved);
     env.ok(&["plugin", "sync", "--source", "shop"]);
-    assert_eq!(finding(&env.ok(&["plugin", "analyze", "aws", "exposure", "-d", text(&db)]), DIRECT, &instance("i-web1"))["verdict"], "potential_exposure");
-
-    std::fs::remove_file(saved.join("us-east-1/ec2-describe-route-tables.json")).unwrap();
-    env.ok(&["plugin", "sync", "--source", "shop"]);
-    let report = env.ok(&["plugin", "analyze", "aws", "exposure", "-d", text(&db)]);
-    let web = finding(&report, DIRECT, &instance("i-web1"));
-    assert_eq!(web["verdict"], "insufficient_data", "{web}");
-    assert_eq!(condition_status(web, "internet-route"), "unknown");
+    let before = env.ok(&["plugin", "analyze", "aws", "exposure", "-d", text(&db)]);
+    assert_eq!(before["complete"], true, "{before}");
+    assert_eq!(finding(&before, DIRECT, &instance("i-batch1"))["verdict"], "not_indicated");
 
     std::fs::remove_file(saved.join("us-east-1/ec2-describe-security-groups.json")).unwrap();
     env.ok(&["plugin", "sync", "--source", "shop"]);
     let report = env.ok(&["plugin", "analyze", "aws", "exposure", "-d", text(&db)]);
+    assert_eq!(report["complete"], false, "{report}");
+    assert_eq!(report["sources"]["shop"]["value"]["status"], "partial", "{report}");
     let web = finding(&report, DIRECT, &instance("i-web1"));
-    assert_eq!(web["verdict"], "insufficient_data", "{web}");
-    assert_eq!(condition_status(web, "open-inbound-rule"), "unknown");
-    assert!(web["path"].is_null(), "{web}");
+    assert_eq!(web["verdict"], "potential_exposure", "what it did report still stands: {web}");
+    assert_eq!(web["incomplete_sources"], json!(["shop"]));
+    // No false all-clear: on complete data this was not indicated.
+    let batch = finding(&report, DIRECT, &instance("i-batch1"));
+    assert_eq!(batch["verdict"], "insufficient_data", "{batch}");
+    assert!(batch["unknowns"].to_string().contains("partial"), "{batch}");
 }
 
 /// The shop fixture has a load balancer path that the graph can walk, and whose
@@ -985,12 +1006,10 @@ fn corrupt_input_fails_without_changing_the_graph() {
     assert_eq!(out["error"]["kind"], "open", "{out}");
 }
 
-/// KNOWN GAP, recorded so that #38 has to change it on purpose: a saved
-/// response that is missing reads as an empty one, so a partial export syncs
-/// without complaint, and a full re-sync removes what the missing file used
-/// to describe. An absent edge here is not proof of absence.
+/// #38: a partial export says so and removes nothing, since an absent record
+/// here is not proof of absence. The next complete sync catches up.
 #[test]
-fn a_missing_response_is_read_as_empty_and_nothing_says_so() {
+fn a_missing_response_removes_nothing_and_says_what_was_not_seen() {
     let env = Env::new();
     let saved = env.path("saved");
     copy_dir(&fixture(), &saved);
@@ -1000,10 +1019,209 @@ fn a_missing_response_is_read_as_empty_and_nothing_says_so() {
     let allows = "MATCH ()-[r:ALLOWS]->() RETURN count(r) AS c";
     assert_eq!(env.count(&db, allows), 3);
 
-    std::fs::remove_file(saved.join("us-east-1/ec2-describe-security-groups.json")).unwrap();
+    let file = env.path("web.investigation");
+    env.ok(&investigation_save(&db, &file));
+    let groups = saved.join("us-east-1/ec2-describe-security-groups.json");
+    let kept = std::fs::read_to_string(&groups).unwrap();
+    std::fs::remove_file(&groups).unwrap();
     let out = env.ok(&["plugin", "sync", "--source", "shop"]);
-    assert_eq!(out["merge"]["warnings"], json!([]), "{out}");
-    assert_eq!(env.count(&db, allows), 0);
+    assert_eq!(out["run"]["status"], "partial", "{out}");
+    let reopened = env.ok(&["investigation", "reopen", text(&file)]);
+    assert_eq!(reopened["graph_state"], "unchanged", "nothing was removed: {reopened}");
+    assert!(reopened["incomplete_sources"][0].as_str().unwrap().contains("partial"), "and it says how far to trust that: {reopened}");
+    assert_eq!(out["run"]["removals_applied"], false, "{out}");
+    assert_eq!(out["run"]["gaps"], json!(["no saved response for ec2 describe-security-groups in us-east-1"]), "{out}");
+    assert_eq!(out["merge"]["stale_nodes_removed"], 0, "{out}");
+    assert_eq!(out["merge"]["stale_edges_removed"], 0, "{out}");
+    assert_eq!(env.count(&db, allows), 3, "still known, not confirmed gone");
+
+    // Complete again, and something really has gone: now it can be removed.
+    let mut without_ssh: Value = serde_json::from_str(&kept).unwrap();
+    without_ssh["SecurityGroups"][0]["IpPermissions"].as_array_mut().unwrap().remove(1);
+    std::fs::write(&groups, without_ssh.to_string()).unwrap();
+    let out = env.ok(&["plugin", "sync", "--source", "shop"]);
+    assert_eq!(out["run"]["status"], "complete", "{out}");
+    assert_eq!(out["run"]["removals_applied"], true, "{out}");
+    assert_eq!(env.count(&db, allows), 2);
+}
+
+/// Installs the scripted test plugin and adds a source that sends `lines` and
+/// exits with `exit`, on a new graph named `graph`.
+fn scripted_source(env: &Env, lines: &[Value], exit: i32) -> PathBuf {
+    let plugin = env.path("scripted-plugin");
+    std::fs::create_dir_all(&plugin).unwrap();
+    let exe = format!("scripted{}", std::env::consts::EXE_SUFFIX);
+    let built = Path::new(env!("CARGO_BIN_EXE_khonsugraph")).parent().unwrap().join("examples").join(&exe);
+    std::fs::copy(&built, plugin.join(&exe)).unwrap();
+    let manifest = json!({"id": "scripted", "name": "Scripted", "version": "0.1.0", "protocol": 1, "entry": [exe]});
+    std::fs::write(plugin.join("khonsu-plugin.json"), manifest.to_string()).unwrap();
+    env.ok(&["plugin", "install", text(&plugin), "--yes"]);
+
+    let db = env.path("graph");
+    env.ok(&["init", text(&db)]);
+    env.ok(&[
+        "source", "add", "-d", text(&db), "--plugin", "scripted", "--name", "script",
+        "-c", &format!("lines={}", Value::Array(lines.to_vec())),
+        "-c", &format!("exit={exit}"),
+    ]);
+    db
+}
+
+/// Rewrites what the scripted source sends next.
+fn script(env: &Env, lines: &[Value], exit: i32) {
+    let path = env.config().join("sources.json");
+    let mut sources: Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let list = if sources.is_array() { sources.as_array_mut().unwrap() } else { sources["sources"].as_array_mut().unwrap() };
+    let source = list.iter_mut().find(|source| source["id"] == "script").unwrap();
+    source["config"]["lines"] = Value::Array(lines.to_vec());
+    source["config"]["exit"] = json!(exit);
+    std::fs::write(&path, sources.to_string()).unwrap();
+}
+
+fn node_line(id: &str) -> Value {
+    json!({"type": "node", "id": id, "label": "Host", "properties": {"name": id}})
+}
+
+fn edge_line(id: &str, source: &str, target: &str) -> Value {
+    json!({"type": "edge", "id": id, "source": source, "target": target, "rel_type": "LINKS"})
+}
+
+fn done_line() -> Value {
+    json!({"type": "done"})
+}
+
+fn last_run(env: &Env) -> Value {
+    let (_, sources) = env.khonsu(&["source", "list"]);
+    sources["sources"][0]["runs"].as_array().unwrap().last().unwrap().clone()
+}
+
+fn hosts(env: &Env, db: &Path) -> i64 {
+    env.count(db, "MATCH (n:Host) RETURN count(n) AS c")
+}
+
+#[test]
+fn a_plugin_that_fails_midway_removes_nothing_and_is_recorded_as_failed() {
+    let env = Env::new();
+    let whole = [node_line("a"), node_line("b"), node_line("c"), done_line()];
+    let db = scripted_source(&env, &whole, 0);
+    let out = env.ok(&["plugin", "sync", "--source", "script"]);
+    assert_eq!(out["run"]["run_id"], "script#1", "{out}");
+    assert_eq!(hosts(&env, &db), 3);
+
+    // An error message partway, and then stopping without one.
+    let cases: [(&[Value], i32); 2] = [(&[node_line("a"), json!({"type": "error", "message": "boom"})], 0), (&[node_line("a")], 3)];
+    for (number, (lines, exit)) in (2..).zip(cases) {
+        script(&env, lines, exit);
+        let (code, out) = env.khonsu(&["plugin", "sync", "--source", "script"]);
+        assert_ne!(code, 0, "{out}");
+        let run = last_run(&env);
+        assert_eq!(run["run_id"], format!("script#{number}"), "{run}");
+        assert_eq!(run["status"], "failed", "{run}");
+        assert_eq!(run["removals_applied"], false, "{run}");
+        assert_eq!(hosts(&env, &db), 3, "b and c are not confirmed gone");
+    }
+
+    let evidence = env.ok(&["evidence", "-d", text(&db), "--node", "script/a"]);
+    let record = &evidence["evidence"][0];
+    assert_eq!(record["source_coverage"]["value"]["status"], "failed", "{record}");
+    assert_eq!(record["source_coverage"]["value"]["run_id"], "script#3", "{record}");
+    assert_eq!(record["source_last_successful_sync"]["status"], "known", "the complete run still counts: {record}");
+
+    // Retrying after the fault: complete, and removals apply again.
+    script(&env, &[node_line("a"), node_line("b"), done_line()], 0);
+    let out = env.ok(&["plugin", "sync", "--source", "script"]);
+    assert_eq!(out["run"]["status"], "complete", "{out}");
+    assert_eq!(hosts(&env, &db), 2);
+}
+
+#[test]
+fn only_a_complete_sync_moves_the_cursor() {
+    let cursor = |at: &str| json!({"type": "cursor", "value": {"since": at}});
+    let env = Env::new();
+    let db = scripted_source(&env, &[node_line("a"), node_line("b"), cursor("one"), done_line()], 0);
+    let saved_cursor = |env: &Env| {
+        let (_, sources) = env.khonsu(&["source", "list"]);
+        sources["sources"][0]["cursor"].clone()
+    };
+    let out = env.ok(&["plugin", "sync", "--source", "script"]);
+    assert_eq!(out["run"]["cursor_advanced"], true, "{out}");
+    assert_eq!(saved_cursor(&env), json!({"since": "one"}));
+
+    // Finished but partial, and failed: the next sync starts from the same place.
+    let partial = json!({"type": "done", "complete": false, "gaps": ["page 2 timed out"]});
+    script(&env, &[node_line("a"), cursor("two"), partial], 0);
+    let out = env.ok(&["plugin", "sync", "--source", "script"]);
+    assert_eq!(out["run"]["status"], "partial", "{out}");
+    assert_eq!(out["run"]["cursor_advanced"], false, "{out}");
+    assert_eq!(out["run"]["gaps"], json!(["page 2 timed out"]), "{out}");
+    assert_eq!(saved_cursor(&env), json!({"since": "one"}));
+    assert_eq!(hosts(&env, &db), 2, "b is not confirmed gone");
+
+    script(&env, &[cursor("three")], 1);
+    let (code, _) = env.khonsu(&["plugin", "sync", "--source", "script"]);
+    assert_ne!(code, 0);
+    assert_eq!(saved_cursor(&env), json!({"since": "one"}));
+
+    script(&env, &[node_line("a"), cursor("four"), done_line()], 0);
+    env.ok(&["plugin", "sync", "--source", "script"]);
+    assert_eq!(saved_cursor(&env), json!({"since": "four"}));
+    assert_eq!(hosts(&env, &db), 1);
+}
+
+#[test]
+fn duplicate_ids_and_missing_endpoints_are_counted_and_repeat_the_same_way() {
+    let lines = [
+        node_line("a"),
+        node_line("a"),
+        node_line("b"),
+        edge_line("ab", "a", "b"),
+        edge_line("ab", "a", "b"),
+        edge_line("a-gone", "a", "not-sent"),
+        done_line(),
+    ];
+    let env = Env::new();
+    let db = scripted_source(&env, &lines, 0);
+    let first = env.ok(&["plugin", "sync", "--source", "script"]);
+    assert_eq!(first["run"]["status"], "complete", "{first}");
+    assert_eq!(first["merge"]["duplicate_nodes"], 1, "{first}");
+    assert_eq!(first["merge"]["duplicate_edges"], 1, "{first}");
+    assert_eq!(first["merge"]["skipped_edges"], 1, "{first}");
+    assert_eq!(hosts(&env, &db), 2);
+    assert_eq!(env.count(&db, "MATCH ()-[r:LINKS]->() RETURN count(r) AS c"), 1);
+
+    let again = env.ok(&["plugin", "sync", "--source", "script"]);
+    assert_eq!(again["run"]["run_id"], "script#2", "{again}");
+    assert_eq!(again["merge"]["edges_written"], 0, "{again}");
+    assert_eq!(again["merge"]["unchanged_edges"], 1, "{again}");
+    assert_eq!(hosts(&env, &db), 2);
+}
+
+/// A source no longer configured has nothing to say about its records, and they
+/// say so rather than passing as complete.
+#[test]
+fn records_of_a_source_that_has_gone_state_that_their_coverage_is_unknown() {
+    let env = Env::new();
+    let db = env.synced_graph("graph");
+    env.ok(&["source", "remove", "shop"]);
+    let out = env.ok(&["evidence", "-d", text(&db), "--node", WEB_1]);
+    assert_eq!(out["evidence"][0]["source_coverage"], json!({"status": "unknown"}), "{out}");
+    assert_eq!(out["evidence"][0]["source"]["value"], "shop");
+    let report = env.ok(&["plugin", "analyze", "aws", "exposure", "-d", text(&db)]);
+    assert_eq!(report["sources"]["shop"], json!({"status": "unknown"}), "{report}");
+}
+
+#[test]
+fn only_the_latest_runs_are_kept_and_numbering_goes_on() {
+    let env = Env::new();
+    scripted_source(&env, &[done_line()], 0);
+    for _ in 0..22 {
+        env.ok(&["plugin", "sync", "--source", "script"]);
+    }
+    let (_, sources) = env.khonsu(&["source", "list"]);
+    let runs = sources["sources"][0]["runs"].as_array().unwrap();
+    assert_eq!(runs.len(), 20);
+    assert_eq!(runs[0]["run_id"], "script#3");
+    assert_eq!(runs[19]["run_id"], "script#22");
 }
 
 #[test]
@@ -1025,6 +1243,9 @@ fn a_cancelled_sync_reports_it_and_leaves_the_graph_alone() {
     assert_eq!(env.answers(&db), before);
     let (_, sources) = env.khonsu(&["source", "list"]);
     assert_eq!(sources["sources"][0]["last_sync"]["ok"], false, "{sources}");
+    let run = sources["sources"][0]["runs"].as_array().unwrap().last().unwrap().clone();
+    assert_eq!(run["status"], "cancelled", "{run}");
+    assert_eq!(run["removals_applied"], false, "{run}");
 }
 
 /// Every graph kept in tests/fixtures still reads the same and takes a write,
