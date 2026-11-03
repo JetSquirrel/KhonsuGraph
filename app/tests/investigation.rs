@@ -1247,6 +1247,142 @@ fn scripted_source(env: &Env, lines: &[Value], exit: i32) -> PathBuf {
     db
 }
 
+fn tamper(env: &Env, name: &str, append: &str) {
+    let path = env.config().join("plugins/scripted").join(name);
+    let mut bytes = std::fs::read(&path).unwrap();
+    bytes.extend_from_slice(append.as_bytes());
+    std::fs::write(&path, bytes).unwrap();
+}
+
+fn approval(env: &Env) -> String {
+    let (_, out) = env.khonsu(&["plugin", "list"]);
+    let plugins = out["plugins"].as_array().unwrap();
+    let scripted = plugins.iter().find(|plugin| plugin["id"] == "scripted").unwrap();
+    assert_eq!(scripted["sandboxed"], false, "{scripted}");
+    scripted["approval"].as_str().unwrap().to_string()
+}
+
+/// #39: a plugin changed after it was approved does not run until approved
+/// again, whichever part of it changed, and the version need not move.
+#[test]
+fn a_plugin_changed_after_approval_needs_approval_again() {
+    let env = Env::new();
+    let db = scripted_source(&env, &[node_line("a"), done_line()], 0);
+    env.ok(&["plugin", "sync", "--source", "script"]);
+    assert_eq!(approval(&env), "approved");
+
+    let exe = format!("scripted{}", std::env::consts::EXE_SUFFIX);
+    tamper(&env, &exe, "tampered");
+    assert_eq!(approval(&env), "changed");
+    script(&env, &[node_line("a"), node_line("b"), done_line()], 0);
+    let (code, out) = env.khonsu(&["plugin", "sync", "--source", "script"]);
+    assert_ne!(code, 0, "{out}");
+    assert_eq!(out["error"]["kind"], "plugin", "{out}");
+    let message = out["error"]["message"].as_str().unwrap();
+    assert!(message.contains("needs approval") && message.contains("changed"), "{out}");
+    assert_eq!(hosts(&env, &db), 1, "it did not run");
+
+    // A file beside the program counts as much as the program.
+    env.ok(&["plugin", "approve", "scripted"]);
+    assert_eq!(approval(&env), "approved");
+    std::fs::write(env.config().join("plugins/scripted/helper.py"), "import evil").unwrap();
+    assert_eq!(approval(&env), "changed");
+    env.ok(&["plugin", "approve", "scripted"]);
+
+    // So does a change of permissions in the manifest, with the same version.
+    let manifest = env.config().join("plugins/scripted/khonsu-plugin.json");
+    let mut value: Value = serde_json::from_str(&std::fs::read_to_string(&manifest).unwrap()).unwrap();
+    value["permissions"] = json!({"network": ["example.com"]});
+    std::fs::write(&manifest, value.to_string()).unwrap();
+    assert_eq!(approval(&env), "changed");
+
+    env.ok(&["plugin", "approve", "scripted"]);
+    let out = env.ok(&["plugin", "sync", "--source", "script"]);
+    assert_eq!(out["run"]["status"], "complete", "{out}");
+    assert_eq!(hosts(&env, &db), 2);
+}
+
+#[test]
+fn a_manifest_or_an_id_cannot_reach_outside_the_plugin_folder() {
+    let env = Env::new();
+    build_plugins();
+    let outside = env.path("keep-me");
+    std::fs::create_dir_all(&outside).unwrap();
+    std::fs::write(outside.join("file.txt"), "still here").unwrap();
+
+    let plugin = env.path("evil");
+    std::fs::create_dir_all(&plugin).unwrap();
+    for entry in ["../keep-me/file.txt", "/bin/sh"] {
+        let manifest = json!({"id": "evil", "name": "Evil", "version": "1", "protocol": 1, "entry": [entry]});
+        std::fs::write(plugin.join("khonsu-plugin.json"), manifest.to_string()).unwrap();
+        let (code, out) = env.khonsu(&["plugin", "install", text(&plugin), "--yes"]);
+        assert_ne!(code, 0, "{entry}: {out}");
+        assert!(out["error"]["message"].as_str().unwrap().contains("outside the plugin folder"), "{entry}: {out}");
+    }
+    // An argument too, since it is usually the script an interpreter runs.
+    let manifest = json!({"id": "evil", "name": "Evil", "version": "1", "protocol": 1, "entry": ["python3", "../keep-me/file.txt"]});
+    std::fs::write(plugin.join("khonsu-plugin.json"), manifest.to_string()).unwrap();
+    let (code, out) = env.khonsu(&["plugin", "install", text(&plugin), "--yes"]);
+    assert_ne!(code, 0, "{out}");
+
+    // Removing by a name that walks out of the plugins folder removes nothing.
+    std::fs::create_dir_all(env.config().join("plugins")).unwrap();
+    let config_file = env.config().join("sentinel.txt");
+    std::fs::write(&config_file, "still here").unwrap();
+    for id in ["..", "../..", "../../keep-me"] {
+        let (code, out) = env.khonsu(&["plugin", "uninstall", id]);
+        assert_ne!(code, 0, "{id}: {out}");
+    }
+    assert!(config_file.is_file() && outside.join("file.txt").is_file());
+}
+
+/// A reinstall that turns out bad leaves the working plugin as it was.
+#[test]
+fn a_bad_reinstall_keeps_the_plugin_already_there() {
+    let env = Env::new();
+    scripted_source(&env, &[done_line()], 0);
+    let source = env.path("scripted-plugin");
+    let exe = format!("scripted{}", std::env::consts::EXE_SUFFIX);
+    std::fs::remove_file(source.join(&exe)).unwrap();
+    let (code, out) = env.khonsu(&["plugin", "install", text(&source), "--yes"]);
+    assert_ne!(code, 0, "{out}");
+    assert!(out["error"]["message"].as_str().unwrap().contains("entry executable not found"), "{out}");
+    assert_eq!(approval(&env), "approved", "still there, and still as approved");
+    env.ok(&["plugin", "sync", "--source", "script"]);
+    let leftovers: Vec<String> = std::fs::read_dir(env.config().join("plugins")).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+    assert_eq!(leftovers, ["scripted"], "no staging folder left behind");
+}
+
+/// Too long a line, and output that is not the protocol, both end the sync with
+/// a reason. What was already written is kept, and nothing is removed.
+#[test]
+fn oversized_or_invalid_output_fails_safely() {
+    let env = Env::new();
+    let db = scripted_source(&env, &[node_line("a"), node_line("b"), done_line()], 0);
+    env.ok(&["plugin", "sync", "--source", "script"]);
+
+    let huge = json!({"type": "node", "id": "c", "label": "Host", "properties": {"name": "x".repeat(17 * 1024 * 1024)}});
+    script(&env, &[node_line("a"), huge], 0);
+    let (code, out) = env.khonsu(&["plugin", "sync", "--source", "script"]);
+    assert_ne!(code, 0);
+    let message = out["error"]["message"].as_str().unwrap();
+    assert!(message.contains("longer than") && message.len() < 2000, "{}", &message[..message.len().min(300)]);
+    assert_eq!(last_run(&env)["status"], "failed");
+    assert_eq!(hosts(&env, &db), 2, "nothing removed");
+
+    script(&env, &[node_line("a"), json!("not a protocol message"), done_line()], 0);
+    let (code, _) = env.khonsu(&["plugin", "sync", "--source", "script"]);
+    assert_ne!(code, 0);
+    assert_eq!(last_run(&env)["status"], "failed");
+    assert_eq!(hosts(&env, &db), 2, "nothing removed");
+
+    // The graph is whole afterwards, and the next good sync goes through.
+    script(&env, &[node_line("a"), node_line("b"), done_line()], 0);
+    let out = env.ok(&["plugin", "sync", "--source", "script"]);
+    assert_eq!(out["run"]["status"], "complete", "{out}");
+    assert_eq!(hosts(&env, &db), 2);
+}
+
 /// Rewrites what the scripted source sends next.
 fn script(env: &Env, lines: &[Value], exit: i32) {
     let path = env.config().join("sources.json");
@@ -1549,7 +1685,13 @@ fn a_result_that_misbehaves_is_refused_and_says_why() {
     let env = Env::new();
     install_analyzer(&env, true);
     let db = graph_of_things(&env);
-    for (analysis, expected) in [("forged", "node:forged"), ("unfinished", "without finishing"), ("fails", "could not run")] {
+    for (analysis, expected) in [
+        ("forged", "node:forged"),
+        ("unfinished", "without finishing"),
+        ("fails", "could not run"),
+        ("endless-line", "longer than"),
+        ("not-json", "invalid output"),
+    ] {
         let (code, out) = env.khonsu(&["plugin", "analyze", "analyzer", analysis, "-d", text(&db)]);
         assert_eq!((code, out["error"]["kind"].as_str()), (1, Some("plugin")), "{analysis}: {out}");
         let message = out["error"]["message"].as_str().unwrap();
@@ -1565,9 +1707,58 @@ fn an_analysis_needs_the_same_approval_as_a_sync() {
     let env = Env::new();
     install_analyzer(&env, false);
     let db = graph_of_things(&env);
-    let (code, out) = env.khonsu(&["plugin", "analyze", "analyzer", "dead-ends", "-d", text(&db)]);
+    let run = || env.khonsu(&["plugin", "analyze", "analyzer", "dead-ends", "-d", text(&db)]);
+    let (code, out) = run();
     assert_eq!(code, 1, "{out}");
-    assert!(out["error"]["message"].as_str().unwrap().contains("approval"), "{out}");
+    assert!(out["error"]["message"].as_str().unwrap().contains("not been approved"), "{out}");
+    assert_eq!(out["error"]["detail"]["reason"], "it has not been approved", "{out}");
+
+    env.ok(&["plugin", "approve", "analyzer"]);
+    assert_eq!(run().0, 0);
+
+    // A file changed since it was approved: not run, whatever it would say.
+    let installed = env.config().join("plugins").join("analyzer");
+    std::fs::write(installed.join("helper.txt"), "added after approval").unwrap();
+    let (code, out) = run();
+    assert_eq!(code, 1, "{out}");
+    assert!(out["error"]["message"].as_str().unwrap().contains("changed since"), "{out}");
+}
+
+/// The window's Stop, and the limit on how long an analysis may take, both end
+/// the plugin rather than waiting for it.
+#[test]
+fn an_analysis_that_hangs_is_ended_by_cancelling_or_by_the_time_limit() {
+    use khonsu_core::plugin_analysis::{run_within, AnalysisInput, Offered};
+    use std::time::{Duration, Instant};
+
+    let env = Env::new();
+    install_analyzer(&env, true);
+    // In this process, so that it can be cancelled and timed.
+    let dir = env.config().join("plugins").join("analyzer");
+    let manifest = plugin::read_manifest(&dir).unwrap();
+    let info = plugin::PluginInfo { manifest, dir, builtin: true };
+    let analyses = plugin::describe(&info).unwrap().analyses;
+    let offered = Offered { info: analyses.into_iter().find(|analysis| analysis.id == "hangs").unwrap(), plugin: info };
+    let input = AnalysisInput::default();
+
+    let started = Instant::now();
+    let cancel = AtomicBool::new(false);
+    let result = run_within(&offered, &input, &[], &cancel, Duration::from_secs(1), |_| {});
+    let message = result.unwrap_err().to_string();
+    assert!(message.contains("took more than 1 seconds"), "{message}");
+    assert!(started.elapsed() < Duration::from_secs(20), "{:?}", started.elapsed());
+
+    let cancel = std::sync::Arc::new(AtomicBool::new(false));
+    let flag = cancel.clone();
+    let stopper = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(200));
+        flag.store(true, Ordering::Relaxed);
+    });
+    let started = Instant::now();
+    let result = run_within(&offered, &input, &[], &cancel, Duration::from_secs(120), |_| {});
+    stopper.join().unwrap();
+    assert!(matches!(result, Err(PluginError::Cancelled)), "{result:?}");
+    assert!(started.elapsed() < Duration::from_secs(20), "{:?}", started.elapsed());
 }
 
 /// A data-source plugin with no analyses goes on working, and says plainly that

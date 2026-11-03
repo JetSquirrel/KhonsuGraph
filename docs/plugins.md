@@ -39,7 +39,7 @@ it, a program on `PATH` such as `python3` or `node`. The program runs with the
 plugin folder as its working directory.
 
 `permissions` is what the person approves before the first sync, and again
-whenever the version or the permissions change:
+whenever the version, the permissions or any file in the plugin's folder changes:
 
 | Field | Meaning |
 | --- | --- |
@@ -49,7 +49,12 @@ whenever the version or the permissions change:
 | `notes` | Anything else worth knowing, e.g. "a read-only IAM policy is enough" |
 
 Declare everything the plugin does. KhonsuGraph shows these to the person; it
-does not sandbox the plugin.
+does not sandbox the plugin, and does not enforce them. See
+[plugin security](plugin-security.md).
+
+`entry` must stay inside the plugin's folder, apart from a bare program name found on
+`PATH`. Don't write files into the folder as the plugin runs, except what an
+interpreter caches in `__pycache__`, or it will need approval again each time.
 
 ## The three commands
 
@@ -233,7 +238,9 @@ Answer with one line per finding, then `analysis_done`:
 - **Say when you don't know.** A condition's `status` can be `unknown`. Work your
   verdict out from what you were sent, and don't read a missing record as a fact.
 
-An analysis needs the same approval as a sync.
+An analysis needs the same approval as a sync, checked as each run starts. It may
+take 5 minutes, send lines of up to 16 MiB and send 100,000 findings. Past any of these
+it is ended and its answer refused.
 
 ```sh
 khonsu plugin describe my-plugin               # what it offers

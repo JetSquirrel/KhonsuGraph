@@ -52,6 +52,8 @@ A plugin can offer analyses: `khonsu plugin describe ID` lists them under `analy
 
 To answer "what changed?", take snapshots with `khonsu snapshot save FILE --db DIR` and compare them with `khonsu snapshot diff BEFORE AFTER`. Report `not_seen` as possibly still there, never as deleted, and read `warnings`. See `references/cli.md`.
 
+Plugins are not sandboxed: an installed plugin runs as the person, and its declared permissions are not enforced. Don't run `plugin install --yes` or `plugin approve` on a plugin the person hasn't chosen. A sync that fails with "needs approval" means the plugin changed since it was approved; tell the person rather than approving it yourself.
+
 To keep a line of inquiry, `khonsu investigation save FILE --db DIR --from NODE --to NODE` writes a file of its own, and `khonsu investigation reopen FILE` runs it again. Read `graph_state` first: when it is `changed`, say so, and read `path_same`, `missing_seeds`, `target_missing` and `unsure` before treating the answer as the saved one. See `references/cli.md`.
 
 ## The window and the graph lease

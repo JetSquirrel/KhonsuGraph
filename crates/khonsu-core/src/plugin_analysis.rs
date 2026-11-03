@@ -294,8 +294,16 @@ fn request_for(info: &AnalysisInfo, input: &AnalysisInput, sources: &[Source]) -
 /// Runs an analysis over what was read and checks the result. It holds no graph,
 /// so a long analysis does not keep the window from using it.
 pub fn run(offered: &Offered, input: &AnalysisInput, sources: &[Source], cancel: &AtomicBool, on_event: impl FnMut(SyncEvent)) -> Result<Report, PluginError> {
+    run_within(offered, input, sources, cancel, plugin::ANALYZE_TIMEOUT, on_event)
+}
+
+/// [`run`], with a limit other than the usual one on how long it may take.
+pub fn run_within(offered: &Offered, input: &AnalysisInput, sources: &[Source], cancel: &AtomicBool, timeout: std::time::Duration, on_event: impl FnMut(SyncEvent)) -> Result<Report, PluginError> {
+    // Approval is checked as each run starts, not only when it was offered: the
+    // plugin's files can have changed since.
+    plugin::require_approved(&offered.plugin)?;
     let request = request_for(&offered.info, input, sources);
-    let end = plugin::run_analyze(&offered.plugin, &request, cancel, on_event)?;
+    let end = plugin::run_analyze(&offered.plugin, &request, cancel, timeout, on_event)?;
     report_from(offered, input, sources, end.findings, end.subjects).map_err(|message| PluginError::Failed {
         plugin: offered.plugin.id().to_string(),
         message: format!("its analysis was refused: {message}"),

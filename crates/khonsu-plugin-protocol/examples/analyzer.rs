@@ -80,6 +80,22 @@ fn analyze(out: &mut Emitter<io::BufWriter<io::Stdout>>) -> Result<(), String> {
             return Ok(());
         }
         "fails" => return Err("the analysis could not run".into()),
+        // Never finishes, and goes on writing nothing.
+        "hangs" => loop {
+            std::thread::sleep(std::time::Duration::from_secs(60));
+        },
+        // One line past what a host holds.
+        "endless-line" => {
+            let line = "x".repeat(17 * 1024 * 1024);
+            io::stdout().write_all(line.as_bytes()).map_err(io_error)?;
+            return io::stdout().flush().map_err(io_error);
+        }
+        // Output that is not the protocol, after saying it finished.
+        "not-json" => {
+            out.emit(&Message::AnalysisDone { subjects }).map_err(io_error)?;
+            io::stdout().write_all(b"not json\n").map_err(io_error)?;
+            return io::stdout().flush().map_err(io_error);
+        }
         other => return Err(format!("no analysis {other:?}")),
     }
     for finding in findings {
@@ -101,7 +117,7 @@ fn main() -> ExitCode {
                 labels: vec![],
                 relationship_types: vec![],
                 supports_incremental: false,
-                analyses: ["dead-ends", "forged", "unfinished", "fails"].map(analysis).to_vec(),
+                analyses: ["dead-ends", "forged", "unfinished", "fails", "hangs", "endless-line", "not-json"].map(analysis).to_vec(),
             }))
             .map_err(|e| e.to_string()),
         Some("analyze") => analyze(&mut out),

@@ -22,10 +22,11 @@ cargo test --locked --workspace --test investigation
 | Cycles | A shortest path and a variable-length pattern both end on a cycle |
 | Evidence | `khonsu evidence` and `explore --to` give stable IDs, state what is unknown, and mask secrets; the golden file holds a node and a relationship |
 | Exposure rules | `plugins/aws/tests/fixture-exposure` has a positive, a negative and an undecided case; the golden file holds its whole report, and rule IDs and verdicts for the shop fixture. See [the rules](exposure-rules.md) |
-| Plugin analyses | An example analyzer with nothing to do with AWS gives findings on a graph of its own; a forged reference, a missing end and a failure are each refused; a plugin with no analyses goes on syncing |
+| Plugin analyses | An example analyzer with nothing to do with AWS gives findings on a graph of its own; a forged reference, a missing end, a failure, an endless line and output that isn't the protocol are each refused; one that hangs is ended; a changed plugin doesn't run; a plugin with no analyses goes on syncing |
 | Saved investigations | Reopening restores a walk and path on unchanged data, and flags a changed source, a missing record, a missing graph and a bad file; the golden file holds a reopened walk and the fixture's fingerprint. See [saved investigations](investigations.md) |
 | Sync coverage | A scripted plugin fails midway, stops without `done`, reports gaps, sends duplicates and missing endpoints, and moves its cursor; none of it removes records or moves the cursor unless the sync was complete |
 | Snapshots and diff | Two kept snapshots give a fixed diff; the AWS and CSV examples report what changed, a no-op re-sync gives none, and incomplete coverage is never called a removal. See [snapshots](snapshots.md) |
+| Plugin safety | A changed program, file or manifest needs approval again; entries and IDs can't leave the plugin folder; a bad reinstall keeps the old plugin; oversized and invalid output end a sync with records intact. See [plugin security](plugin-security.md) |
 | HawDB upgrades | `app/tests/fixtures/graph-hawdb-*.zip` must still give the golden answers and fingerprint, and accept a write |
 
 Timings, sync times, paths, line numbers and plugin versions are left out of the
