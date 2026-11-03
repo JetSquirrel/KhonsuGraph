@@ -267,7 +267,7 @@ fn text(properties: &Map<String, Json>, key: &str) -> Option<String> {
 
 /// `properties` without KhonsuGraph's bookkeeping, and with secrets masked,
 /// along with the names of those masked.
-fn own_properties(properties: &Map<String, Json>) -> (Map<String, Json>, Vec<String>) {
+pub(crate) fn own_properties(properties: &Map<String, Json>) -> (Map<String, Json>, Vec<String>) {
     let mut redacted = Vec::new();
     let own = properties
         .iter()
@@ -328,10 +328,7 @@ fn looks_like_a_secret(text: &str) -> bool {
     aws_key || text.contains("-----BEGIN")
 }
 
-/// A hash that stays the same across platforms and Rust versions.
-pub(crate) fn fnv1a(text: &str) -> u64 {
-    text.bytes().fold(0xcbf2_9ce4_8422_2325, |hash, byte| (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3))
-}
+pub(crate) use khonsu_plugin_protocol::fnv1a;
 
 #[cfg(test)]
 mod tests {

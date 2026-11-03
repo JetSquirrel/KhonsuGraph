@@ -11,6 +11,18 @@ khonsu investigation save web.investigation --db graphs/aws \
 khonsu investigation reopen web.investigation
 ```
 
+To keep a finding's path exactly, pass its `path_refs`. A walk finds the fewest hops,
+which isn't always the path a finding describes, so these are looked up one by one:
+
+```sh
+khonsu investigation save db.investigation --db graphs/aws \
+  --path-refs '[{"edge": "rel:...", "along": true}]'
+```
+
+Reopening then checks that each of those records is still there and that they still
+connect. If not, `path_same` is false, and the walk runs instead. Saving from the
+window does this for you after **Show path on canvas**.
+
 ## What reopening tells you
 
 Reopening runs the walk again on the graph as it is now and says how that differs
