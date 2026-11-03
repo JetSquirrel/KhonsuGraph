@@ -995,3 +995,30 @@ fn a_plugin_with_no_analyses_still_syncs_and_says_it_has_none() {
     assert_eq!(code, 1, "{out}");
     assert!(out["error"]["message"].as_str().unwrap().contains("offers no analyses"), "{out}");
 }
+
+/// The window and the command go through the same two steps, so they must agree.
+#[test]
+fn the_command_and_the_library_the_window_uses_give_the_same_findings() {
+    let env = Env::new();
+    let db = env.path("graph");
+    env.add_source(&db, &exposure_fixture());
+    env.ok(&["plugin", "sync", "--source", "shop"]);
+    let mut from_command = env.ok(&["plugin", "analyze", "aws", "exposure", "-d", text(&db)]);
+    from_command.as_object_mut().unwrap().remove("truncated");
+
+    let sources: Vec<settings::Source> = serde_json::from_value(env.ok(&["source", "list"])["sources"].clone()).unwrap();
+    let offered = khonsu_core::plugin_analysis::find("aws", "exposure").unwrap();
+    let mut graph = Graph::open(&db, AccessMode::ReadOnly, "test").unwrap();
+    let input = graph.read_analysis_input(&offered.info).unwrap();
+    drop(graph);
+    let cancel = AtomicBool::new(false);
+    let report = khonsu_core::plugin_analysis::run(&offered, &input, &sources, &cancel, |_| {}).unwrap();
+    assert_eq!(normalize(&serde_json::to_value(&report).unwrap()), normalize(&from_command));
+
+    // The window draws a finding's path from what crossed the boundary.
+    let web = report.findings.iter().find(|finding| finding.rule_id == DIRECT && finding.resource == format!("node:{}", instance("i-web1"))).unwrap();
+    let walk = web.exploration().unwrap();
+    assert_eq!(walk.hops.len(), 2);
+    assert_eq!(walk.graph.nodes.len(), 3);
+    assert_eq!(walk.explain(&walk.hops[0]), "Internet -[ALLOWS]-> web");
+}

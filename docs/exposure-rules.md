@@ -164,3 +164,26 @@ khonsu plugin analyze aws exposure --db graphs/exposure --pretty --resource shop
 
 The commands above need the graph free. They fail with kind `locked` while the
 window has it open.
+
+## In the window
+
+Select an instance on a graph canvas, then choose **Run analysis** under Exposure in
+the inspector. The window offers it because the AWS plugin says it can speak about
+instances, and every word it shows comes from the plugin. It evaluates the whole
+graph, not just what is on the canvas, and the result lasts until the canvas gets a
+new result. After a sync, choose **Check again**. **Stop** ends a run that is taking
+too long.
+
+The window holds the graph only while reading it, not while the plugin works, and
+gives the same findings as `khonsu plugin analyze aws exposure`.
+
+Each finding shows its verdict, rule, conditions with their AWS fields, candidate
+path and what was not checked.
+
+- **Show path on canvas** narrows the canvas to the path. **Back** returns to the
+  earlier view, and selecting a node on the path shows its evidence.
+- **Copy finding as JSON** copies the same record as the command.
+
+In the Chinese interface, verdicts, rule titles and condition statements are
+translated, by the plugin. Each condition's detail and the list of what was not
+checked stay in English.

@@ -23,6 +23,8 @@ use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
 use khonsu_core::evidence::{self, Evidence};
 use khonsu_core::explore::{Direction, Exploration};
+use khonsu_core::plugin_analysis::Offered;
+use khonsu_core::protocol::{ConditionStatus, VerdictTone};
 use khonsu_core::settings::{self, Source};
 use khonsu_core::{GraphData, GraphEdge, GraphNode};
 use serde_json::Value as Json;
@@ -292,6 +294,7 @@ impl GraphCanvas {
     /// fetched so every edge has both ends on the canvas.
     pub fn set_data(&mut self, data: GraphData, window: &mut Window, cx: &mut Context<Self>) {
         self.explorer.forget_walks();
+        self.discover_analyses(window, cx);
         self.set_path_view(false, cx);
         self.nodes.clear();
         self.edges.clear();
@@ -506,6 +509,72 @@ impl GraphCanvas {
         self.explorer.walk = Some(walk);
     }
 
+    /// Ask the plugins what they offer. A plugin not approved as it is now is
+    /// not started to find out.
+    fn discover_analyses(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        cx.spawn_in(window, async move |this, cx| {
+            let analyses = smol::unblock(khonsu_core::plugin_analysis::offered).await;
+            this.update(cx, |this, cx| {
+                this.explorer.analyses = analyses;
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// Run an analysis over the whole graph, not just the canvas, or stop it if
+    /// it is running.
+    fn check_analysis(&mut self, offered: Offered, window: &mut Window, cx: &mut Context<Self>) {
+        let key = explorer::analysis_key(&offered);
+        if let Some(cancel) = self.explorer.checking.remove(&key) {
+            cancel.store(true, Ordering::Relaxed);
+            cx.notify();
+            return;
+        }
+        let cancel = Arc::new(AtomicBool::new(false));
+        self.explorer.checking.insert(key.clone(), cancel.clone());
+        self.explorer.analysis_errors.remove(&key);
+        cx.notify();
+        cx.spawn_in(window, async move |this, cx| {
+            let stop = cancel.clone();
+            let result = smol::unblock(move || crate::db::run_analysis(&offered, &stop)).await;
+            this.update(cx, |this, cx| {
+                // Stopped, or the canvas moved on: this says nothing about it now.
+                if cancel.load(Ordering::Relaxed) {
+                    return;
+                }
+                this.explorer.checking.remove(&key);
+                match result {
+                    Ok(Some(report)) => {
+                        this.explorer.reports.insert(key, report);
+                    }
+                    Ok(None) => {}
+                    Err(error) => {
+                        this.explorer.analysis_errors.insert(key, error);
+                    }
+                }
+                cx.notify();
+            })
+            .ok();
+        })
+        .detach();
+    }
+
+    /// Show a finding's candidate path, as a walk Path Explorer can go on from.
+    fn show_finding(&mut self, key: &str, finding_id: &str, target: i64, cx: &mut Context<Self>) {
+        let report = self.explorer.reports.get(key);
+        let Some(walk) = report.and_then(|report| report.findings.iter().find(|finding| finding.finding_id == finding_id)).and_then(|finding| finding.exploration()) else {
+            return;
+        };
+        self.explorer.push_view(self.view());
+        self.replace_canvas(walk.graph.nodes.clone(), walk.graph.edges.clone(), cx);
+        self.explorer.walk = Some(walk);
+        self.set_path_view(true, cx);
+        let id = target.to_string();
+        self.graph.update(cx, |graph, cx| graph.select_node(Some(&id), false, cx));
+    }
+
     /// Narrow the canvas to the path the last walk took to `target`.
     fn show_path(&mut self, target: i64, cx: &mut Context<Self>) {
         let Some(path) = self.explorer.walk.as_ref().and_then(|walk| explorer::path_graph(walk, target)) else {
@@ -589,6 +658,139 @@ impl GraphCanvas {
                     .label(tr("evidence.copy"))
                     .on_click(move |_, _, cx| cx.write_to_clipboard(ClipboardItem::new_string(copy.clone()))),
             )
+            .into_any_element()
+    }
+
+    /// What the analyses that apply say about a selected node, and why. None
+    /// apply unless a plugin declared this node's label.
+    fn render_analyses(&self, id: i64, cx: &mut Context<Self>) -> Option<AnyElement> {
+        let node = self.nodes.get(&id)?;
+        let sections: Vec<AnyElement> = self
+            .explorer
+            .analyses
+            .iter()
+            .enumerate()
+            .filter(|(_, offered)| offered.applies_to(&node.labels))
+            .map(|(ix, offered)| self.render_analysis(ix, offered, node, id, cx))
+            .collect();
+        (!sections.is_empty()).then(|| v_flex().gap_2().children(sections).into_any_element())
+    }
+
+    /// One analysis on a node. All its words come from the plugin.
+    fn render_analysis(&self, section: usize, offered: &Offered, node: &GraphNode, id: i64, cx: &mut Context<Self>) -> AnyElement {
+        let muted = cx.theme().muted_foreground;
+        let warning = cx.theme().warning;
+        let mono = cx.theme().mono_font_family.clone();
+        let explorer = &self.explorer;
+        let info = &offered.info;
+        let key = explorer::analysis_key(offered);
+        let report = explorer.reports.get(&key);
+        let findings = report.map(|report| explorer::findings_for(report, node));
+
+        let mut list = Vec::new();
+        for (ix, finding) in findings.iter().flatten().enumerate() {
+            let button = section * 1000 + ix;
+            let copy = serde_json::to_string_pretty(finding).expect("a finding serializes");
+            let finding_id = finding.finding_id.clone();
+            let finding_key = key.clone();
+            // Offered again only when another path is showing: Back would otherwise
+            // step through the same view twice.
+            let showing = self.path_view && explorer.walk.as_ref().is_some_and(|walk| walk.hops == finding.hops);
+            let drawable = !finding.hops.is_empty() && !showing;
+            let conditions = finding.conditions.iter().map(|condition| {
+                let statement = explorer::analysis_text(info, &format!("condition.{}", condition.id), &condition.statement);
+                let color = if condition.status == ConditionStatus::Met { muted } else { warning };
+                let fields = condition.fields.iter().filter_map(|field| {
+                    let value = field.value.known()?;
+                    Some(
+                        div()
+                            .text_xs()
+                            .whitespace_normal()
+                            .font_family(mono.clone())
+                            .text_color(muted)
+                            .child(format!("{} = {}", field.source_field, crate::ui::results::cell_text(value))),
+                    )
+                });
+                v_flex()
+                    .child(
+                        div()
+                            .text_xs()
+                            .whitespace_normal()
+                            .child(format!("{} · {statement}", tr(explorer::status_key(condition.status)))),
+                    )
+                    .child(div().text_xs().whitespace_normal().text_color(color).child(condition.detail.clone()))
+                    .children(fields.collect::<Vec<_>>())
+            });
+            let tone = info.verdicts.iter().find(|verdict| verdict.id == finding.verdict).map(|verdict| verdict.tone);
+            let verdict_color = if tone == Some(VerdictTone::Quiet) { muted } else { warning };
+            list.push(
+                v_flex()
+                    .gap_1()
+                    .pt_1()
+                    .child(div().text_xs().font_semibold().text_color(verdict_color).child(explorer::verdict_text(info, &finding.verdict)))
+                    .child(div().text_xs().whitespace_normal().child(explorer::rule_text(info, &finding.rule_id)))
+                    .child(div().text_xs().font_family(mono.clone()).whitespace_normal().text_color(muted).child(finding.rule_id.clone()))
+                    .children(conditions.collect::<Vec<_>>())
+                    .when_some(finding.path.as_ref(), |this, path| {
+                        this.child(div().pt_1().text_xs().font_semibold().child(tr("explore.path")))
+                            .children(path.hops.iter().map(|hop| div().text_xs().whitespace_normal().font_family(mono.clone()).child(hop.clone())))
+                    })
+                    .child(div().pt_1().text_xs().font_semibold().child(tr("analysis.assumptions")))
+                    .children(finding.assumptions.iter().map(|text| div().text_xs().whitespace_normal().text_color(muted).child(text.clone())))
+                    .child(
+                        h_flex()
+                            .gap_1()
+                            .flex_wrap()
+                            .when(drawable, |this| {
+                                this.child(
+                                    Button::new(("analysis-path", button))
+                                        .xsmall()
+                                        .outline()
+                                        .label(tr("analysis.show_path"))
+                                        .on_click(cx.listener(move |this, _, _, cx| this.show_finding(&finding_key, &finding_id, id, cx))),
+                                )
+                            })
+                            .child(
+                                Button::new(("analysis-copy", button))
+                                    .xsmall()
+                                    .outline()
+                                    .label(tr("analysis.copy"))
+                                    .on_click(move |_, _, cx| cx.write_to_clipboard(ClipboardItem::new_string(copy.clone()))),
+                            ),
+                    ),
+            );
+        }
+
+        let checked = report.is_some();
+        let running = explorer.checking.contains_key(&key);
+        let complete = report.is_none_or(|report| report.complete);
+        let none = findings.as_ref().is_some_and(Vec::is_empty);
+        let claim = explorer::analysis_text(info, "claim", &info.claim);
+        let label = if running {
+            tr("analysis.stop")
+        } else if checked {
+            tr("analysis.recheck")
+        } else {
+            tr("analysis.check")
+        };
+        let run = offered.clone();
+        v_flex()
+            .gap_1()
+            .child(div().text_sm().font_semibold().child(explorer::analysis_text(info, "title", &info.title)))
+            .child(
+                Button::new(("analysis-check", section))
+                    .xsmall()
+                    .outline()
+                    .label(label)
+                    .on_click(cx.listener(move |this, _, window, cx| this.check_analysis(run.clone(), window, cx))),
+            )
+            .when_some(explorer.analysis_errors.get(&key).cloned(), |this, error| {
+                this.child(div().text_xs().whitespace_normal().text_color(warning).child(trf("analysis.failed", &[&error])))
+            })
+            .when(checked && !claim.is_empty(), |this| this.child(div().text_xs().whitespace_normal().text_color(muted).child(claim)))
+            .when(!complete, |this| this.child(div().text_xs().whitespace_normal().text_color(warning).child(tr("analysis.incomplete"))))
+            .when(none, |this| this.child(div().text_xs().whitespace_normal().text_color(muted).child(tr("analysis.none"))))
+            .children(list)
             .into_any_element()
     }
 
@@ -787,6 +989,7 @@ impl GraphCanvas {
         rows.sort_by_key(|(k, _)| (k.starts_with("khonsu_"), k.to_string()));
         let mono = cx.theme().mono_font_family.clone();
         let muted = cx.theme().muted_foreground;
+        let analyses = self.selected_node().and_then(|id| self.render_analyses(id, cx));
         Some(
             v_flex()
                 .id("inspector")
@@ -811,6 +1014,9 @@ impl GraphCanvas {
                 // a walk's result out of sight.
                 .when_some(self.selected_node(), |this, id| {
                     this.child(self.render_explorer(id, cx)).child(div().border_b_1().border_color(cx.theme().border))
+                })
+                .when_some(analyses, |this, analyses| {
+                    this.child(analyses).child(div().border_b_1().border_color(cx.theme().border))
                 })
                 .when_some(self.selected_evidence(selected), |this, record| {
                     this.child(self.render_evidence(record, cx)).child(div().border_b_1().border_color(cx.theme().border))

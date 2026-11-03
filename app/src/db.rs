@@ -6,6 +6,8 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{LazyLock, Mutex, PoisonError};
 
 use khonsu_core::explore::{Exploration, ExploreRequest};
+use khonsu_core::plugin::PluginError;
+use khonsu_core::plugin_analysis::{self, Offered, Report};
 use khonsu_core::{AccessMode, Graph, GraphData, GraphSchema, Language, OpenError, QueryError, QueryOptions, QueryResult};
 use serde_json::Map;
 
@@ -97,6 +99,18 @@ pub fn neighbors(id: i64) -> Result<GraphData, QueryError> {
 /// it between queries.
 pub fn explore(request: &ExploreRequest, cancel: &AtomicBool) -> Result<Exploration, QueryError> {
     with_graph(|g| g.explore(request, cancel))
+}
+
+/// Runs an analysis a plugin offers. It holds the graph only while reading, not
+/// while the plugin works. `Ok(None)` when `cancel` stopped it.
+pub fn run_analysis(offered: &Offered, cancel: &AtomicBool) -> Result<Option<Report>, String> {
+    let sources = khonsu_core::settings::load_sources();
+    let input = with_graph(|g| g.read_analysis_input(&offered.info)).map_err(|error| error.message)?;
+    match plugin_analysis::run(offered, &input, &sources, cancel, |_| {}) {
+        Ok(report) => Ok(Some(report)),
+        Err(PluginError::Cancelled) => Ok(None),
+        Err(error) => Err(error.to_string()),
+    }
 }
 
 pub fn nodes_by_id(ids: &[i64]) -> Result<GraphData, QueryError> {

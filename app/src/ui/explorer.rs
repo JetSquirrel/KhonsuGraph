@@ -1,12 +1,14 @@
 //! Path Explorer's state, apart from the canvas that draws it: what to walk,
 //! what the last walk found, and the views to go back to.
 
-use std::collections::BTreeSet;
-use std::sync::atomic::AtomicBool;
+use std::collections::{BTreeMap, BTreeSet};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use khonsu_core::evidence::{Assertion, Evidence, Field};
 use khonsu_core::explore::{Direction, Exploration, ExploreRequest, Limit, DEFAULT_MAX_HOPS, MAX_HOPS};
+use khonsu_core::plugin_analysis::{Finding, Offered, Report};
+use khonsu_core::protocol::{AnalysisInfo, ConditionStatus};
 use khonsu_core::util::format_unix_time;
 use khonsu_core::{GraphData, GraphEdge, GraphNode};
 
@@ -38,6 +40,14 @@ pub struct Explorer {
     pub walk: Option<Exploration>,
     /// A walk that failed; the canvas keeps what it had.
     pub error: Option<String>,
+    /// Analyses that plugins offer, and which apply is up to their labels.
+    pub analyses: Vec<Offered>,
+    /// The last run of each analysis by [`analysis_key`], kept until the canvas
+    /// gets a new result.
+    pub reports: BTreeMap<String, Report>,
+    /// Those running; setting the flag ends the plugin.
+    pub checking: BTreeMap<String, Arc<AtomicBool>>,
+    pub analysis_errors: BTreeMap<String, String>,
     history: Vec<View>,
 }
 
@@ -52,6 +62,10 @@ impl Default for Explorer {
             running: None,
             walk: None,
             error: None,
+            analyses: Vec::new(),
+            reports: BTreeMap::new(),
+            checking: BTreeMap::new(),
+            analysis_errors: BTreeMap::new(),
             history: Vec::new(),
         }
     }
@@ -109,6 +123,12 @@ impl Explorer {
     pub fn forget_walks(&mut self) {
         self.walk = None;
         self.error = None;
+        self.reports.clear();
+        self.analysis_errors.clear();
+        // What they would report no longer describes the canvas.
+        for (_, cancel) in std::mem::take(&mut self.checking) {
+            cancel.store(true, Ordering::Relaxed);
+        }
         self.starts.clear();
         self.history.clear();
     }
@@ -184,6 +204,42 @@ pub fn evidence_rows(record: &Evidence) -> Vec<(&'static str, String)> {
     ]
 }
 
+/// The findings about `node`, in the report's order.
+pub fn findings_for<'a>(report: &'a Report, node: &GraphNode) -> Vec<&'a Finding> {
+    let resource = khonsu_core::evidence::for_node(node, &[]).evidence_id;
+    report.findings.iter().filter(|finding| finding.resource == resource).collect()
+}
+
+/// Which run of an analysis this is about: plugins each name their own.
+pub fn analysis_key(offered: &Offered) -> String {
+    format!("{}/{}", offered.plugin.id(), offered.info.id)
+}
+
+/// A plugin's text in the window's language, falling back on what it wrote.
+pub fn analysis_text(info: &AnalysisInfo, key: &str, fallback: &str) -> String {
+    info.translated(crate::i18n::current().code(), key).unwrap_or(fallback).to_string()
+}
+
+/// A verdict's words, from the analysis that gave it.
+pub fn verdict_text(info: &AnalysisInfo, id: &str) -> String {
+    let title = info.verdicts.iter().find(|verdict| verdict.id == id).map_or(id, |verdict| verdict.title.as_str());
+    analysis_text(info, &format!("verdict.{id}"), title)
+}
+
+/// A rule's title, from the analysis that has it.
+pub fn rule_text(info: &AnalysisInfo, id: &str) -> String {
+    let title = info.rules.iter().find(|rule| rule.rule_id == id).map_or(id, |rule| rule.title.as_str());
+    analysis_text(info, &format!("rule.{id}"), title)
+}
+
+pub fn status_key(status: ConditionStatus) -> &'static str {
+    match status {
+        ConditionStatus::Met => "analysis.status.met",
+        ConditionStatus::NotMet => "analysis.status.not_met",
+        ConditionStatus::Unknown => "analysis.status.unknown",
+    }
+}
+
 /// Only the nodes and relationships on the path to `target`.
 pub fn path_graph(walk: &Exploration, target: i64) -> Option<GraphData> {
     let path = walk.path_to(target).filter(|path| !path.is_empty())?;
@@ -243,6 +299,102 @@ mod tests {
             depth_reached: 2,
             ..Exploration::default()
         }
+    }
+
+    fn offered() -> Offered {
+        Offered {
+            plugin: khonsu_core::plugin::PluginInfo {
+                manifest: serde_json::from_value(json!({"id": "demo", "name": "Demo", "version": "1", "protocol": 1, "entry": ["demo"]})).unwrap(),
+                dir: Default::default(),
+                builtin: true,
+            },
+            info: serde_json::from_value(json!({
+                "id": "links",
+                "title": "Links",
+                "subject_labels": ["Thing"],
+                "verdicts": [{"id": "flagged", "title": "Flagged", "tone": "attention"}],
+                "rules": [{"rule_id": "demo.rule", "title": "A rule", "statement": "It holds."}],
+                "translations": {"zh": {"verdict.flagged": "\u{5df2}\u{6807}\u{8bb0}"}},
+            }))
+            .unwrap(),
+        }
+    }
+
+    fn report() -> Report {
+        let finding: Finding = serde_json::from_value(json!({
+            "finding_id": "f", "rule_id": "demo.rule", "verdict": "flagged",
+            "resource": "node:db", "resource_name": "db",
+            "conditions": [], "unknowns": [], "assumptions": [],
+            "path": null, "walk": null, "contributing": [], "evidence": [],
+        }))
+        .unwrap();
+        Report {
+            plugin: "demo".into(),
+            analysis: "links".into(),
+            title: "Links".into(),
+            claim: String::new(),
+            order: String::new(),
+            verdicts: vec![],
+            rules: vec![],
+            subjects: 1,
+            summary: BTreeMap::new(),
+            complete: true,
+            findings: vec![finding],
+        }
+    }
+
+    #[test]
+    fn a_plugins_words_are_used_with_its_own_as_the_fallback() {
+        let info = offered().info;
+        assert_eq!(analysis_text(&info, "no.such.key", "fallback"), "fallback");
+        assert_eq!(rule_text(&info, "demo.rule"), "A rule");
+        assert_eq!(rule_text(&info, "unheard.of"), "unheard.of", "an ID is better than nothing");
+        assert_eq!(verdict_text(&info, "unheard_of"), "unheard_of");
+        assert_eq!(analysis_key(&offered()), "demo/links");
+        for status in [ConditionStatus::Met, ConditionStatus::NotMet, ConditionStatus::Unknown] {
+            assert!(!tr(status_key(status)).is_empty());
+        }
+    }
+
+    /// The window goes by what a plugin declares, so a label it never heard of
+    /// is offered the same way as any other.
+    #[test]
+    fn an_analysis_is_offered_on_the_labels_it_declares_and_nothing_is_hard_coded() {
+        let on = offered();
+        assert!(on.applies_to(&["Thing".to_string()]));
+        assert!(!on.applies_to(&["Instance".to_string()]));
+        for (name, source) in [("explorer", include_str!("explorer.rs")), ("canvas", include_str!("canvas.rs"))] {
+            let code = source.split("#[cfg(test)]").next().unwrap();
+            for provider in ["aws.exposure", "\"Instance\"", "SecurityGroup", "potential_exposure"] {
+                assert!(!code.contains(provider), "{name} names {provider}");
+            }
+        }
+    }
+
+    #[test]
+    fn findings_are_matched_to_the_selected_node_and_a_new_result_drops_them() {
+        let report = report();
+        let db = GraphNode {
+            id: 8,
+            labels: vec!["Thing".into()],
+            properties: Map::from_iter([("khonsu_id".to_string(), json!("db"))]),
+        };
+        let found = findings_for(&report, &db);
+        assert_eq!(found.len(), 1);
+        assert!(findings_for(&report, &node(99, "elsewhere")).is_empty());
+
+        let running = Arc::new(AtomicBool::new(false));
+        let mut explorer = Explorer {
+            reports: BTreeMap::from([("demo/links".to_string(), report)]),
+            analysis_errors: BTreeMap::from([("demo/links".to_string(), "x".to_string())]),
+            checking: BTreeMap::from([("demo/links".to_string(), running.clone())]),
+            analyses: vec![offered()],
+            ..Explorer::default()
+        };
+        explorer.forget_walks();
+        assert!(explorer.reports.is_empty() && explorer.analysis_errors.is_empty(), "the graph may have changed");
+        assert!(explorer.checking.is_empty() && running.load(Ordering::Relaxed), "and what is running is stopped");
+        assert_eq!(explorer.analyses.len(), 1, "what plugins offer has not changed");
     }
 
     #[test]
