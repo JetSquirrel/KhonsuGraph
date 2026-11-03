@@ -149,7 +149,7 @@ values from the source's secret fields are masked before they are kept.
 
 A plugin can also say something about a graph, as well as fill one. This is
 optional, and a plugin that offers nothing goes on working as before. The AWS
-plugin's [exposure rules](exposure-rules.md) are one, and
+plugin's [exposure rules](../plugins/aws/README.md) are one, and
 `crates/khonsu-plugin-protocol/examples/analyzer.rs` is a small one with nothing to
 do with AWS.
 

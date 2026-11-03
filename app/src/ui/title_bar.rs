@@ -12,14 +12,16 @@ use gpui_kit::*;
 
 use crate::i18n::{tr, Language};
 use crate::state::{AppState, GraphChanged, OpenStateChanged, SidebarToggled};
+use crate::ui::workspace::Workspace;
 
 pub struct TitleBarView {
     state: Entity<AppState>,
+    workspace: Entity<Workspace>,
     _subscriptions: Vec<Subscription>,
 }
 
 impl TitleBarView {
-    pub fn new(state: Entity<AppState>, cx: &mut Context<Self>) -> Self {
+    pub fn new(state: Entity<AppState>, workspace: Entity<Workspace>, cx: &mut Context<Self>) -> Self {
         let subscriptions = vec![
             cx.subscribe(&state, |_, _, _: &GraphChanged, cx| cx.notify()),
             cx.subscribe(&state, |_, _, _: &OpenStateChanged, cx| cx.notify()),
@@ -27,6 +29,7 @@ impl TitleBarView {
         ];
         Self {
             state,
+            workspace,
             _subscriptions: subscriptions,
         }
     }
@@ -54,6 +57,7 @@ impl TitleBarView {
 
     fn render_graph_menu(&self, opening: bool, has_graph: bool, read_only: bool) -> impl IntoElement {
         let state = self.state.clone();
+        let workspace = self.workspace.clone();
         Button::new("graph-menu")
             .ghost()
             .compact()
@@ -67,6 +71,8 @@ impl TitleBarView {
                 let ro_state = state.clone();
                 let source_state = state.clone();
                 let close_state = state.clone();
+                let investigation_state = state.clone();
+                let investigation_workspace = workspace.clone();
                 menu.item(
                     PopupMenuItem::new(tr("title_bar.open_graph"))
                         .icon(IconName::FolderOpen)
@@ -77,6 +83,9 @@ impl TitleBarView {
                         .icon(IconName::Plus)
                         .on_click(move |_, window, cx| crate::ui::pick_graph(new_state.clone(), true, window, cx)),
                 )
+                .item(PopupMenuItem::new(tr("investigation.open")).on_click(move |_, window, cx| {
+                    crate::ui::pick_investigation(investigation_state.clone(), investigation_workspace.clone(), window, cx)
+                }))
                 .when(has_graph, |menu| {
                     menu.separator()
                         .item(

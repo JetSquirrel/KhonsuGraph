@@ -21,7 +21,7 @@ cargo test --locked --workspace --test investigation
 | Corrupt input | A malformed response, a missing folder, a bad dashboard and a damaged graph each fail with a reason |
 | Cycles | A shortest path and a variable-length pattern both end on a cycle |
 | Evidence | `khonsu evidence` and `explore --to` give stable IDs, state what is unknown, and mask secrets; the golden file holds a node and a relationship |
-| Exposure rules | `plugins/aws/tests/fixture-exposure` has a positive, a negative and an undecided case; the golden file holds its whole report, and rule IDs and verdicts for the shop fixture. See [the rules](exposure-rules.md) |
+| Exposure rules | `plugins/aws/tests/fixture-exposure` has a positive, a negative and an undecided case; the golden file holds its whole report, and rule IDs and verdicts for the shop fixture. See [the rules](../plugins/aws/README.md) |
 | Plugin analyses | An example analyzer with nothing to do with AWS gives findings on a graph of its own; a forged reference, a missing end, a failure, an endless line and output that isn't the protocol are each refused; one that hangs is ended; a changed plugin doesn't run; a plugin with no analyses goes on syncing |
 | Saved investigations | Reopening restores a walk and path on unchanged data, and flags a changed source, a missing record, a missing graph and a bad file; the golden file holds a reopened walk and the fixture's fingerprint. See [saved investigations](investigations.md) |
 | Sync coverage | A scripted plugin fails midway, stops without `done`, reports gaps, sends duplicates and missing endpoints, and moves its cursor; none of it removes records or moves the cursor unless the sync was complete |
@@ -114,5 +114,31 @@ not investigated. The two-hop query reported about 19 s for 1,948,728 paths.
 These figures describe one machine and one build. They are not targets or
 performance claims.
 
-**Not measured:** release builds, macOS, and UI responsiveness. The window has no
-scripted way to measure responsiveness yet.
+### Release, Windows
+
+Measured on 2026-11-03 at commit `10d29e2` on the same machine and HawDB version,
+with a `--release` build. Figures are the median of 3 runs, measured the same way,
+except the sync, which ran once. Disk caches weren't cleared, so these aren't
+cold-start figures.
+
+| Graph | Operation | Time | Peak memory |
+|---|---|---:|---:|
+| AWS exposure fixture (27 nodes, 45 relationships) | `analyze summary` | 175 ms | 22 MiB |
+| | `check exposure.dash` | 179 ms | 25 MiB |
+| | `shortestPath` query | 185 ms | 22 MiB |
+| | `plugin analyze aws exposure` | 502 ms | 24 MiB |
+| | `explore`, both directions, 2 hops, 2 types | 202 ms | 24 MiB |
+| | `evidence` on one node | 203 ms | 22 MiB |
+| Audit story (5,881 nodes, 35,592 relationships) | Sync into a new graph, one run | 4.2 s | 213 MiB |
+| | `count(n)` query | 1.2 s | 131 MiB |
+| | Two-hop `count` query | 5.1 s | 133 MiB |
+| | `analyze summary` | 2.6 s | 178 MiB |
+| | `analyze pagerank` | 2.2 s | 170 MiB |
+| | `check trust_network.dash` | 1.6 s | 139 MiB |
+
+Don't read these as a speed-up from the debug table: the AWS graph is a different
+fixture, and the two-hop query counted 2,301,858 paths here against 1,948,728 there.
+
+**Not measured:** macOS, UI responsiveness (input to visible change, frame rate, a
+busy window) and how long a cancel takes under load. The window has no scripted way
+to measure responsiveness yet.

@@ -288,6 +288,16 @@ pub(crate) fn own_properties(properties: &Map<String, Json>) -> (Map<String, Jso
     (own, redacted)
 }
 
+/// `properties` as they may be shown: the same values [`Evidence`] masks are
+/// masked, and KhonsuGraph's bookkeeping stays.
+pub fn masked_properties(properties: &Map<String, Json>) -> Map<String, Json> {
+    let (mut shown, _) = own_properties(properties);
+    for (key, value) in properties.iter().filter(|(key, _)| key.starts_with("khonsu_")) {
+        shown.insert(key.clone(), value.clone());
+    }
+    shown
+}
+
 fn is_secret_name(name: &str) -> bool {
     let plain = name.to_lowercase().replace(['_', '-'], "");
     SECRET_NAMES.iter().any(|secret| plain.contains(secret))
@@ -457,6 +467,22 @@ mod tests {
     fn a_field_serializes_with_its_status() {
         assert_eq!(serde_json::to_value(Field::Known(5)).unwrap(), json!({"status": "known", "value": 5}));
         assert_eq!(serde_json::to_value(Field::<i64>::Unknown).unwrap(), json!({"status": "unknown"}));
+    }
+
+    #[test]
+    fn shown_properties_mask_what_evidence_masks_and_keep_bookkeeping() {
+        let properties = map(json!({
+            "name": "web",
+            "api_token": "SYNTHETIC_NOT_A_SECRET",
+            "note": "AKIAABCDEFGHIJKLMNOP",
+            "khonsu_id": "shop/web",
+        }));
+        let shown = masked_properties(&properties);
+        assert_eq!(shown["name"], json!("web"));
+        assert_eq!(shown["api_token"], json!(REDACTED));
+        assert_eq!(shown["note"], json!(REDACTED));
+        assert_eq!(shown["khonsu_id"], json!("shop/web"));
+        assert_eq!(shown.len(), properties.len());
     }
 
     #[test]

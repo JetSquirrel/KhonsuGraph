@@ -83,7 +83,7 @@ Select a node on a graph canvas, then choose **Save investigation…** in Path
 Explorer. It keeps the current filters, the last walk's starting points, and the
 path to the selected node if that walk reached it, along with the tab's query.
 
-**File > Open investigation…** or `khonsu open web.investigation` reopens one in a
+**Graph > Open investigation…** in the title bar (also **File** in the macOS menu bar) or `khonsu open web.investigation` reopens one in a
 new tab, and opens its graph first if another one is open. The query goes in the
 editor without running. The canvas shows the saved path, with **Back** leading to
 the whole walk, and Path Explorer shows the filters. Anything that differs from

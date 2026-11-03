@@ -1082,6 +1082,8 @@ impl GraphCanvas {
                 )
             }
         };
+        // The evidence above says what it masked, so the list must not show it.
+        let properties = khonsu_core::evidence::masked_properties(properties);
         let mut rows: Vec<(&String, &Json)> = properties.iter().collect();
         // Provenance last: it says where a value came from, not what it is.
         rows.sort_by_key(|(k, _)| (k.starts_with("khonsu_"), k.to_string()));
