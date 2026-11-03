@@ -140,6 +140,109 @@ move, and exposure findings can't read the absence of a record as a clear result
 Leaving out `complete` means complete. Don't put secrets in `gaps` or in messages;
 values from the source's secret fields are masked before they are kept.
 
+## Offering an analysis
+
+A plugin can also say something about a graph, as well as fill one. This is
+optional, and a plugin that offers nothing goes on working as before. The AWS
+plugin's [exposure rules](exposure-rules.md) are one, and
+`crates/khonsu-plugin-protocol/examples/analyzer.rs` is a small one with nothing to
+do with AWS.
+
+**The boundary.** Your plugin owns what a finding means: its rules, verdicts,
+assumptions and words. KhonsuGraph owns the graph. It reads records for you, so an
+analysis also works while the window has the graph open, and it checks what you say
+against them. KhonsuGraph knows nothing about your labels, rules or verdicts.
+
+List what you offer in `describe`:
+
+```json
+{"analyses": [{
+  "id": "dead-ends",
+  "title": "Dead ends",
+  "claim": "Only says what the links in the graph say.",
+  "subject_labels": ["Thing"],
+  "node_labels": ["Thing"],
+  "relationship_types": ["LINKS"],
+  "verdicts": [
+    {"id": "dead_end", "title": "Dead end", "tone": "attention"},
+    {"id": "continues", "title": "Continues", "tone": "quiet"}
+  ],
+  "rules": [{"rule_id": "demo.dead-end", "title": "No link onward",
+             "statement": "A thing with nothing linked after it.", "assumptions": []}],
+  "translations": {"zh": {"verdict.dead_end": "死路"}}
+}]}
+```
+
+| Field | What it does |
+|---|---|
+| `subject_labels` | The window offers the analysis on a node with one of these |
+| `node_labels`, `relationship_types` | What KhonsuGraph reads for you. Each must be a plain name |
+| `verdicts` | Every verdict you can give, most in need of attention first, which sets the order of findings. `tone` is `attention`, `undecided` or `quiet` |
+| `rules` | Every rule a finding can come from |
+| `translations` | By locale: `title`, `claim`, `verdict.<id>`, `rule.<id>`, `condition.<id>`. Anything missing falls back on the English |
+
+`<plugin> analyze` then gets one line on stdin:
+
+```json
+{"protocol": 1, "analysis": "dead-ends", "complete": true,
+ "nodes": [{"ref": "node:b", "labels": ["Thing"], "name": "b", "properties": {"name": "b"}}],
+ "edges": [{"ref": "rel:ab", "from": "node:a", "to": "node:b", "rel_type": "LINKS", "properties": {}}]}
+```
+
+It holds no source configuration or secrets, and properties that look like secrets
+are masked. `complete` is false when the graph held more than 50,000 records of one
+label or type, and then a record's absence says nothing.
+
+A record's `source` says which data source wrote it, and `coverage` says how much of
+each source its last sync covered, where that is known:
+
+```json
+{"coverage": {"shop": {"run_id": "shop#3", "status": "partial", "gaps": ["page 3 timed out"]}}}
+```
+
+What an incomplete source left out could be what your rule was looking for, so don't
+let it clear anything. KhonsuGraph lists the incomplete sources behind each finding
+in `incomplete_sources` and marks the report incomplete whatever you decide, but the
+verdict is yours.
+
+Answer with one line per finding, then `analysis_done`:
+
+```json
+{"type": "finding", "finding_id": "finding:1", "rule_id": "demo.dead-end", "verdict": "dead_end",
+ "resource": "node:c",
+ "conditions": [{"id": "no-link-onward", "statement": "Nothing is linked after it.", "status": "met",
+                 "detail": "c does not link onward.",
+                 "fields": [{"record": "node:c", "field": "name", "source_field": "name"}]}],
+ "unknowns": [], "assumptions": ["Only LINKS is read."],
+ "path": {"derivation": "the link that arrives here", "hops": [{"edge": "rel:bc", "along": true}]},
+ "depends_on": null, "records": []}
+{"type": "analysis_done", "subjects": 3}
+```
+
+- **You point at records, and KhonsuGraph reads them.** A field's value comes from
+  the graph, not from you. A relationship's ends read as the fields `@from` and `@to`.
+- **A path is references.** Each hop names a relationship and whether it was crossed
+  along its arrow. KhonsuGraph checks that the hops connect and that the path starts
+  or ends at the resource, then rebuilds it from the graph, so it can be drawn and
+  saved.
+- **A bad answer is refused whole.** That means an unknown reference, rule or verdict,
+  a path that doesn't connect, a repeated `finding_id`, or no `analysis_done`. Dropping
+  one finding would read as that resource having none.
+- **Keep `finding_id` stable:** the same rule and records should give the same ID.
+  `fnv1a` in the protocol crate is there for this.
+- **Say when you don't know.** A condition's `status` can be `unknown`. Work your
+  verdict out from what you were sent, and don't read a missing record as a fact.
+
+An analysis needs the same approval as a sync.
+
+```sh
+khonsu plugin describe my-plugin               # what it offers
+khonsu plugin analyze my-plugin dead-ends --db graphs/lab --pretty
+```
+
+`--resource ID`, `--verdict ID` and `--max-findings` narrow what is printed, and
+`summary` still counts everything.
+
 ## Stable IDs and merging
 
 Every node and relationship carries an `id` that must stay the same from one

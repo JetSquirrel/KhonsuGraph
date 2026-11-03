@@ -29,6 +29,7 @@ fn main() -> ExitCode {
             labels: Vec::new(),
             relationship_types: Vec::new(),
             supports_incremental: true,
+            analyses: Vec::new(),
         };
         Emitter::stdout().emit(&Message::Describe(describe)).unwrap();
         return ExitCode::SUCCESS;
