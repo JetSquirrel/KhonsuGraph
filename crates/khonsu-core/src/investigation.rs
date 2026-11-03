@@ -8,9 +8,10 @@
 //! `docs/investigations.md`.
 
 use crate::engine::{Graph, QueryError};
-use crate::evidence::{self, PathEvidence};
-use crate::explore::{Direction, Exploration, ExploreRequest};
+use crate::evidence::{self, Field, PathEvidence};
+use crate::explore::{Direction, Exploration, ExploreRequest, Hop, DEFAULT_MAX_EDGES, DEFAULT_MAX_NODES};
 use crate::merge::{ID_PROPERTY, PLUGIN_PROPERTY, SOURCE_PROPERTY, SYNCED_AT_PROPERTY};
+use crate::protocol::HopRef;
 use crate::result::{value_to_json, GraphCollector, GraphData, GraphNode};
 use crate::settings::Source;
 use crate::util::unix_now;
@@ -23,6 +24,8 @@ use std::sync::atomic::AtomicBool;
 
 pub const FORMAT: &str = "khonsu-investigation";
 pub const VERSION: u32 = 1;
+/// The usual file extension. A file is judged by its contents, not this.
+pub const EXTENSION: &str = "investigation";
 /// Above this many nodes or relationships a graph is counted, not hashed.
 const MAX_HASHED_RECORDS: usize = 200_000;
 
@@ -57,6 +60,10 @@ pub struct SavedPath {
     pub target: RecordRef,
     /// Evidence IDs, start to end. Empty when no path was found at saving.
     pub supporting: Vec<String>,
+    /// The exact path, when it was not simply the fewest hops a walk finds, as
+    /// with a finding's path. Reopening looks these up instead of walking.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub hops: Vec<HopRef>,
 }
 
 /// What a graph held, without timestamps: a re-sync that changes nothing gives
@@ -161,6 +168,9 @@ pub struct Capture {
     pub walk: Option<ExploreRequest>,
     /// Needs `walk`: the node whose path was chosen.
     pub target: Option<i64>,
+    /// An exact path to keep, such as a finding's. It gives its own target, and
+    /// its own walk when `walk` is empty.
+    pub path_refs: Vec<HopRef>,
     pub dashboard: Option<PathBuf>,
 }
 
@@ -193,6 +203,9 @@ pub struct Reopened {
     pub path: Option<PathEvidence>,
     /// Whether the path rests on the saved records. `None` when none was saved.
     pub path_same: Option<bool>,
+    /// The saved exact path was found whole, so `walk` is that path alone.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub exact_path: bool,
 }
 
 impl Graph {
@@ -234,6 +247,15 @@ impl Graph {
         }
         let mut walk = None;
         let mut path = None;
+        let mut capture = capture;
+        let exact = if capture.path_refs.is_empty() {
+            None
+        } else {
+            let found = self.walk_of_refs(&capture.path_refs)?.ok_or_else(|| refuse("that path is not in the graph".into()))?;
+            capture.target = found.hops.last().map(|hop| hop.to);
+            capture.walk.get_or_insert_with(|| plan_for(&found.hops));
+            Some(found)
+        };
         if let Some(request) = &capture.walk {
             let found = self.explore(request, cancel)?;
             if let Some(start) = found.missing_starts.first() {
@@ -243,8 +265,11 @@ impl Graph {
             if let Some(target) = capture.target {
                 let refs = self.references(&[target])?;
                 let target_ref = refs.into_iter().next().ok_or_else(|| refuse(format!("no node has the ID {target}")))?;
-                let supporting = evidence::for_path(&found, target, sources).map(|record| record.supporting).unwrap_or_default();
-                path = Some(SavedPath { target: target_ref, supporting });
+                let supporting = match &exact {
+                    Some(exact) => evidence::for_hops(&exact.hops, &exact.graph, sources, EXACT_PATH, Field::Unknown).supporting,
+                    None => evidence::for_path(&found, target, sources).map(|record| record.supporting).unwrap_or_default(),
+                };
+                path = Some(SavedPath { target: target_ref, supporting, hops: capture.path_refs.clone() });
             }
             walk = Some(SavedWalk {
                 seeds,
@@ -301,8 +326,13 @@ impl Graph {
         };
         let target_missing = saved.path.is_some() && target.is_none();
 
-        let mut walk = None;
-        if let Some(plan) = saved.walk.as_ref().filter(|_| !starts.is_empty()) {
+        // The exact path, if every record of it is still there and it still connects.
+        let exact = match saved.path.as_ref().filter(|path| !path.hops.is_empty()) {
+            Some(path) => self.walk_of_refs(&path.hops)?,
+            None => None,
+        };
+        let mut walk = exact.clone();
+        if let Some(plan) = saved.walk.as_ref().filter(|_| !starts.is_empty() && exact.is_none()) {
             let request = ExploreRequest {
                 starts,
                 direction: plan.direction,
@@ -313,7 +343,10 @@ impl Graph {
             };
             walk = Some(self.explore(&request, cancel)?);
         }
-        let path = walk.as_ref().zip(target).and_then(|(walk, target)| evidence::for_path(walk, target, sources));
+        let path = match &exact {
+            Some(exact) => Some(evidence::for_hops(&exact.hops, &exact.graph, sources, EXACT_PATH, Field::Unknown)),
+            None => walk.as_ref().zip(target).and_then(|(walk, target)| evidence::for_path(walk, target, sources)),
+        };
         let path_same = saved.path.as_ref().map(|saved_path| {
             let now: &[String] = path.as_ref().map_or(&[], |path| path.supporting.as_slice());
             saved_path.supporting == now
@@ -329,7 +362,48 @@ impl Graph {
             target,
             path,
             path_same,
+            exact_path: exact.is_some(),
         })
+    }
+
+    /// A path of stable references as a walk over this graph's records. `None`
+    /// when one of them has gone or the hops no longer connect.
+    fn walk_of_refs(&mut self, refs: &[HopRef]) -> Result<Option<Exploration>, QueryError> {
+        let mut collector = GraphCollector::default();
+        let mut hops: Vec<Hop> = Vec::with_capacity(refs.len());
+        for (at, hop) in refs.iter().enumerate() {
+            let (text, id) = if let Some(number) = hop.edge.strip_prefix("rel-internal:") {
+                let Ok(number) = number.parse::<i64>() else { return Ok(None) };
+                ("MATCH (a)-[r]->(b) WHERE id(r) = $id RETURN a, r, b LIMIT 1", Value::Int(number))
+            } else if let Some(stable) = hop.edge.strip_prefix("rel:") {
+                ("MATCH (a)-[r]->(b) WHERE r.khonsu_id = $id RETURN a, r, b LIMIT 1", Value::String(stable.into()))
+            } else {
+                return Ok(None);
+            };
+            let params = BTreeMap::from([("id".to_string(), id)]);
+            let rows = self.raw_cypher(text, &params)?;
+            let Some(row) = rows.first() else { return Ok(None) };
+            let mut one = GraphCollector::default();
+            for value in row {
+                let value = value_to_json(value);
+                one.visit(&value);
+                collector.visit(&value);
+            }
+            let Some(edge) = one.finish().and_then(|data| data.edges.into_iter().next()) else { return Ok(None) };
+            let (from, to) = if hop.along { (edge.source, edge.target) } else { (edge.target, edge.source) };
+            if hops.last().is_some_and(|last| last.to != from) {
+                return Ok(None);
+            }
+            hops.push(Hop { depth: at as u32 + 1, from, to, edge: edge.id, rel_type: edge.rel_type, along: hop.along });
+        }
+        let Some(start) = hops.first().map(|hop| hop.from) else { return Ok(None) };
+        Ok(Some(Exploration {
+            starts: vec![start],
+            graph: collector.finish().unwrap_or_default(),
+            depth_reached: hops.len() as u32,
+            hops,
+            ..Exploration::default()
+        }))
     }
 
     fn references(&mut self, ids: &[i64]) -> Result<Vec<RecordRef>, QueryError> {
@@ -357,6 +431,22 @@ impl Graph {
                 Ok(found.nodes.first().map(|node| node.id))
             }
         }
+    }
+}
+
+/// How a saved exact path is described, as it was not found by walking.
+const EXACT_PATH: &str = "the path saved with this investigation";
+
+/// The walk that shows `hops`, for an exact path saved with no walk of its own.
+fn plan_for(hops: &[Hop]) -> ExploreRequest {
+    let types: BTreeSet<String> = hops.iter().map(|hop| hop.rel_type.clone()).collect();
+    ExploreRequest {
+        starts: hops.first().map(|hop| hop.from).into_iter().collect(),
+        direction: if hops.iter().all(|hop| hop.along) { Direction::Out } else { Direction::Both },
+        rel_types: types.into_iter().collect(),
+        max_hops: (hops.len() as u32).clamp(1, crate::explore::MAX_HOPS),
+        max_nodes: DEFAULT_MAX_NODES,
+        max_edges: DEFAULT_MAX_EDGES,
     }
 }
 

@@ -10,6 +10,7 @@ use gpui_kit::component::tab::{Tab, TabBar};
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme, Icon, IconName, Sizable};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
+use khonsu_core::investigation::{Investigation, Reopened, SavedQuery};
 use khonsu_core::settings::{self, HistoryEntry};
 use khonsu_core::{util, Language};
 use serde::{Deserialize, Serialize};
@@ -249,6 +250,20 @@ impl Workspace {
         cx.notify();
     }
 
+    /// A new tab with the saved query in its editor, not run, and the reopened
+    /// walk on its canvas.
+    pub fn show_investigation(&mut self, saved: &Investigation, reopened: Reopened, window: &mut Window, cx: &mut Context<Self>) {
+        let (language, text) = match &saved.query {
+            Some(query) if query.language == "sql" => (Language::Sql, query.text.as_str()),
+            Some(query) => (Language::Cypher, query.text.as_str()),
+            None => (Language::Cypher, ""),
+        };
+        self.add_tab(language, Some(text), window, cx);
+        if let Some(WorkspaceTab::Query(tab)) = self.tabs.last() {
+            tab.results.clone().update(cx, |results, cx| results.show_investigation(saved, reopened, window, cx));
+        }
+    }
+
     fn push_dashboard(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
         let id = self.next_tab_id;
         self.next_tab_id += 1;
@@ -459,7 +474,14 @@ impl Workspace {
         let language = tab.language;
         let results = tab.results.clone();
         self.running = true;
-        results.update(cx, |r, cx| r.set_running(cx));
+        let saved_query = SavedQuery {
+            language: if language == Language::Sql { "sql" } else { "cypher" }.into(),
+            text: text.trim().to_string(),
+        };
+        results.update(cx, |r, cx| {
+            r.set_query(Some(saved_query), cx);
+            r.set_running(cx);
+        });
         cx.notify();
         let state = self.state.clone();
         cx.spawn_in(window, async move |this, cx| {

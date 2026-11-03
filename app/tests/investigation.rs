@@ -1217,3 +1217,74 @@ fn the_command_and_the_library_the_window_uses_give_the_same_findings() {
     assert_eq!(walk.graph.nodes.len(), 3);
     assert_eq!(walk.explain(&walk.hops[0]), "Internet -[ALLOWS]-> web");
 }
+
+/// A finding's path can be saved, and reopening gives that same path. A walk would
+/// not: the path of a lateral finding crosses back through an instance, which is
+/// more hops than the fewest.
+#[test]
+fn a_findings_path_can_be_saved_and_reopened_as_it_was() {
+    let env = Env::new();
+    let db = env.path("graph");
+    env.add_source(&db, &exposure_fixture());
+    env.ok(&["plugin", "sync", "--source", "shop"]);
+    let report = env.ok(&["plugin", "analyze", "aws", "exposure", "-d", text(&db)]);
+
+    let mut saved_some = 0;
+    for finding in report["findings"].as_array().unwrap() {
+        let Some(refs) = finding["path_refs"].as_array() else { continue };
+        saved_some += 1;
+        let file = env.path(&format!("finding-{saved_some}.investigation"));
+        let refs = serde_json::to_string(refs).unwrap();
+        let out = env.ok(&["investigation", "save", text(&file), "-d", text(&db), "--path-refs", &refs]);
+        assert_eq!(out["path_found"], true, "{out}");
+
+        let reopened = env.ok(&["investigation", "reopen", text(&file)]);
+        let name = &finding["finding_id"];
+        assert_eq!(reopened["graph_state"], "unchanged", "{name}");
+        assert_eq!(reopened["path_same"], true, "{name}: {reopened}");
+        assert_eq!(reopened["path"]["supporting"], finding["path"]["supporting"], "{name}");
+        assert_eq!(reopened["path"]["hops"], finding["path"]["hops"], "{name}");
+        assert_eq!(reopened["walk"]["hops"].as_array().unwrap().len(), finding["path_refs"].as_array().unwrap().len(), "{name}");
+    }
+    assert!(saved_some >= 3, "{report}");
+
+    // The lateral one is the case a walk gets wrong.
+    let lateral = finding(&report, LATERAL, &instance("i-db1"));
+    assert_eq!(lateral["path_refs"].as_array().unwrap().len(), 5);
+
+    // Remove a record it rests on: reopening says so rather than showing another path.
+    let env = Env::new();
+    let saved = env.path("saved");
+    copy_dir(&exposure_fixture(), &saved);
+    let moved = env.path("moved");
+    env.add_source(&moved, &saved);
+    env.ok(&["plugin", "sync", "--source", "shop"]);
+    let report = env.ok(&["plugin", "analyze", "aws", "exposure", "-d", text(&moved)]);
+    let lateral = finding(&report, LATERAL, &instance("i-db1"));
+    let file = env.path("lateral.investigation");
+    env.ok(&["investigation", "save", text(&file), "-d", text(&moved), "--path-refs", &serde_json::to_string(&lateral["path_refs"]).unwrap()]);
+    assert_eq!(env.ok(&["investigation", "reopen", text(&file)])["path_same"], true);
+
+    let groups_file = saved.join("us-east-1/ec2-describe-security-groups.json");
+    let mut groups: Value = serde_json::from_str(&std::fs::read_to_string(&groups_file).unwrap()).unwrap();
+    let database_group = groups["SecurityGroups"].as_array_mut().unwrap().iter_mut().find(|group| group["GroupId"] == "sg-db").unwrap();
+    database_group["IpPermissions"] = json!([]);
+    std::fs::write(&groups_file, groups.to_string()).unwrap();
+    env.ok(&["plugin", "sync", "--source", "shop"]);
+    let reopened = env.ok(&["investigation", "reopen", text(&file)]);
+    assert_eq!(reopened["graph_state"], "changed", "{reopened}");
+    assert_eq!(reopened["path_same"], false, "{reopened}");
+}
+
+#[test]
+fn an_exact_path_that_is_not_in_the_graph_is_not_saved() {
+    let env = Env::new();
+    let db = env.synced_graph("graph");
+    let file = env.path("x.investigation");
+    let (code, out) = env.khonsu(&["investigation", "save", text(&file), "-d", text(&db), "--path-refs", r#"[{"edge": "rel:no-such", "along": true}]"#]);
+    assert_eq!(code, 1, "{out}");
+    assert!(out["error"]["message"].as_str().unwrap().contains("not in the graph"), "{out}");
+    assert!(!file.exists());
+    let (code, out) = env.khonsu(&["investigation", "save", text(&file), "-d", text(&db), "--path-refs", "nonsense"]);
+    assert_eq!((code, out["error"]["kind"].as_str()), (2, Some("usage")), "{out}");
+}

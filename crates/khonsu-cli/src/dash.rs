@@ -285,7 +285,7 @@ pub fn open(args: OpenArgs) -> Result<Value, CliError> {
         _ => (None, None),
     };
     if args.paths.is_empty() && text.is_none() {
-        return Err(CliError::usage("Name a graph or .dash file to open, or a query with --cypher or --sql"));
+        return Err(CliError::usage("Name a graph, .dash or .investigation file to open, or a query with --cypher or --sql"));
     }
     for path in &args.paths {
         if !path.exists() {

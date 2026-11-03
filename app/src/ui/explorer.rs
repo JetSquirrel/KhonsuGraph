@@ -6,9 +6,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use khonsu_core::evidence::{Assertion, Evidence, Field};
-use khonsu_core::explore::{Direction, Exploration, ExploreRequest, Limit, DEFAULT_MAX_HOPS, MAX_HOPS};
+use khonsu_core::explore::{Direction, Exploration, ExploreRequest, Hop, Limit, DEFAULT_MAX_HOPS, MAX_HOPS};
+use khonsu_core::investigation::{GraphState, Investigation, RecordRef, Reopened};
 use khonsu_core::plugin_analysis::{Finding, Offered, Report};
-use khonsu_core::protocol::{AnalysisInfo, ConditionStatus};
+use khonsu_core::protocol::{AnalysisInfo, ConditionStatus, HopRef};
 use khonsu_core::util::format_unix_time;
 use khonsu_core::{GraphData, GraphEdge, GraphNode};
 
@@ -21,6 +22,62 @@ pub struct View {
     pub edges: Vec<GraphEdge>,
     pub walk: Option<Exploration>,
     pub selected: Option<i64>,
+}
+
+/// What a reopened investigation said, kept beside the walk it gave until the
+/// canvas gets another result.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Restored {
+    pub name: String,
+    pub saved_at: u64,
+    pub graph_state: GraphState,
+    pub differences: Vec<String>,
+    pub missing_seeds: Vec<RecordRef>,
+    pub target_missing: bool,
+    pub unsure: Vec<RecordRef>,
+    pub path_same: Option<bool>,
+}
+
+impl Restored {
+    pub fn new(saved: &Investigation, reopened: &Reopened) -> Self {
+        Self {
+            name: saved.name.clone(),
+            saved_at: saved.saved_at,
+            graph_state: reopened.graph_state,
+            differences: reopened.differences.clone(),
+            missing_seeds: reopened.missing_seeds.clone(),
+            target_missing: reopened.target_missing,
+            unsure: reopened.unsure.clone(),
+            path_same: reopened.path_same,
+        }
+    }
+
+    /// Everything that differs from when it was saved, as warnings, so that a
+    /// new answer does not pass for the saved one.
+    pub fn status_lines(&self) -> Vec<(String, bool)> {
+        let name = |record: &RecordRef| record.stable_id.clone().unwrap_or_else(|| format!("#{}", record.internal_id));
+        let names = |records: &[RecordRef]| records.iter().map(name).collect::<Vec<_>>().join(", ");
+        let mut lines = Vec::new();
+        match self.graph_state {
+            GraphState::Unchanged => {}
+            GraphState::Changed => lines.push((tr("investigation.changed").to_string(), true)),
+            GraphState::NotCompared => lines.push((tr("investigation.not_compared").to_string(), true)),
+        }
+        lines.extend(self.differences.iter().map(|text| (text.clone(), true)));
+        if !self.missing_seeds.is_empty() {
+            lines.push((trf("investigation.missing_seeds", &[&names(&self.missing_seeds)]), true));
+        }
+        if self.target_missing {
+            lines.push((tr("investigation.target_missing").to_string(), true));
+        } else if self.path_same == Some(false) {
+            lines.push((tr("investigation.path_differs").to_string(), true));
+        }
+        if !self.unsure.is_empty() {
+            lines.push((trf("investigation.unsure", &[&names(&self.unsure)]), true));
+        }
+        lines.push((trf("investigation.reopened", &[&self.name, &format_unix_time(self.saved_at)]), false));
+        lines
+    }
 }
 
 /// At most this many views are kept; the oldest goes first.
@@ -48,6 +105,10 @@ pub struct Explorer {
     /// Those running; setting the flag ends the plugin.
     pub checking: BTreeMap<String, Arc<AtomicBool>>,
     pub analysis_errors: BTreeMap<String, String>,
+    /// The reopened investigation this walk came from.
+    pub restored: Option<Restored>,
+    /// The finding path on the canvas, as hops and as what to save for it.
+    pub finding_path: Option<(Vec<Hop>, Vec<HopRef>)>,
     history: Vec<View>,
 }
 
@@ -66,6 +127,8 @@ impl Default for Explorer {
             reports: BTreeMap::new(),
             checking: BTreeMap::new(),
             analysis_errors: BTreeMap::new(),
+            restored: None,
+            finding_path: None,
             history: Vec::new(),
         }
     }
@@ -129,20 +192,26 @@ impl Explorer {
         for (_, cancel) in std::mem::take(&mut self.checking) {
             cancel.store(true, Ordering::Relaxed);
         }
+        self.restored = None;
+        self.finding_path = None;
         self.starts.clear();
         self.history.clear();
     }
 
-    /// The first warning about the last walk, for the canvas to show when no
-    /// node is selected and the panel is out of sight.
+    /// The warnings about the last walk, for the canvas to show when no node is
+    /// selected and the panel is out of sight.
     pub fn warning(&self) -> Option<String> {
-        self.status_lines().into_iter().find(|(_, warn)| *warn).map(|(line, _)| line)
+        let warnings: Vec<String> = self.status_lines().into_iter().filter(|(_, warn)| *warn).map(|(line, _)| line).collect();
+        (!warnings.is_empty()).then(|| warnings.join(" · "))
     }
 
     /// Says what the last walk found and everything that limited it. These
     /// sentences are what stops an empty answer reading as "nothing is there".
     pub fn status_lines(&self) -> Vec<(String, bool)> {
         let mut lines = Vec::new();
+        if let Some(restored) = &self.restored {
+            lines.extend(restored.status_lines());
+        }
         if let Some(error) = &self.error {
             lines.push((trf("explore.failed", &[error]), true));
         }
@@ -208,6 +277,18 @@ pub fn evidence_rows(record: &Evidence) -> Vec<(&'static str, String)> {
 pub fn findings_for<'a>(report: &'a Report, node: &GraphNode) -> Vec<&'a Finding> {
     let resource = khonsu_core::evidence::for_node(node, &[]).evidence_id;
     report.findings.iter().filter(|finding| finding.resource == resource).collect()
+}
+
+impl Explorer {
+    /// What to save as the exact path when saving at `node`: the finding path, if
+    /// the walk is still that path and `node` is where it ends.
+    pub fn exact_path_to(&self, node: i64) -> Vec<HopRef> {
+        let current = self.walk.as_ref().map(|walk| walk.hops.as_slice());
+        match &self.finding_path {
+            Some((hops, refs)) if current == Some(hops.as_slice()) && hops.last().is_some_and(|hop| hop.to == node) => refs.clone(),
+            _ => Vec::new(),
+        }
+    }
 }
 
 /// Which run of an analysis this is about: plugins each name their own.
@@ -395,6 +476,90 @@ mod tests {
         assert!(explorer.reports.is_empty() && explorer.analysis_errors.is_empty(), "the graph may have changed");
         assert!(explorer.checking.is_empty() && running.load(Ordering::Relaxed), "and what is running is stopped");
         assert_eq!(explorer.analyses.len(), 1, "what plugins offer has not changed");
+    }
+
+    fn restored() -> Restored {
+        Restored {
+            name: "web tier".into(),
+            saved_at: 1000,
+            graph_state: GraphState::Unchanged,
+            differences: vec![],
+            missing_seeds: vec![],
+            target_missing: false,
+            unsure: vec![],
+            path_same: Some(true),
+        }
+    }
+
+    #[test]
+    fn a_reopened_investigation_says_nothing_alarming_when_nothing_changed() {
+        let lines = restored().status_lines();
+        assert_eq!(lines.len(), 1, "{lines:?}");
+        assert!(!lines[0].1 && lines[0].0.contains("web tier"), "{lines:?}");
+    }
+
+    #[test]
+    fn every_difference_from_when_it_was_saved_is_a_warning() {
+        let record = |id: &str| RecordRef { stable_id: Some(id.into()), internal_id: 1 };
+        let changed = Restored {
+            graph_state: GraphState::Changed,
+            differences: vec!["Nodes: 1 when saved, 2 now.".into()],
+            missing_seeds: vec![record("shop/gone")],
+            unsure: vec![RecordRef { stable_id: None, internal_id: 7 }],
+            path_same: Some(false),
+            ..restored()
+        };
+        let lines = changed.status_lines();
+        let warned = |text: &str| lines.iter().any(|(line, warn)| *warn && line.contains(text));
+        assert!(warned(tr("investigation.changed")), "{lines:?}");
+        assert!(warned("Nodes: 1 when saved"), "{lines:?}");
+        assert!(warned("shop/gone"), "{lines:?}");
+        assert!(warned("#7"), "{lines:?}");
+        assert!(warned(tr("investigation.path_differs")), "{lines:?}");
+
+        // The target having gone says more than the path differing.
+        let gone = Restored { target_missing: true, path_same: Some(false), ..restored() }.status_lines();
+        assert!(gone.iter().any(|(line, warn)| *warn && line == tr("investigation.target_missing")), "{gone:?}");
+        assert!(!gone.iter().any(|(line, _)| line == tr("investigation.path_differs")), "{gone:?}");
+
+        // Too large to compare is not the same as unchanged.
+        let unsure = Restored { graph_state: GraphState::NotCompared, ..restored() }.status_lines();
+        assert_eq!(unsure[0], (tr("investigation.not_compared").to_string(), true));
+    }
+
+    #[test]
+    fn the_warnings_of_a_reopened_investigation_reach_the_canvas_and_a_new_result_clears_them() {
+        let mut explorer = Explorer {
+            restored: Some(Restored { graph_state: GraphState::Changed, ..restored() }),
+            ..Explorer::default()
+        };
+        assert_eq!(explorer.warning().as_deref(), Some(tr("investigation.changed")));
+
+        // With no node selected this is all that shows, so a lost path must be in it.
+        explorer.restored = Some(Restored { graph_state: GraphState::Changed, path_same: Some(false), ..restored() });
+        assert!(explorer.warning().unwrap().contains(tr("investigation.path_differs")));
+
+        explorer.forget_walks();
+        assert!(explorer.restored.is_none() && explorer.warning().is_none());
+    }
+
+    /// Saving a finding's path keeps that path, not the fewest hops a walk
+    /// would find. Once the walk or the selection moves on it is a normal save.
+    #[test]
+    fn only_the_finding_path_still_on_the_canvas_is_saved_exactly() {
+        let hops = vec![hop(1, 1, 2, 10), hop(2, 2, 3, 11)];
+        let refs = vec![HopRef { edge: "rel:ab".into(), along: true }, HopRef { edge: "rel:bc".into(), along: true }];
+        let mut explorer = Explorer {
+            walk: Some(Exploration { hops: hops.clone(), ..Exploration::default() }),
+            finding_path: Some((hops, refs.clone())),
+            ..Explorer::default()
+        };
+        assert_eq!(explorer.exact_path_to(3), refs);
+        assert!(explorer.exact_path_to(2).is_empty(), "another node on it means the path to that node");
+        explorer.walk = Some(walk());
+        assert!(explorer.exact_path_to(3).is_empty(), "another walk replaced it");
+        explorer.forget_walks();
+        assert!(explorer.finding_path.is_none());
     }
 
     #[test]

@@ -12,6 +12,7 @@ use gpui_kit::component::table::{Column, DataTable, TableDelegate, TableState};
 use gpui_kit::component::{h_flex, v_flex, ActiveTheme, Disableable, Icon, IconName, Sizable, StyledExt};
 use gpui_kit::prelude::FluentBuilder;
 use gpui_kit::*;
+use khonsu_core::investigation::{Investigation, Reopened, SavedQuery};
 use khonsu_core::{QueryError, QueryResult};
 use serde_json::Value as Json;
 
@@ -278,6 +279,33 @@ impl ResultsPanel {
             self.view = View::Table;
         }
         self.content = Content::Rows(result);
+        cx.notify();
+    }
+
+    /// The query this result comes from, to keep if an investigation is saved.
+    pub fn set_query(&mut self, query: Option<SavedQuery>, cx: &mut Context<Self>) {
+        self.canvas.update(cx, |canvas, _| canvas.set_query(query));
+    }
+
+    /// Show a reopened investigation on the canvas. Its saved query is in the
+    /// editor and has not run, so the table holds nothing.
+    pub fn show_investigation(&mut self, saved: &Investigation, reopened: Reopened, window: &mut Window, cx: &mut Context<Self>) {
+        let graph = reopened.walk.as_ref().map(|walk| walk.graph.clone());
+        let result = Rc::new(QueryResult {
+            columns: Vec::new(),
+            rows: Vec::new(),
+            row_count: 0,
+            truncated: false,
+            elapsed_ms: 0,
+            graph,
+        });
+        self.table.update(cx, |table, cx| {
+            table.delegate_mut().set_result(&result);
+            table.refresh(cx);
+        });
+        self.content = Content::Rows(result);
+        self.view = View::Graph;
+        self.canvas.update(cx, |canvas, cx| canvas.restore_investigation(saved, reopened, window, cx));
         cx.notify();
     }
 

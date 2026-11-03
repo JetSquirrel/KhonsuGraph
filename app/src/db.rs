@@ -6,6 +6,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::{LazyLock, Mutex, PoisonError};
 
 use khonsu_core::explore::{Exploration, ExploreRequest};
+use khonsu_core::investigation::{Capture, Investigation, Reopened};
 use khonsu_core::plugin::PluginError;
 use khonsu_core::plugin_analysis::{self, Offered, Report};
 use khonsu_core::{AccessMode, Graph, GraphData, GraphSchema, Language, OpenError, QueryError, QueryOptions, QueryResult};
@@ -99,6 +100,21 @@ pub fn neighbors(id: i64) -> Result<GraphData, QueryError> {
 /// it between queries.
 pub fn explore(request: &ExploreRequest, cancel: &AtomicBool) -> Result<Exploration, QueryError> {
     with_graph(|g| g.explore(request, cancel))
+}
+
+/// Records `capture` against the open graph, which holds it while it reads.
+pub fn capture_investigation(capture: Capture) -> Result<Investigation, QueryError> {
+    let sources = khonsu_core::settings::load_sources();
+    with_graph(|g| {
+        let path = g.path().to_path_buf();
+        g.capture_investigation(&path, capture, &sources, &AtomicBool::new(false))
+    })
+}
+
+/// Runs a saved investigation again on the open graph.
+pub fn reopen_investigation(saved: &Investigation) -> Result<Reopened, QueryError> {
+    let sources = khonsu_core::settings::load_sources();
+    with_graph(|g| g.reopen_investigation(saved, &sources, &AtomicBool::new(false)))
 }
 
 /// Runs an analysis a plugin offers. It holds the graph only while reading, not
