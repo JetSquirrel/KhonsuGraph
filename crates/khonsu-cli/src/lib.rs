@@ -12,8 +12,8 @@ mod analyze;
 mod dash;
 mod evidence;
 mod explore;
-mod exposure;
 mod investigation;
+mod plugin_analysis;
 mod snapshot;
 
 use clap::{Args, CommandFactory, Parser, Subcommand};
@@ -128,8 +128,6 @@ enum Command {
     Explore(explore::ExploreArgs),
     /// What supports a node or relationship: its source, plugin and times, with unknowns stated and secrets masked.
     Evidence(evidence::EvidenceArgs),
-    /// AWS exposure findings: the rule, records and fields behind each, what is assumed and what is unknown. A finding is potential exposure from configuration, not proof of reachability.
-    Exposure(exposure::ExposureArgs),
     /// Save a walk, path and query to a file, and reopen them later, with any change in the graph flagged.
     Investigation {
         #[command(subcommand)]
@@ -159,6 +157,8 @@ enum PluginCommand {
     Approve { id: String },
     /// Remove an installed plugin.
     Uninstall { id: String },
+    /// Run an analysis a plugin offers over a graph: each finding with the rule, records and fields behind it, what is assumed and what is unknown.
+    Analyze(plugin_analysis::AnalyzeArgs),
     /// Sync a configured source into its graph (or preview with --dry-run).
     Sync {
         /// Source ID (see `khonsu source list`).
@@ -394,7 +394,6 @@ fn execute(command: Command) -> Result<Value, CliError> {
         Command::Analyze(args) => analyze::analyze(args),
         Command::Explore(args) => explore::explore(args),
         Command::Evidence(args) => evidence::evidence(args),
-        Command::Exposure(args) => exposure::exposure(args),
         Command::Investigation { command } => investigation::investigation(command),
         Command::Snapshot { command } => snapshot::snapshot(command),
     }
@@ -458,6 +457,7 @@ fn run_plugin(command: PluginCommand) -> Result<Value, CliError> {
                 "note": NOT_ENFORCED,
             }))
         }
+        PluginCommand::Analyze(args) => plugin_analysis::analyze(args),
         PluginCommand::Uninstall { id } => {
             plugin::uninstall(&id)?;
             Ok(json!({ "uninstalled": id }))

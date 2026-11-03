@@ -329,10 +329,7 @@ fn looks_like_a_secret(text: &str) -> bool {
     aws_key || text.contains("-----BEGIN")
 }
 
-/// A hash that stays the same across platforms and Rust versions.
-pub(crate) fn fnv1a(text: &str) -> u64 {
-    text.bytes().fold(0xcbf2_9ce4_8422_2325, |hash, byte| (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3))
-}
+pub(crate) use khonsu_plugin_protocol::fnv1a;
 
 #[cfg(test)]
 mod tests {

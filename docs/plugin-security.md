@@ -10,7 +10,7 @@ program you run.
 | Claim | Enforced? |
 |---|---|
 | A plugin's declared `network`, `read_files` and `commands` | **No.** They're what the plugin says about itself, shown so you can decide |
-| A plugin doesn't run until approved | Yes, by the app and the CLI |
+| A plugin doesn't run until approved | Yes, by the app and the CLI, for a sync and for an analysis |
 | A changed plugin needs approval again | Yes, for its version, permissions and the files in its folder |
 | `entry` stays inside the plugin's folder | Yes, except a bare program name found on `PATH` |
 | An archive stays inside its folder and within size limits | Yes |
@@ -31,6 +31,9 @@ program you run.
 | Endless output from `describe` or `test` | Cut at 16 MiB |
 | `describe` that never finishes | Stopped after 30 seconds |
 | A plugin killed, crashing or sending nonsense partway | The sync is recorded as failed and removes nothing. Records already written stay, and the graph stays whole |
+| An analysis that never finishes | Ended after 5 minutes, or by **Stop** in the window |
+| An analysis that sends too much | Refused past 16 MiB in one line or 100,000 findings |
+| An analysis that misquotes the graph | It only points at records, and KhonsuGraph reads their values itself. A reference, rule or verdict that doesn't match refuses the whole answer. See [offering an analysis](plugins.md#offering-an-analysis) |
 
 ## What this doesn't protect against
 
@@ -46,6 +49,15 @@ program you run.
   starts.
 - **Total volume.** A plugin can send endless valid records until you cancel, and
   they'll be written to the graph.
+- **A wrong answer that is well formed.** An analysis can point at real records and
+  still be wrong. KhonsuGraph checks that what it says matches the graph, not that its
+  rules are right.
+
+## What an analysis is sent
+
+An analysis is sent records from the graph, and no source configuration or secret
+fields. Properties that look like secrets are masked first. It is still a program
+running as you, so it can read anything else you can.
 
 ## Secrets
 
