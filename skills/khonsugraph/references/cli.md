@@ -100,6 +100,27 @@ khonsu plugin analyze aws exposure --db graphs/aws --verdict potential-exposure 
 
 See `docs/exposure-rules.md` for the rules and a walkthrough.
 
+## Saved investigations
+
+```sh
+khonsu investigation save web.investigation --db graphs/aws --from shop/cidr:internet --to shop/123456789012:us-east-1:i-web1 --type ROUTES_TO,FORWARDS_TO
+khonsu investigation reopen web.investigation
+```
+
+`save` takes `explore`'s filters, plus `--name`, `--cypher` or `--sql` (saved as typed), `--dashboard` and `--force`. It writes nothing to the graph, and an existing file exits 1 with kind `exists` without `--force`. `reopen` takes `-d` to use another graph.
+
+| Reopen field | Meaning |
+|---|---|
+| `graph_state` | `unchanged`, `changed`, or `not_compared` when the graph is too large to hash and the counts agree |
+| `differences` | What changed, in words. Not exhaustive |
+| `missing_seeds`, `target_missing` | Saved records that are not in the graph now |
+| `unsure` | Records found by an internal ID on a changed graph, which may now be something else |
+| `walk`, `path` | The walk run again now, and the path to the saved node |
+| `path_same` | Whether the path rests on the saved records; null when none was saved |
+| `saved_walk`, `query`, `dashboard` | The saved filters, query and dashboard. A saved query is returned, not run |
+
+Errors have kind `graph_missing`, `not_found`, `invalid` or `too_new`. See `docs/investigations.md`.
+
 ## Graph analysis
 
 HawDB's Cypher has no shortest paths, centrality or communities; `khonsu analyze` computes them in memory, after networkx's definitions (results match networkx on the same graph).

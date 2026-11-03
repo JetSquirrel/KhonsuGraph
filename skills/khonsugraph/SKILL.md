@@ -50,6 +50,8 @@ Read `complete` first. When it is false, `limits` says which cap cut the walk, s
 
 A plugin can offer analyses: `khonsu plugin describe ID` lists them under `analyses`, and `khonsu plugin analyze ID ANALYSIS --db DIR` runs one. On an AWS graph, `khonsu plugin analyze aws exposure --db DIR` gives findings with a `verdict`: `potential_exposure`, `insufficient_data` or `not_indicated`. Report a finding by its `finding_id`, `rule_id`, `path.hops`, `unknowns` and `assumptions`. Say "potential exposure from configuration": never call a resource reachable or safe from a finding. Narrow it with `--resource ID` and `--verdict`, and pass a finding's `walk` to `khonsu explore`. See `references/cli.md`.
 
+To keep a line of inquiry, `khonsu investigation save FILE --db DIR --from NODE --to NODE` writes a file of its own, and `khonsu investigation reopen FILE` runs it again. Read `graph_state` first: when it is `changed`, say so, and read `path_same`, `missing_seeds`, `target_missing` and `unsure` before treating the answer as the saved one. See `references/cli.md`.
+
 ## The window and the graph lease
 
 HawDB leases a graph directory to one process. While the KhonsuGraph window has a graph open, `khonsu query` (reads only) and `khonsu check` on that graph go **through the window** — the output carries `"via_window": true` — so you can keep working while the person looks at it. Writes (`--write`) and syncs need the graph free: an error of kind `locked` names the program and pid holding it; ask the person to close the graph rather than deleting lock files.

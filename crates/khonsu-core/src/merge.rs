@@ -484,6 +484,20 @@ impl<'g> Merger<'g> {
     }
 }
 
+/// The `khonsu_synced_at` for a sync starting at `now`: later than any this
+/// source has written. A full sync removes nodes stamped before its own, and
+/// stamps are whole seconds, so a sync sharing a stamp with the last one would
+/// keep nodes that have gone, while removing their relationships.
+pub fn next_sync_stamp(graph: &mut Graph, source: &str, now: i64) -> Result<i64, QueryError> {
+    let params = BTreeMap::from([("source".to_string(), Value::String(source.to_string()))]);
+    let query = format!("MATCH (n {{{SOURCE_PROPERTY}: $source}}) RETURN max(n.{SYNCED_AT_PROPERTY}) AS last");
+    let rows = graph.raw_cypher(&query, &params)?;
+    Ok(match rows.first().and_then(|row| row.first()) {
+        Some(Value::Int(last)) => now.max(last + 1),
+        _ => now,
+    })
+}
+
 /// HawDB 0.8 accepts only plain identifiers as property names in `SET`.
 /// Other characters become `_`; provenance names are reserved.
 pub fn property_key(key: &str) -> Option<String> {

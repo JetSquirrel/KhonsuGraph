@@ -259,6 +259,9 @@ fn investigation(env: &Env) -> Value {
     };
     let path = env.ok(&["analyze", "path", "-d", text(&db), "--from", &id(INTERNET), "--to", &id(WEB_1)]);
     let dash = repo().join("examples/aws/exposure.dash");
+    let saved_file = env.path("shop.investigation");
+    env.ok(&investigation_save(&db, &saved_file));
+    let reopened = env.ok(&["investigation", "reopen", text(&saved_file)]);
     let exposure_report = {
         let other = Env::new();
         let graph = other.path("graph");
@@ -290,12 +293,28 @@ fn investigation(env: &Env) -> Value {
             ]),
             "what_points_at_web_1": env.ok(&["explore", "-d", text(&db), "--from", WEB_1, "--direction", "in", "--max-hops", "1"]),
         },
+        "investigation": {
+            "graph_state": reopened["graph_state"],
+            "fingerprint": reopened["fingerprint"],
+            "walk": reopened["walk"],
+            "path": reopened["path"],
+            "path_same": reopened["path_same"],
+        },
         "exposure": {
             // Saved responses with no route tables, as a graph from before they were read.
             "shop_fixture": exposure_brief(&env.ok(&["plugin", "analyze", "aws", "exposure", "-d", text(&db)])),
             "exposure_fixture": exposure_report,
         },
     }))
+}
+
+/// Saves the walk from the internet to web-1 through the load balancer.
+fn investigation_save<'a>(db: &'a Path, file: &'a Path) -> Vec<&'a str> {
+    vec![
+        "investigation", "save", text(file), "-d", text(db),
+        "--from", INTERNET, "--to", WEB_1, "--type", "ROUTES_TO,FORWARDS_TO", "--max-hops", "4",
+        "--cypher", "MATCH (n:Instance) RETURN n",
+    ]
 }
 
 /// (rule, resource, verdict) for every finding, which is what changes meaning.
@@ -671,6 +690,179 @@ fn exposure_is_the_same_across_syncs() {
     assert_eq!(run(), run());
 }
 
+/// #34: on unchanged data, reopening gives back the same filters and path, from
+/// a file holding no source configuration.
+#[test]
+fn a_saved_investigation_reopens_with_its_path_and_filters() {
+    let env = Env::new();
+    let db = env.synced_graph("graph");
+    let file = env.path("web.investigation");
+    let before = env.answers(&db);
+
+    let out = env.ok(&investigation_save(&db, &file));
+    assert_eq!(out["path_found"], true, "{out}");
+    assert_eq!(env.answers(&db), before, "saving writes nothing to the graph");
+
+    let raw = std::fs::read_to_string(&file).unwrap();
+    assert!(!raw.contains("fixture_dir") && !raw.contains(text(&fixture())) && !raw.contains("secret"), "{raw}");
+    let saved: Value = serde_json::from_str(&raw).unwrap();
+    assert_eq!(saved["format"], "khonsu-investigation");
+    assert_eq!(saved["version"], 1);
+    assert_eq!(saved["walk"]["seeds"][0]["stable_id"], INTERNET);
+
+    // Another process, and a re-sync that changes nothing.
+    env.ok(&["plugin", "sync", "--source", "shop"]);
+    let out = env.ok(&["investigation", "reopen", text(&file)]);
+    assert_eq!(out["graph_state"], "unchanged", "{out}");
+    assert_eq!(out["differences"], json!([]));
+    assert_eq!(out["path_same"], true);
+    assert_eq!(out["walk"]["complete"], true);
+    assert_eq!(out["saved_walk"]["direction"], "out");
+    assert_eq!(out["saved_walk"]["types"], json!(["ROUTES_TO", "FORWARDS_TO"]));
+    assert_eq!(out["saved_walk"]["max_hops"], 4);
+    assert_eq!(out["query"]["text"], "MATCH (n:Instance) RETURN n");
+    let hops: Vec<&str> = out["path"]["hops"].as_array().unwrap().iter().map(|hop| hop.as_str().unwrap()).collect();
+    assert_eq!(hops, ["Internet -[ROUTES_TO]-> shop", "shop -[FORWARDS_TO]-> web", "web -[ROUTES_TO]-> web-1"]);
+}
+
+/// The same data in another graph is the same data, whatever its internal IDs.
+#[test]
+fn a_saved_investigation_reopens_on_a_rebuilt_graph_and_refuses_to_guess_a_missing_one() {
+    let env = Env::new();
+    let db = env.synced_graph("graph");
+    let file = env.path("web.investigation");
+    env.ok(&investigation_save(&db, &file));
+
+    let other = Env::new();
+    let rebuilt = other.synced_graph("rebuilt");
+    let out = other.ok(&["investigation", "reopen", text(&file), "-d", text(&rebuilt)]);
+    assert_eq!(out["graph_state"], "unchanged", "{out}");
+    assert_eq!(out["path_same"], true, "{out}");
+
+    std::fs::remove_dir_all(&db).unwrap();
+    let (code, out) = env.khonsu(&["investigation", "reopen", text(&file)]);
+    assert_eq!((code, out["error"]["kind"].as_str()), (1, Some("graph_missing")), "{out}");
+    assert!(out["error"]["message"].as_str().unwrap().contains("--db"), "{out}");
+}
+
+#[test]
+fn a_change_in_the_source_is_flagged_and_the_path_is_compared() {
+    let env = Env::new();
+    let saved = env.path("saved");
+    copy_dir(&fixture(), &saved);
+    let db = env.path("graph");
+    env.add_source(&db, &saved);
+    env.ok(&["plugin", "sync", "--source", "shop"]);
+    let file = env.path("web.investigation");
+    env.ok(&investigation_save(&db, &file));
+    let replace = |name: &str, from: &str, to: &str| {
+        let path = saved.join("us-east-1").join(name);
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert!(text.contains(from), "{text}");
+        std::fs::write(&path, text.replace(from, to)).unwrap();
+    };
+
+    // The same records and a different value: the path holds, and the graph has moved.
+    replace("ec2-describe-security-groups.json", "\"FromPort\": 443, \"ToPort\": 443", "\"FromPort\": 8443, \"ToPort\": 8443");
+    env.ok(&["plugin", "sync", "--source", "shop"]);
+    let out = env.ok(&["investigation", "reopen", text(&file)]);
+    assert_eq!(out["graph_state"], "changed", "{out}");
+    assert!(!out["differences"].as_array().unwrap().is_empty(), "{out}");
+    assert_eq!(out["path_same"], true, "{out}");
+
+    // The balancer no longer sends traffic to web-1: the path has gone, and it says so.
+    replace("elbv2-describe-target-health-web.json", "i-web1", "i-db1");
+    env.ok(&["plugin", "sync", "--source", "shop"]);
+    let out = env.ok(&["investigation", "reopen", text(&file)]);
+    assert_eq!(out["graph_state"], "changed", "{out}");
+    assert_eq!(out["target_missing"], false, "{out}");
+    assert!(out["path"].is_null(), "{out}");
+    assert_eq!(out["path_same"], false, "{out}");
+
+    // web-1 itself has gone.
+    let instances = saved.join("us-east-1/ec2-describe-instances.json");
+    let value: Value = serde_json::from_str(&std::fs::read_to_string(&instances).unwrap()).unwrap();
+    let kept: Vec<&Value> = value["Reservations"][0]["Instances"].as_array().unwrap().iter().filter(|i| i["InstanceId"] != "i-web1").collect();
+    std::fs::write(&instances, json!({"Reservations": [{"Instances": kept}]}).to_string()).unwrap();
+    env.ok(&["plugin", "sync", "--source", "shop"]);
+    let out = env.ok(&["investigation", "reopen", text(&file)]);
+    assert_eq!(out["target_missing"], true, "{out}");
+    assert!(out["walk"].is_object(), "the rest still runs: {out}");
+}
+
+#[test]
+fn a_seed_that_has_gone_is_named_and_not_replaced() {
+    let env = Env::new();
+    let saved = env.path("saved");
+    copy_dir(&fixture(), &saved);
+    let db = env.path("graph");
+    env.add_source(&db, &saved);
+    env.ok(&["plugin", "sync", "--source", "shop"]);
+    let file = env.path("web.investigation");
+    env.ok(&["investigation", "save", text(&file), "-d", text(&db), "--from", WEB_1, "--direction", "in"]);
+
+    std::fs::write(saved.join("us-east-1/ec2-describe-instances.json"), r#"{"Reservations": []}"#).unwrap();
+    env.ok(&["plugin", "sync", "--source", "shop"]);
+    let out = env.ok(&["investigation", "reopen", text(&file)]);
+    assert_eq!(out["missing_seeds"][0]["stable_id"], WEB_1, "{out}");
+    assert!(out["walk"].is_null(), "nothing to walk from: {out}");
+    assert_eq!(out["graph_state"], "changed");
+}
+
+/// Written by hand, a record has only an internal ID, which a changed graph can
+/// give to something else.
+#[test]
+fn an_internal_id_on_a_changed_graph_is_reported_as_unsure() {
+    let env = Env::new();
+    let db = env.path("graph");
+    env.ok(&["init", text(&db)]);
+    env.ok(&["query", "-d", text(&db), "--write", "--cypher", "CREATE (:Host {name: 'by hand'})"]);
+    let id = env.query(&db, "MATCH (n:Host) RETURN id(n) AS id")["rows"][0][0].as_i64().unwrap().to_string();
+    let file = env.path("hand.investigation");
+    env.ok(&["investigation", "save", text(&file), "-d", text(&db), "--from", &id]);
+
+    let out = env.ok(&["investigation", "reopen", text(&file)]);
+    assert_eq!((out["graph_state"].as_str(), out["unsure"].as_array().map(Vec::len)), (Some("unchanged"), Some(0)), "{out}");
+
+    env.ok(&["query", "-d", text(&db), "--write", "--cypher", "CREATE (:Host {name: 'another'})"]);
+    let out = env.ok(&["investigation", "reopen", text(&file)]);
+    assert_eq!(out["graph_state"], "changed", "{out}");
+    assert_eq!(out["unsure"].as_array().unwrap().len(), 1, "{out}");
+}
+
+#[test]
+fn a_file_it_cannot_use_and_a_bad_request_fail_with_a_reason() {
+    let env = Env::new();
+    let db = env.synced_graph("graph");
+    let file = env.path("bad.investigation");
+    let kind = |contents: &str| {
+        std::fs::write(&file, contents).unwrap();
+        let (code, out) = env.khonsu(&["investigation", "reopen", text(&file)]);
+        assert_eq!(code, 1, "{out}");
+        out["error"]["kind"].as_str().unwrap().to_string()
+    };
+    assert_eq!(kind("{not json"), "invalid");
+    assert_eq!(kind(r#"{"format": "something-else", "version": 1}"#), "invalid");
+    assert_eq!(kind(r#"{"format": "khonsu-investigation", "version": 1}"#), "invalid");
+    assert_eq!(kind(r#"{"format": "khonsu-investigation", "version": 999}"#), "too_new");
+
+    let (code, out) = env.khonsu(&["investigation", "reopen", text(&env.path("none.investigation"))]);
+    assert_eq!((code, out["error"]["kind"].as_str()), (1, Some("not_found")), "{out}");
+
+    // An existing file is kept, and a path needs somewhere to start from.
+    std::fs::write(&file, "keep me").unwrap();
+    let (code, out) = env.khonsu(&["investigation", "save", text(&file), "-d", text(&db), "--from", WEB_1]);
+    assert_eq!((code, out["error"]["kind"].as_str()), (1, Some("exists")), "{out}");
+    assert_eq!(std::fs::read_to_string(&file).unwrap(), "keep me");
+    env.ok(&["investigation", "save", text(&file), "-d", text(&db), "--from", WEB_1, "--force"]);
+
+    let (code, out) = env.khonsu(&["investigation", "save", text(&env.path("x")), "-d", text(&db), "--to", WEB_1]);
+    assert_eq!(code, 2, "{out}");
+    let (code, out) = env.khonsu(&["investigation", "save", text(&env.path("x")), "-d", text(&db), "--from", "shop/no-such-node"]);
+    assert_eq!((code, out["error"]["kind"].as_str()), (1, Some("not_found")), "{out}");
+    assert!(!env.path("x").exists());
+}
+
 #[test]
 fn two_syncs_of_the_same_input_agree_and_a_resync_changes_nothing() {
     let env = Env::new();
@@ -855,6 +1047,9 @@ fn graphs_written_by_earlier_hawdb_versions_keep_their_meaning() {
         assert_same(&format!("{name}: answers"), &normalize(&env.answers(&db)), &expected["answers"]);
         assert_same(&format!("{name}: schema"), &normalize(&env.ok(&["schema", "-d", text(&db)])), &expected["schema"]);
         assert_same(&format!("{name}: exposure"), &normalize(&exposure_brief(&env.ok(&["plugin", "analyze", "aws", "exposure", "-d", text(&db)]))), &expected["exposure"]["shop_fixture"]);
+        // An upgrade must not make every saved investigation read as changed.
+        let saved = env.ok(&investigation_save(&db, &env.path("saved.investigation")));
+        assert_same(&format!("{name}: fingerprint"), &normalize(&saved["investigation"]["fingerprint"]), &expected["investigation"]["fingerprint"]);
 
         env.ok(&["query", "-d", text(&db), "--write", "--cypher", "CREATE (:Note {name: 'after upgrade'})"]);
         assert_eq!(env.count(&db, "MATCH (n) RETURN count(n) AS c"), 17, "{name}");

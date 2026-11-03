@@ -12,6 +12,7 @@ mod analyze;
 mod dash;
 mod evidence;
 mod explore;
+mod investigation;
 mod plugin_analysis;
 
 use clap::{Args, CommandFactory, Parser, Subcommand};
@@ -125,6 +126,11 @@ enum Command {
     Explore(explore::ExploreArgs),
     /// What supports a node or relationship: its source, plugin and times, with unknowns stated and secrets masked.
     Evidence(evidence::EvidenceArgs),
+    /// Save a walk, path and query to a file, and reopen them later, with any change in the graph flagged.
+    Investigation {
+        #[command(subcommand)]
+        command: investigation::InvestigationCommand,
+    },
 }
 
 #[derive(Subcommand)]
@@ -379,6 +385,7 @@ fn execute(command: Command) -> Result<Value, CliError> {
         Command::Analyze(args) => analyze::analyze(args),
         Command::Explore(args) => explore::explore(args),
         Command::Evidence(args) => evidence::evidence(args),
+        Command::Investigation { command } => investigation::investigation(command),
     }
 }
 
