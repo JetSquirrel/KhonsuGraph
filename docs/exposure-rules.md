@@ -1,8 +1,14 @@
 # AWS exposure rules
 
-`khonsu exposure` says which instances an account's configuration leaves
-potentially open to the internet, and shows how it decided. It reads the graph
-only. It sends no traffic and needs no AWS access once the graph is synced.
+`khonsu plugin analyze aws exposure` says which instances an account's
+configuration leaves potentially open to the internet, and shows how it decided.
+It reads the graph only. It sends no traffic and needs no AWS access once the
+graph is synced.
+
+These rules belong to the AWS plugin, in `plugins/aws/src/exposure.rs`. KhonsuGraph
+itself knows nothing about AWS: it sends the plugin records from the graph, checks
+the findings that come back against them, and looks up their values and paths. See
+[offering an analysis](plugins.md#offering-an-analysis).
 
 A finding is **potential exposure worked out from configuration**. It does not
 show that anything is reachable, and no finding does not show that a resource is
@@ -50,7 +56,10 @@ traffic to it.
 | `internet-facing` | `describe-load-balancers`: `Scheme` | No scheme was supplied |
 | `balancer-open-rule` | `describe-security-groups`, on the balancer's groups | The balancer has no groups recorded, as a network load balancer can |
 | `target-healthy` | `describe-target-health`: `TargetHealth.State` | Not supplied, or anything but `healthy` |
-| `target-allows-balancer` | `describe-target-groups`: `Port`; the target's group rules | No port or groups are recorded, or only a CIDR rule covers the port |
+| `target-allows-balancer` | `describe-target-groups`: `Port`, `Protocol`; the target's groups and their rules | No port, protocol or target groups are recorded, only a CIDR rule covers the port, or no rule lets it in and the balancer has no groups recorded |
+
+A `TCP_UDP` or `TCP_QUIC` target group carries both, so a rule for either protocol
+counts. `UDP`, `QUIC` and `GENEVE` need a UDP rule, and anything else a TCP one.
 
 ### `aws.exposure.security-group-lateral`
 
@@ -98,7 +107,7 @@ khonsu init graphs/exposure
 khonsu source add --db graphs/exposure --plugin aws --name shop \
   -c "fixture_dir=\"$PWD/plugins/aws/tests/fixture-exposure\"" -c regions=us-east-1
 khonsu plugin sync --source shop
-khonsu exposure --db graphs/exposure --pretty
+khonsu plugin analyze aws exposure --db graphs/exposure --pretty
 ```
 
 Read `summary` first: three potential exposures, one undecided, three not indicated.
@@ -106,11 +115,11 @@ Read `summary` first: three potential exposures, one undecided, three not indica
 **1. A potential exposure.** Look at one instance:
 
 ```sh
-khonsu exposure --db graphs/exposure --pretty --resource shop/123456789012:us-east-1:i-web1
+khonsu plugin analyze aws exposure --db graphs/exposure --pretty --resource shop/123456789012:us-east-1:i-web1
 ```
 
 `web-1` meets all four conditions. Each condition's `fields` give the record, the
-stored field and the AWS field it came from. `path.hops` shows the candidate path,
+stored field and, in `source_field`, the AWS field it came from. `path.hops` shows the candidate path,
 `path.rule_id` the rule, and `assumptions` what was not checked.
 
 **2. Open it in Path Explorer.** A finding's `walk` holds the arguments:
@@ -135,14 +144,14 @@ gateway, so it gets `not_indicated`. The conditions show why, and the open rule
 still deserves a look:
 
 ```sh
-khonsu exposure --db graphs/exposure --pretty --resource shop/123456789012:us-east-1:i-batch1
+khonsu plugin analyze aws exposure --db graphs/exposure --pretty --resource shop/123456789012:us-east-1:i-batch1
 ```
 
 **5. An undecided case.** `legacy-1` has a public address and an open rule, but the
 saved responses hold no route tables for its VPC. `unknowns` says so:
 
 ```sh
-khonsu exposure --db graphs/exposure --pretty --verdict insufficient-data
+khonsu plugin analyze aws exposure --db graphs/exposure --pretty --verdict insufficient-data
 ```
 
 **6. One step further in.** `db-1` has no public address, and its group allows
@@ -150,7 +159,7 @@ khonsu exposure --db graphs/exposure --pretty --verdict insufficient-data
 from `web-1`'s through `depends_on`:
 
 ```sh
-khonsu exposure --db graphs/exposure --pretty --resource shop/123456789012:us-east-1:i-db1
+khonsu plugin analyze aws exposure --db graphs/exposure --pretty --resource shop/123456789012:us-east-1:i-db1
 ```
 
 The commands above need the graph free. They fail with kind `locked` while the

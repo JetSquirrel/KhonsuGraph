@@ -72,26 +72,28 @@ khonsu evidence --db graphs/aws --node shop/123456789012:us-east-1:i-web1
 | `record_written_at` | When it last changed, in Unix seconds; can predate the last sync |
 | `source_last_successful_sync` | From the source's settings; unknown when its last sync failed |
 | `source_snapshot` | Unknown for now |
-| `rule_id` | Unknown on a record; known on an exposure finding's `path` |
+| `rule_id` | Unknown on a record; known on a finding's `path` |
 | `assertion` | `explicit` (a source reported it), `derived`, or `unknown` |
 | `properties`, `redacted` | Its own properties, and the names masked as possible secrets |
 
-## AWS exposure findings
+## Plugin analyses
 
 ```sh
-khonsu exposure --db graphs/aws --verdict potential-exposure --pretty
+khonsu plugin describe aws                                # `analyses` lists what it offers
+khonsu plugin analyze aws exposure --db graphs/aws --verdict potential-exposure --pretty
 ```
 
-`--resource ID` takes a `khonsu_id`, `--verdict` takes `potential-exposure`, `insufficient-data` or `not-indicated`, and `--max-findings` defaults to 200. The top level has `claim`, `order`, `rules`, `instances`, `summary` (counts before any narrowing), `complete` and `truncated` (findings cut by `--max-findings`). When `complete` is false, a missing finding means nothing.
+`--resource ID` takes a `khonsu_id`, `--verdict` takes one of the analysis's verdicts, and `--max-findings` defaults to 200. The top level has `plugin`, `analysis`, `title`, `claim`, `order`, `verdicts`, `rules`, `subjects`, `summary` (counts before any narrowing), `complete` and `truncated` (findings cut by `--max-findings`). When `complete` is false, a missing finding means nothing. Fails with kind `plugin` when the plugin isn't approved, offers no such analysis, or gives an answer that doesn't match the graph. AWS's `exposure` has the verdicts `potential_exposure`, `insufficient_data` and `not_indicated`.
 
 | Finding field | Meaning |
 |---|---|
 | `finding_id`, `rule_id` | Stable for the same rule and records |
-| `verdict` | `potential_exposure`, `insufficient_data` or `not_indicated`. None means reachable or safe |
-| `resource`, `resource_name` | The instance it is about |
-| `conditions[]` | `id`, `statement`, `status` (`met`, `not_met`, `unknown`), `detail`, and `fields[]` with `record`, `field`, `aws_field`, `value` |
+| `verdict` | One the analysis declares. On AWS `exposure`, none means reachable or safe |
+| `resource`, `resource_name` | The node it is about |
+| `conditions[]` | `id`, `statement`, `status` (`met`, `not_met`, `unknown`), `detail`, and `fields[]` with `record`, `field`, `source_field`, `value` |
 | `unknowns`, `assumptions` | What could not be evaluated, and what the rule does not read |
 | `path` | The candidate path as a derived evidence record, or null when its records do not exist |
+| `path_refs` | That path as stable references: `edge` and `along` for each hop |
 | `walk` | `from`, `to`, `direction`, `types`, `max_hops` for `khonsu explore`, or null |
 | `depends_on` | The finding a lateral step rests on |
 | `contributing`, `evidence` | Evidence IDs of every record used, and those records |
