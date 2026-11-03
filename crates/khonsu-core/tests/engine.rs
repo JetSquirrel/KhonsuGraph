@@ -182,7 +182,7 @@ fn vector_results_are_json_arrays_after_reopen() {
             "CREATE TABLE embeddings (id BIGINT PRIMARY KEY, embedding VECTOR(3))", &[],
         ).unwrap();
         database.sql_session().query(
-            "INSERT INTO embeddings (id, embedding) VALUES (1, $1)", &[vector.clone()],
+            "INSERT INTO embeddings (id, embedding) VALUES (1, $1)", std::slice::from_ref(&vector),
         ).unwrap();
         database.query_with_params(
             "CREATE (:Embedding {embedding: $vector})",

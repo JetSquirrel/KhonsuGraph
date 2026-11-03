@@ -185,7 +185,7 @@ pub struct Dashboard {
     plot_bounds: HashMap<String, Rc<Cell<Option<Bounds<Pixels>>>>>,
     /// One canvas per `graph` panel, by plot name, with the data it shows so
     /// a re-run that returned the same graph keeps the layout.
-    graph_canvases: HashMap<String, (Entity<GraphCanvas>, Option<Arc<khonsu_core::GraphData>>, Subscription)>,
+    graph_canvases: HashMap<String, GraphPanel>,
     /// Row-selection subscriptions of the pickable tables, by table entity;
     /// dropped with them.
     table_subscriptions: Vec<(EntityId, Subscription)>,
@@ -241,6 +241,9 @@ impl EventEmitter<DashboardEvent> for Dashboard {}
 
 /// Each query's outcome by name, with the SQL that ran.
 type Outcomes = HashMap<String, (String, Result<Arc<QueryResult>, String>)>;
+
+/// A `graph` panel's canvas, the data it shows, and its subscription.
+type GraphPanel = (Entity<GraphCanvas>, Option<Arc<khonsu_core::GraphData>>, Subscription);
 
 impl Dashboard {
     pub fn new(id: u64, path: PathBuf, cx: &mut Context<Self>) -> Self {

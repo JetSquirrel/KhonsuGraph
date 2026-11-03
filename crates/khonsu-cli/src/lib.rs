@@ -198,7 +198,8 @@ enum SourceCommand {
 struct CliError {
     kind: String,
     message: String,
-    detail: Value,
+    /// Boxed so that `Result<_, CliError>` stays small on the success path.
+    detail: Box<Value>,
     /// Exit status: 1 for failures, 2 for a spec or argument mistake.
     code: u8,
 }
@@ -208,7 +209,7 @@ impl CliError {
         Self {
             kind: kind.into(),
             message: message.into(),
-            detail: Value::Null,
+            detail: Box::new(Value::Null),
             code: 1,
         }
     }
@@ -238,7 +239,7 @@ impl From<OpenError> for CliError {
         Self {
             kind: kind.into(),
             message: err.to_string(),
-            detail,
+            detail: Box::new(detail),
             code: 1,
         }
     }
@@ -249,7 +250,7 @@ impl From<QueryError> for CliError {
         Self {
             kind: err.kind.clone(),
             message: err.message.clone(),
-            detail: json!({ "line": err.line, "column": err.column }),
+            detail: Box::new(json!({ "line": err.line, "column": err.column })),
             code: 1,
         }
     }
@@ -264,7 +265,7 @@ impl From<plugin::PluginError> for CliError {
         Self {
             kind: "plugin".into(),
             message: err.to_string(),
-            detail,
+            detail: Box::new(detail),
             code: 1,
         }
     }
@@ -622,7 +623,7 @@ where
         Err(err) => {
             let mut error = json!({ "kind": err.kind, "message": err.message });
             if !err.detail.is_null() {
-                error["detail"] = err.detail;
+                error["detail"] = *err.detail;
             }
             print(&json!({ "error": error }), cli.pretty);
             i32::from(err.code.max(1))

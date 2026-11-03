@@ -267,6 +267,9 @@ pub fn open_edit(state: Entity<AppState>, source: Source, window: &mut Window, c
         .detach();
 }
 
+/// What a source form holds: config, then secrets.
+type FormValues = (Map<String, Value>, Map<String, Value>);
+
 enum FieldInput {
     Text(Entity<InputState>),
     Multiline(Entity<TextareaState>),
@@ -402,7 +405,7 @@ impl SourceForm {
     }
 
     /// Config and secrets as typed in, checked against the plugin's fields.
-    fn values(&self, cx: &App) -> Result<(Map<String, Value>, Map<String, Value>), String> {
+    fn values(&self, cx: &App) -> Result<FormValues, String> {
         let mut config = Map::new();
         let mut secret_values = Map::new();
         for (field, input) in &self.fields {

@@ -97,7 +97,7 @@ fn save(args: SaveArgs) -> Result<Value, CliError> {
     let mut graph = Graph::open(&path, AccessMode::ReadOnly, PROGRAM)?;
     let starts = args.from.iter().map(|node| node_id(&mut graph, node)).collect::<Result<Vec<_>, _>>()?;
     let target = args.to.as_deref().map(|node| node_id(&mut graph, node)).transpose()?;
-    let walk = (!starts.is_empty()).then(|| ExploreRequest {
+    let walk = (!starts.is_empty()).then_some(ExploreRequest {
         starts,
         direction: match args.direction {
             DirectionArg::Out => Direction::Out,

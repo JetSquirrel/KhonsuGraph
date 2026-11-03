@@ -99,7 +99,7 @@ fn window_answer(answer: Option<Result<Value, String>>) -> Result<Value, CliErro
             Some(error) => Err(CliError {
                 kind: error["kind"].as_str().unwrap_or("window").to_string(),
                 message: error["message"].as_str().unwrap_or_default().to_string(),
-                detail: error.get("detail").cloned().unwrap_or(Value::Null),
+                detail: Box::new(error.get("detail").cloned().unwrap_or(Value::Null)),
                 code: error["code"].as_u64().unwrap_or(1) as u8,
             }),
             None => Ok(value),
@@ -120,7 +120,7 @@ pub fn check(args: CheckArgs) -> Result<Value, CliError> {
             kind: e.kind.to_string(),
             code: e.exit_code(),
             message: e.message,
-            detail: Value::Null,
+            detail: Box::new(Value::Null),
         }),
         Err(OpenError::Locked(owner)) => {
             let answer = remote::request(&Message::Check(CheckRequest {
