@@ -283,7 +283,7 @@ pub fn evidence_rows(record: &Evidence) -> Vec<(&'static str, String)> {
         ("evidence.plugin", text(&record.plugin)),
         ("evidence.written", time(&record.record_written_at)),
         ("evidence.last_sync", time(&record.source_last_successful_sync)),
-        ("evidence.coverage", record.source_coverage.known().map_or_else(unknown, |coverage| coverage_text(coverage))),
+        ("evidence.coverage", record.source_coverage.known().map_or_else(unknown, coverage_text)),
         ("evidence.snapshot", text(&record.source_snapshot)),
         ("evidence.assertion", assertion.to_string()),
     ]

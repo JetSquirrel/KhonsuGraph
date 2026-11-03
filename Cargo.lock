@@ -4441,7 +4441,6 @@ dependencies = [
  "clap",
  "khonsu-core",
  "khonsu-dash",
- "serde",
  "serde_json",
 ]
 

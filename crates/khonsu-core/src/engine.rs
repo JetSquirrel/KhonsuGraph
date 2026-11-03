@@ -396,7 +396,7 @@ impl Graph {
     /// Runs a parameterized Cypher statement and returns raw rows.
     pub(crate) fn raw_cypher(&mut self, text: &str, params: &BTreeMap<String, Value>) -> Result<Vec<Vec<Value>>, QueryError> {
         let output = self.db.query_with_params(text, params)?;
-        Ok(output.value_rows().map(|row| row.iter().map(|v| v.clone()).collect()).collect())
+        Ok(output.value_rows().map(|row| row.to_vec()).collect())
     }
 
     /// Runs a parameterized Cypher statement and returns rows keyed by column
@@ -416,7 +416,7 @@ impl Graph {
         let columns: Vec<String> = output.schema().columns().iter().map(|c| c.to_string()).collect();
         Ok(output
             .value_rows()
-            .map(|row| columns.iter().cloned().zip(row.iter().map(|v| v.clone())).collect())
+            .map(|row| columns.iter().cloned().zip(row.iter().cloned()).collect())
             .collect())
     }
 
@@ -492,7 +492,7 @@ impl Graph {
         let mut results = Vec::with_capacity(statements.len());
         for (text, params) in statements {
             let output = tx.query_with_params(text, params)?;
-            results.push(output.value_rows().map(|row| row.iter().map(|v| v.clone()).collect()).collect());
+            results.push(output.value_rows().map(|row| row.to_vec()).collect());
         }
         tx.commit()?;
         Ok(results)

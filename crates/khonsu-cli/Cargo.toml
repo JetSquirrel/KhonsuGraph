@@ -12,6 +12,5 @@ name = "khonsu_cli"
 [dependencies]
 khonsu-core.workspace = true
 khonsu-dash.workspace = true
-serde.workspace = true
 serde_json.workspace = true
 clap.workspace = true

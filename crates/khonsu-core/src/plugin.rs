@@ -98,7 +98,7 @@ pub enum PluginError {
     #[error("sync cancelled")]
     Cancelled,
     #[error("plugin {plugin} needs approval before it runs: {reason}")]
-    NotApproved { plugin: String, permissions: Permissions, reason: String },
+    NotApproved { plugin: String, permissions: Box<Permissions>, reason: String },
     #[error("{0}")]
     Query(#[from] QueryError),
     #[error("{0}")]
@@ -889,7 +889,7 @@ pub(crate) fn require_approved(plugin: &PluginInfo) -> Result<(), PluginError> {
             };
             Err(PluginError::NotApproved {
                 plugin: plugin.id().to_string(),
-                permissions: plugin.manifest.permissions.clone(),
+                permissions: Box::new(plugin.manifest.permissions.clone()),
                 reason: reason.into(),
             })
         }

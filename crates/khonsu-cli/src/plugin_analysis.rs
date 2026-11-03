@@ -30,7 +30,7 @@ pub struct AnalyzeArgs {
 
 pub fn analyze(args: AnalyzeArgs) -> Result<Value, CliError> {
     let offered = plugin_analysis::find(&args.plugin, &args.analysis)?;
-    // `potential-exposure` reads as well as `potential_exposure` on a command line.
+    // `dead-end` reads as well as `dead_end` on a command line.
     let verdict = args.verdict.map(|verdict| verdict.replace('-', "_"));
     if let Some(wanted) = &verdict {
         if !offered.info.verdicts.iter().any(|verdict| verdict.id == *wanted) {

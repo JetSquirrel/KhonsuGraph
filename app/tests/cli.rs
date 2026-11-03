@@ -119,7 +119,6 @@ fn build_csv_plugin() {
 }
 
 #[test]
-#[ignore = "CSV plugin tests are skipped for now; run with --ignored"]
 fn csv_source_add_and_sync() {
     build_csv_plugin();
     let env = Env::new();
