@@ -140,6 +140,7 @@ fn describe() -> Describe {
         labels: Vec::new(),
         relationship_types: Vec::new(),
         supports_incremental: false,
+        analyses: Vec::new(),
     }
 }
 

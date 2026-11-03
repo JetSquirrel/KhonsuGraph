@@ -267,7 +267,7 @@ fn investigation(env: &Env) -> Value {
         let graph = other.path("graph");
         other.add_source(&graph, &exposure_fixture());
         other.ok(&["plugin", "sync", "--source", "shop"]);
-        other.ok(&["exposure", "-d", text(&graph)])
+        other.ok(&["plugin", "analyze", "aws", "exposure", "-d", text(&graph)])
     };
 
     normalize(&json!({
@@ -302,7 +302,7 @@ fn investigation(env: &Env) -> Value {
         },
         "exposure": {
             // Saved responses with no route tables, as a graph from before they were read.
-            "shop_fixture": exposure_brief(&env.ok(&["exposure", "-d", text(&db)])),
+            "shop_fixture": exposure_brief(&env.ok(&["plugin", "analyze", "aws", "exposure", "-d", text(&db)])),
             "exposure_fixture": exposure_report,
         },
     }))
@@ -527,10 +527,10 @@ fn the_exposure_fixture_has_a_positive_a_negative_and_an_undecided_case() {
     let db = env.path("graph");
     env.add_source(&db, &exposure_fixture());
     env.ok(&["plugin", "sync", "--source", "shop"]);
-    let report = env.ok(&["exposure", "-d", text(&db)]);
+    let report = env.ok(&["plugin", "analyze", "aws", "exposure", "-d", text(&db)]);
     assert_eq!(report["complete"], true);
     assert_eq!(report["truncated"], 0);
-    assert_eq!(report["instances"], 5);
+    assert_eq!(report["subjects"], 5);
     assert!(report["claim"].as_str().unwrap().contains("does not show that anything is reachable"));
 
     // Positive: every fact the rule asks for is in the configuration.
@@ -543,7 +543,7 @@ fn the_exposure_fixture_has_a_positive_a_negative_and_an_undecided_case() {
     // Exact fields, with the name AWS gives them.
     let address = web["conditions"].as_array().unwrap().iter().find(|condition| condition["id"] == "public-address").unwrap();
     assert_eq!(address["fields"][0]["field"], "public_ip");
-    assert_eq!(address["fields"][0]["aws_field"], "ec2 describe-instances: PublicIpAddress");
+    assert_eq!(address["fields"][0]["source_field"], "ec2 describe-instances: PublicIpAddress");
     assert_eq!(address["fields"][0]["value"], json!({"status": "known", "value": "198.51.100.10"}));
 
     let app = finding(&report, BALANCER, &instance("i-app1"));
@@ -574,13 +574,13 @@ fn the_exposure_fixture_has_a_positive_a_negative_and_an_undecided_case() {
     assert_eq!(report["summary"], json!({"potential_exposure": 3, "insufficient_data": 1, "not_indicated": 3}));
 
     // Filters narrow what is printed, not what is counted.
-    let only = env.ok(&["exposure", "-d", text(&db), "--verdict", "insufficient-data"]);
+    let only = env.ok(&["plugin", "analyze", "aws", "exposure", "-d", text(&db), "--verdict", "insufficient-data"]);
     assert_eq!(exposure_brief(&only), json!([[DIRECT, format!("node:{}", instance("i-legacy1")), "insufficient_data"]]));
-    let one = env.ok(&["exposure", "-d", text(&db), "--resource", &instance("i-web1")]);
+    let one = env.ok(&["plugin", "analyze", "aws", "exposure", "-d", text(&db), "--resource", &instance("i-web1")]);
     assert_eq!(one["findings"].as_array().unwrap().len(), 1);
-    let (code, out) = env.khonsu(&["exposure", "-d", text(&db), "--resource", "shop/no-such-instance"]);
+    let (code, out) = env.khonsu(&["plugin", "analyze", "aws", "exposure", "-d", text(&db), "--resource", "shop/no-such-instance"]);
     assert_eq!((code, out["error"]["kind"].as_str()), (1, Some("not_found")), "a mistyped ID is not an empty answer: {out}");
-    let cut = env.ok(&["exposure", "-d", text(&db), "--max-findings", "2"]);
+    let cut = env.ok(&["plugin", "analyze", "aws", "exposure", "-d", text(&db), "--max-findings", "2"]);
     assert_eq!((cut["findings"].as_array().unwrap().len(), cut["truncated"].as_i64()), (2, Some(5)));
     assert_eq!(cut["summary"], report["summary"]);
 }
@@ -593,7 +593,7 @@ fn a_finding_opens_in_path_explorer_and_its_records_resolve_as_evidence() {
     let db = env.path("graph");
     env.add_source(&db, &exposure_fixture());
     env.ok(&["plugin", "sync", "--source", "shop"]);
-    let report = env.ok(&["exposure", "-d", text(&db)]);
+    let report = env.ok(&["plugin", "analyze", "aws", "exposure", "-d", text(&db)]);
 
     let mut walked = 0;
     for finding in report["findings"].as_array().unwrap() {
@@ -642,18 +642,18 @@ fn a_missing_response_makes_a_finding_undecided_rather_than_clearing_it() {
     let db = env.path("graph");
     env.add_source(&db, &saved);
     env.ok(&["plugin", "sync", "--source", "shop"]);
-    assert_eq!(finding(&env.ok(&["exposure", "-d", text(&db)]), DIRECT, &instance("i-web1"))["verdict"], "potential_exposure");
+    assert_eq!(finding(&env.ok(&["plugin", "analyze", "aws", "exposure", "-d", text(&db)]), DIRECT, &instance("i-web1"))["verdict"], "potential_exposure");
 
     std::fs::remove_file(saved.join("us-east-1/ec2-describe-route-tables.json")).unwrap();
     env.ok(&["plugin", "sync", "--source", "shop"]);
-    let report = env.ok(&["exposure", "-d", text(&db)]);
+    let report = env.ok(&["plugin", "analyze", "aws", "exposure", "-d", text(&db)]);
     let web = finding(&report, DIRECT, &instance("i-web1"));
     assert_eq!(web["verdict"], "insufficient_data", "{web}");
     assert_eq!(condition_status(web, "internet-route"), "unknown");
 
     std::fs::remove_file(saved.join("us-east-1/ec2-describe-security-groups.json")).unwrap();
     env.ok(&["plugin", "sync", "--source", "shop"]);
-    let report = env.ok(&["exposure", "-d", text(&db)]);
+    let report = env.ok(&["plugin", "analyze", "aws", "exposure", "-d", text(&db)]);
     let web = finding(&report, DIRECT, &instance("i-web1"));
     assert_eq!(web["verdict"], "insufficient_data", "{web}");
     assert_eq!(condition_status(web, "open-inbound-rule"), "unknown");
@@ -670,7 +670,7 @@ fn a_candidate_path_is_not_a_finding_until_the_rules_conditions_hold() {
     let walk = env.ok(&["explore", "-d", text(&db), "--from", INTERNET, "--to", WEB_1, "--type", "ROUTES_TO,FORWARDS_TO"]);
     assert_eq!(walk["path"]["found"], true, "{walk}");
 
-    let report = env.ok(&["exposure", "-d", text(&db)]);
+    let report = env.ok(&["plugin", "analyze", "aws", "exposure", "-d", text(&db)]);
     let balancer = finding(&report, BALANCER, WEB_1);
     assert_eq!(condition_status(balancer, "target-allows-balancer"), "not_met", "{balancer}");
     assert_eq!(balancer["verdict"], "not_indicated");
@@ -685,7 +685,7 @@ fn exposure_is_the_same_across_syncs() {
         let db = env.path("graph");
         env.add_source(&db, &exposure_fixture());
         env.ok(&["plugin", "sync", "--source", "shop"]);
-        normalize(&env.ok(&["exposure", "-d", text(&db)]))
+        normalize(&env.ok(&["plugin", "analyze", "aws", "exposure", "-d", text(&db)]))
     };
     assert_eq!(run(), run());
 }
@@ -1046,7 +1046,7 @@ fn graphs_written_by_earlier_hawdb_versions_keep_their_meaning() {
         let name = zip_path.file_name().unwrap().to_string_lossy().into_owned();
         assert_same(&format!("{name}: answers"), &normalize(&env.answers(&db)), &expected["answers"]);
         assert_same(&format!("{name}: schema"), &normalize(&env.ok(&["schema", "-d", text(&db)])), &expected["schema"]);
-        assert_same(&format!("{name}: exposure"), &normalize(&exposure_brief(&env.ok(&["exposure", "-d", text(&db)]))), &expected["exposure"]["shop_fixture"]);
+        assert_same(&format!("{name}: exposure"), &normalize(&exposure_brief(&env.ok(&["plugin", "analyze", "aws", "exposure", "-d", text(&db)]))), &expected["exposure"]["shop_fixture"]);
         // An upgrade must not make every saved investigation read as changed.
         let saved = env.ok(&investigation_save(&db, &env.path("saved.investigation")));
         assert_same(&format!("{name}: fingerprint"), &normalize(&saved["investigation"]["fingerprint"]), &expected["investigation"]["fingerprint"]);
@@ -1054,4 +1054,166 @@ fn graphs_written_by_earlier_hawdb_versions_keep_their_meaning() {
         env.ok(&["query", "-d", text(&db), "--write", "--cypher", "CREATE (:Note {name: 'after upgrade'})"]);
         assert_eq!(env.count(&db, "MATCH (n) RETURN count(n) AS c"), 17, "{name}");
     }
+}
+
+/// Builds the example analyzer, and installs it as a plugin. Approved unless asked otherwise.
+fn install_analyzer(env: &Env, approve: bool) {
+    static BUILD: Once = Once::new();
+    BUILD.call_once(|| {
+        let status = Command::new(env!("CARGO"))
+            .args(["build", "-q", "--locked", "-p", "khonsu-plugin-protocol", "--example", "analyzer"])
+            .status()
+            .unwrap();
+        assert!(status.success());
+    });
+    let exe_name = format!("analyzer{}", std::env::consts::EXE_SUFFIX);
+    let built = Path::new(env!("CARGO_BIN_EXE_khonsugraph")).parent().unwrap().join("examples").join(&exe_name);
+    let dir = env.path("analyzer-plugin");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::copy(built, dir.join(&exe_name)).unwrap();
+    let manifest = json!({"id": "analyzer", "name": "Analyzer", "version": "1.0.0", "protocol": 1, "entry": ["analyzer"]});
+    std::fs::write(dir.join("khonsu-plugin.json"), manifest.to_string()).unwrap();
+    let mut args = vec!["plugin", "install", text(&dir)];
+    if approve {
+        args.push("--yes");
+    }
+    env.ok(&args);
+}
+
+/// `a -> b -> c`, with nothing to do with any provider.
+fn graph_of_things(env: &Env) -> PathBuf {
+    let db = env.path("things");
+    env.ok(&["init", text(&db)]);
+    for name in ["a", "b", "c"] {
+        env.ok(&["query", "-d", text(&db), "--write", "--cypher", &format!("CREATE (:Thing {{khonsu_id: '{name}', name: '{name}'}})")]);
+    }
+    for (from, to) in [("a", "b"), ("b", "c")] {
+        let link = format!("MATCH (x:Thing {{khonsu_id: '{from}'}}), (y:Thing {{khonsu_id: '{to}'}}) CREATE (x)-[:LINKS {{khonsu_id: '{from}{to}'}}]->(y)");
+        env.ok(&["query", "-d", text(&db), "--write", "--cypher", &link]);
+    }
+    db
+}
+
+/// The shared interface works with no AWS anywhere in it.
+#[test]
+fn an_analysis_from_a_plugin_that_is_nothing_to_do_with_aws_works_the_same_way() {
+    let env = Env::new();
+    install_analyzer(&env, true);
+    let db = graph_of_things(&env);
+
+    let described = env.ok(&["plugin", "describe", "analyzer"]);
+    assert_eq!(described["analyses"][0]["id"], "dead-ends");
+
+    let report = env.ok(&["plugin", "analyze", "analyzer", "dead-ends", "-d", text(&db)]);
+    assert_eq!(report["plugin"], "analyzer");
+    assert_eq!(report["subjects"], 3);
+    assert_eq!(report["complete"], true);
+    assert_eq!(report["summary"], json!({"dead_end": 1, "continues": 2}));
+    assert_eq!(report["truncated"], 0);
+
+    let dead_end = &report["findings"][0];
+    assert_eq!((dead_end["resource"].as_str(), dead_end["verdict"].as_str()), (Some("node:c"), Some("dead_end")), "{report}");
+    assert_eq!(dead_end["resource_name"], "c");
+    assert_eq!(dead_end["conditions"][0]["fields"][0]["value"], json!({"status": "known", "value": "c"}), "read from the graph");
+
+    // Its path is rebuilt from references, and it leads into the other tools.
+    assert_eq!(dead_end["path"]["hops"], json!(["b -[LINKS]-> c"]));
+    assert_eq!(dead_end["path_refs"], json!([{"edge": "rel:bc", "along": true}]));
+    let walk = &dead_end["walk"];
+    let out = env.ok(&[
+        "explore", "-d", text(&db),
+        "--from", walk["from"].as_str().unwrap(),
+        "--to", walk["to"].as_str().unwrap(),
+        "--direction", walk["direction"].as_str().unwrap(),
+        "--type", "LINKS",
+        "--max-hops", "1",
+    ]);
+    assert_eq!(out["path"]["found"], true, "{out}");
+    for id in dead_end["contributing"].as_array().unwrap() {
+        let id = id.as_str().unwrap();
+        let (flag, stable) = if let Some(stable) = id.strip_prefix("node:") { ("--node", stable) } else { ("--rel", id.strip_prefix("rel:").unwrap()) };
+        assert_eq!(env.ok(&["evidence", "-d", text(&db), flag, stable])["evidence"][0]["evidence_id"], id);
+    }
+
+    // Filters are in the analysis's own words.
+    let narrow = env.ok(&["plugin", "analyze", "analyzer", "dead-ends", "-d", text(&db), "--verdict", "dead-end"]);
+    assert_eq!(narrow["findings"].as_array().unwrap().len(), 1);
+    assert_eq!(narrow["summary"], report["summary"]);
+    let (code, out) = env.khonsu(&["plugin", "analyze", "analyzer", "dead-ends", "-d", text(&db), "--verdict", "reachable"]);
+    assert_eq!((code, out["error"]["kind"].as_str()), (2, Some("usage")), "{out}");
+}
+
+#[test]
+fn a_result_that_misbehaves_is_refused_and_says_why() {
+    let env = Env::new();
+    install_analyzer(&env, true);
+    let db = graph_of_things(&env);
+    for (analysis, expected) in [("forged", "node:forged"), ("unfinished", "without finishing"), ("fails", "could not run")] {
+        let (code, out) = env.khonsu(&["plugin", "analyze", "analyzer", analysis, "-d", text(&db)]);
+        assert_eq!((code, out["error"]["kind"].as_str()), (1, Some("plugin")), "{analysis}: {out}");
+        let message = out["error"]["message"].as_str().unwrap();
+        assert!(message.contains(expected), "{analysis}: {message}");
+    }
+    let (code, out) = env.khonsu(&["plugin", "analyze", "analyzer", "no-such", "-d", text(&db)]);
+    assert_eq!(code, 1, "{out}");
+    assert!(out["error"]["message"].as_str().unwrap().contains("offers dead-ends"), "{out}");
+}
+
+#[test]
+fn an_analysis_needs_the_same_approval_as_a_sync() {
+    let env = Env::new();
+    install_analyzer(&env, false);
+    let db = graph_of_things(&env);
+    let (code, out) = env.khonsu(&["plugin", "analyze", "analyzer", "dead-ends", "-d", text(&db)]);
+    assert_eq!(code, 1, "{out}");
+    assert!(out["error"]["message"].as_str().unwrap().contains("approval"), "{out}");
+}
+
+/// A data-source plugin with no analyses goes on working, and says plainly that
+/// it has none.
+#[test]
+fn a_plugin_with_no_analyses_still_syncs_and_says_it_has_none() {
+    let env = Env::new();
+    let db = env.path("graph");
+    let csv = env.path("hosts.csv");
+    std::fs::write(&csv, "id,name
+1,web
+2,db
+").unwrap();
+    env.ok(&["init", text(&db)]);
+    env.ok(&["source", "add", "-d", text(&db), "--plugin", "csv", "--name", "hosts", "-c", &format!("node_file={}", text(&csv)), "-c", "node_label=Host"]);
+    env.ok(&["plugin", "sync", "--source", "hosts"]);
+    assert_eq!(env.query(&db, "MATCH (h:Host) RETURN count(h) AS hosts")["rows"][0][0], 2);
+
+    assert!(env.ok(&["plugin", "describe", "csv"]).get("analyses").is_none());
+    let (code, out) = env.khonsu(&["plugin", "analyze", "csv", "anything", "-d", text(&db)]);
+    assert_eq!(code, 1, "{out}");
+    assert!(out["error"]["message"].as_str().unwrap().contains("offers no analyses"), "{out}");
+}
+
+/// The window and the command go through the same two steps, so they must agree.
+#[test]
+fn the_command_and_the_library_the_window_uses_give_the_same_findings() {
+    let env = Env::new();
+    let db = env.path("graph");
+    env.add_source(&db, &exposure_fixture());
+    env.ok(&["plugin", "sync", "--source", "shop"]);
+    let mut from_command = env.ok(&["plugin", "analyze", "aws", "exposure", "-d", text(&db)]);
+    from_command.as_object_mut().unwrap().remove("truncated");
+
+    let sources: Vec<settings::Source> = serde_json::from_value(env.ok(&["source", "list"])["sources"].clone()).unwrap();
+    let offered = khonsu_core::plugin_analysis::find("aws", "exposure").unwrap();
+    let mut graph = Graph::open(&db, AccessMode::ReadOnly, "test").unwrap();
+    let input = graph.read_analysis_input(&offered.info).unwrap();
+    drop(graph);
+    let cancel = AtomicBool::new(false);
+    let report = khonsu_core::plugin_analysis::run(&offered, &input, &sources, &cancel, |_| {}).unwrap();
+    assert_eq!(normalize(&serde_json::to_value(&report).unwrap()), normalize(&from_command));
+
+    // The window draws a finding's path from what crossed the boundary.
+    let web = report.findings.iter().find(|finding| finding.rule_id == DIRECT && finding.resource == format!("node:{}", instance("i-web1"))).unwrap();
+    let walk = web.exploration().unwrap();
+    assert_eq!(walk.hops.len(), 2);
+    assert_eq!(walk.graph.nodes.len(), 3);
+    assert_eq!(walk.explain(&walk.hops[0]), "Internet -[ALLOWS]-> web");
 }

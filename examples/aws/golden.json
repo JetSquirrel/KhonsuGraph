@@ -2032,8 +2032,27 @@
       ]
     ],
     "exposure_fixture": {
+      "analysis": "exposure",
+      "title": "Exposure",
       "claim": "Potential exposure worked out from configuration. No traffic was sent, so this does not show that anything is reachable, and a resource with no finding is not shown to be safe.",
-      "order": "By verdict (potential_exposure, insufficient_data, not_indicated), then rule ID, then resource ID. There is no risk score.",
+      "order": "By verdict (potential_exposure, insufficient_data, not_indicated), then rule ID, then resource ID.",
+      "verdicts": [
+        {
+          "id": "potential_exposure",
+          "title": "Potential exposure",
+          "tone": "attention"
+        },
+        {
+          "id": "insufficient_data",
+          "title": "Insufficient data",
+          "tone": "undecided"
+        },
+        {
+          "id": "not_indicated",
+          "title": "Not indicated by this rule",
+          "tone": "quiet"
+        }
+      ],
       "rules": [
         {
           "rule_id": "aws.exposure.direct-instance",
@@ -2067,11 +2086,11 @@
           ]
         }
       ],
-      "instances": 5,
+      "subjects": 5,
       "summary": {
-        "potential_exposure": 3,
         "insufficient_data": 1,
-        "not_indicated": 3
+        "not_indicated": 3,
+        "potential_exposure": 3
       },
       "complete": true,
       "findings": [
@@ -2091,7 +2110,7 @@
                 {
                   "record": "node:shop/123456789012:us-east-1:i-web1",
                   "field": "state",
-                  "aws_field": "ec2 describe-instances: State.Name",
+                  "source_field": "ec2 describe-instances: State.Name",
                   "value": {
                     "status": "known",
                     "value": "running"
@@ -2108,7 +2127,7 @@
                 {
                   "record": "node:shop/123456789012:us-east-1:i-web1",
                   "field": "public_ip",
-                  "aws_field": "ec2 describe-instances: PublicIpAddress",
+                  "source_field": "ec2 describe-instances: PublicIpAddress",
                   "value": {
                     "status": "known",
                     "value": "198.51.100.10"
@@ -2117,7 +2136,7 @@
                 {
                   "record": "node:shop/123456789012:us-east-1:i-web1",
                   "field": "ipv6_address",
-                  "aws_field": "ec2 describe-instances: Ipv6Address",
+                  "source_field": "ec2 describe-instances: Ipv6Address",
                   "value": {
                     "status": "unknown"
                   }
@@ -2132,8 +2151,8 @@
               "fields": [
                 {
                   "record": "rel:shop/123456789012:us-east-1:i-web1|PROTECTED_BY|123456789012:us-east-1:sg-web",
-                  "field": "PROTECTED_BY",
-                  "aws_field": "ec2 describe-instances: SecurityGroups[].GroupId",
+                  "field": "@to",
+                  "source_field": "ec2 describe-instances: SecurityGroups[].GroupId",
                   "value": {
                     "status": "known",
                     "value": "node:shop/123456789012:us-east-1:sg-web"
@@ -2142,7 +2161,7 @@
                 {
                   "record": "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-web|\"\\\"tcp\\\":\\\"443\\\"\"",
                   "field": "protocol",
-                  "aws_field": "ec2 describe-security-groups: IpPermissions[].IpProtocol",
+                  "source_field": "ec2 describe-security-groups: IpPermissions[].IpProtocol",
                   "value": {
                     "status": "known",
                     "value": "tcp"
@@ -2151,7 +2170,7 @@
                 {
                   "record": "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-web|\"\\\"tcp\\\":\\\"443\\\"\"",
                   "field": "ports",
-                  "aws_field": "ec2 describe-security-groups: IpPermissions[].FromPort, ToPort",
+                  "source_field": "ec2 describe-security-groups: IpPermissions[].FromPort, ToPort",
                   "value": {
                     "status": "known",
                     "value": "443"
@@ -2168,7 +2187,7 @@
                 {
                   "record": "node:shop/123456789012:us-east-1:rtb-public",
                   "field": "ipv4_default_target",
-                  "aws_field": "ec2 describe-route-tables: Routes[DestinationCidrBlock=0.0.0.0/0]",
+                  "source_field": "ec2 describe-route-tables: Routes[DestinationCidrBlock=0.0.0.0/0]",
                   "value": {
                     "status": "known",
                     "value": "igw-shop"
@@ -2177,7 +2196,7 @@
                 {
                   "record": "node:shop/123456789012:us-east-1:rtb-public",
                   "field": "ipv6_default_target",
-                  "aws_field": "ec2 describe-route-tables: Routes[DestinationIpv6CidrBlock=::/0]",
+                  "source_field": "ec2 describe-route-tables: Routes[DestinationIpv6CidrBlock=::/0]",
                   "value": {
                     "status": "unknown"
                   }
@@ -2185,7 +2204,7 @@
                 {
                   "record": "rel:shop/123456789012:us-east-1:rtb-public|ROUTES_VIA|123456789012:us-east-1:igw-shop|\"0.0.0.0/0\"",
                   "field": "destination",
-                  "aws_field": "ec2 describe-route-tables: Routes[].DestinationCidrBlock",
+                  "source_field": "ec2 describe-route-tables: Routes[].DestinationCidrBlock",
                   "value": {
                     "status": "known",
                     "value": "0.0.0.0/0"
@@ -2194,7 +2213,7 @@
                 {
                   "record": "rel:shop/123456789012:us-east-1:rtb-public|ROUTES_VIA|123456789012:us-east-1:igw-shop|\"0.0.0.0/0\"",
                   "field": "state",
-                  "aws_field": "ec2 describe-route-tables: Routes[].State",
+                  "source_field": "ec2 describe-route-tables: Routes[].State",
                   "value": {
                     "status": "known",
                     "value": "active"
@@ -2375,6 +2394,16 @@
               }
             ]
           },
+          "path_refs": [
+            {
+              "edge": "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-web|\"\\\"tcp\\\":\\\"443\\\"\"",
+              "along": true
+            },
+            {
+              "edge": "rel:shop/123456789012:us-east-1:i-web1|PROTECTED_BY|123456789012:us-east-1:sg-web",
+              "along": false
+            }
+          ],
           "walk": {
             "from": "shop/cidr:internet",
             "to": "shop/123456789012:us-east-1:i-web1",
@@ -2641,7 +2670,7 @@
                 {
                   "record": "node:shop/123456789012:us-east-1:i-app1",
                   "field": "state",
-                  "aws_field": "ec2 describe-instances: State.Name",
+                  "source_field": "ec2 describe-instances: State.Name",
                   "value": {
                     "status": "known",
                     "value": "running"
@@ -2658,7 +2687,7 @@
                 {
                   "record": "node:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
                   "field": "scheme",
-                  "aws_field": "elbv2 describe-load-balancers: Scheme",
+                  "source_field": "elbv2 describe-load-balancers: Scheme",
                   "value": {
                     "status": "known",
                     "value": "internet-facing"
@@ -2674,8 +2703,8 @@
               "fields": [
                 {
                   "record": "rel:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc|PROTECTED_BY|123456789012:us-east-1:sg-lb",
-                  "field": "PROTECTED_BY",
-                  "aws_field": "elbv2 describe-load-balancers: SecurityGroups[]",
+                  "field": "@to",
+                  "source_field": "elbv2 describe-load-balancers: SecurityGroups[]",
                   "value": {
                     "status": "known",
                     "value": "node:shop/123456789012:us-east-1:sg-lb"
@@ -2684,7 +2713,7 @@
                 {
                   "record": "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-lb|\"\\\"tcp\\\":\\\"443\\\"\"",
                   "field": "protocol",
-                  "aws_field": "ec2 describe-security-groups: IpPermissions[].IpProtocol",
+                  "source_field": "ec2 describe-security-groups: IpPermissions[].IpProtocol",
                   "value": {
                     "status": "known",
                     "value": "tcp"
@@ -2693,7 +2722,7 @@
                 {
                   "record": "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-lb|\"\\\"tcp\\\":\\\"443\\\"\"",
                   "field": "ports",
-                  "aws_field": "ec2 describe-security-groups: IpPermissions[].FromPort, ToPort",
+                  "source_field": "ec2 describe-security-groups: IpPermissions[].FromPort, ToPort",
                   "value": {
                     "status": "known",
                     "value": "443"
@@ -2710,7 +2739,7 @@
                 {
                   "record": "rel:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/app/def|ROUTES_TO|123456789012:us-east-1:i-app1",
                   "field": "health",
-                  "aws_field": "elbv2 describe-target-health: TargetHealth.State",
+                  "source_field": "elbv2 describe-target-health: TargetHealth.State",
                   "value": {
                     "status": "known",
                     "value": "healthy"
@@ -2727,16 +2756,43 @@
                 {
                   "record": "node:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/app/def",
                   "field": "port",
-                  "aws_field": "elbv2 describe-target-groups: Port",
+                  "source_field": "elbv2 describe-target-groups: Port",
                   "value": {
                     "status": "known",
                     "value": 8080
                   }
                 },
                 {
+                  "record": "node:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/app/def",
+                  "field": "protocol",
+                  "source_field": "elbv2 describe-target-groups: Protocol",
+                  "value": {
+                    "status": "known",
+                    "value": "HTTP"
+                  }
+                },
+                {
+                  "record": "rel:shop/123456789012:us-east-1:i-app1|PROTECTED_BY|123456789012:us-east-1:sg-app",
+                  "field": "@to",
+                  "source_field": "ec2 describe-instances: SecurityGroups[].GroupId",
+                  "value": {
+                    "status": "known",
+                    "value": "node:shop/123456789012:us-east-1:sg-app"
+                  }
+                },
+                {
+                  "record": "rel:shop/123456789012:us-east-1:sg-lb|ALLOWS|123456789012:us-east-1:sg-app|\"\\\"tcp\\\":\\\"8080\\\"\"",
+                  "field": "protocol",
+                  "source_field": "ec2 describe-security-groups: IpPermissions[].IpProtocol",
+                  "value": {
+                    "status": "known",
+                    "value": "tcp"
+                  }
+                },
+                {
                   "record": "rel:shop/123456789012:us-east-1:sg-lb|ALLOWS|123456789012:us-east-1:sg-app|\"\\\"tcp\\\":\\\"8080\\\"\"",
                   "field": "ports",
-                  "aws_field": "ec2 describe-security-groups: IpPermissions[].FromPort, ToPort",
+                  "source_field": "ec2 describe-security-groups: IpPermissions[].FromPort, ToPort",
                   "value": {
                     "status": "known",
                     "value": "8080"
@@ -2973,6 +3029,20 @@
               }
             ]
           },
+          "path_refs": [
+            {
+              "edge": "rel:shop/cidr:internet|ROUTES_TO|arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
+              "along": true
+            },
+            {
+              "edge": "rel:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc|FORWARDS_TO|arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/app/def",
+              "along": true
+            },
+            {
+              "edge": "rel:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/app/def|ROUTES_TO|123456789012:us-east-1:i-app1",
+              "along": true
+            }
+          ],
           "walk": {
             "from": "shop/cidr:internet",
             "to": "shop/123456789012:us-east-1:i-app1",
@@ -2991,6 +3061,7 @@
             "node:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/app/def",
             "rel:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/app/def|ROUTES_TO|123456789012:us-east-1:i-app1",
             "node:shop/123456789012:us-east-1:i-app1",
+            "rel:shop/123456789012:us-east-1:i-app1|PROTECTED_BY|123456789012:us-east-1:sg-app",
             "rel:shop/123456789012:us-east-1:sg-lb|ALLOWS|123456789012:us-east-1:sg-app|\"\\\"tcp\\\":\\\"8080\\\"\"",
             "rel:shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc|PROTECTED_BY|123456789012:us-east-1:sg-lb",
             "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-lb|\"\\\"tcp\\\":\\\"443\\\"\""
@@ -3190,6 +3261,35 @@
               }
             },
             {
+              "evidence_id": "rel:shop/123456789012:us-east-1:i-app1|PROTECTED_BY|123456789012:us-east-1:sg-app",
+              "stable": true,
+              "kind": "relationship",
+              "internal_id": 1,
+              "types": [
+                "PROTECTED_BY"
+              ],
+              "from": {
+                "status": "known",
+                "value": "node:shop/123456789012:us-east-1:i-app1"
+              },
+              "to": {
+                "status": "known",
+                "value": "node:shop/123456789012:us-east-1:sg-app"
+              },
+              "source": {
+                "status": "known",
+                "value": "shop"
+              },
+              "source_snapshot": {
+                "status": "unknown"
+              },
+              "assertion": "explicit",
+              "rule_id": {
+                "status": "unknown"
+              },
+              "properties": {}
+            },
+            {
               "evidence_id": "rel:shop/123456789012:us-east-1:sg-lb|ALLOWS|123456789012:us-east-1:sg-app|\"\\\"tcp\\\":\\\"8080\\\"\"",
               "stable": true,
               "kind": "relationship",
@@ -3302,7 +3402,7 @@
                 {
                   "record": "node:shop/123456789012:us-east-1:i-db1",
                   "field": "state",
-                  "aws_field": "ec2 describe-instances: State.Name",
+                  "source_field": "ec2 describe-instances: State.Name",
                   "value": {
                     "status": "known",
                     "value": "running"
@@ -3326,7 +3426,7 @@
                 {
                   "record": "rel:shop/123456789012:us-east-1:sg-web|ALLOWS|123456789012:us-east-1:sg-db|\"\\\"tcp\\\":\\\"5432\\\"\"",
                   "field": "protocol",
-                  "aws_field": "ec2 describe-security-groups: IpPermissions[].IpProtocol",
+                  "source_field": "ec2 describe-security-groups: IpPermissions[].IpProtocol",
                   "value": {
                     "status": "known",
                     "value": "tcp"
@@ -3335,7 +3435,7 @@
                 {
                   "record": "rel:shop/123456789012:us-east-1:sg-web|ALLOWS|123456789012:us-east-1:sg-db|\"\\\"tcp\\\":\\\"5432\\\"\"",
                   "field": "ports",
-                  "aws_field": "ec2 describe-security-groups: IpPermissions[].FromPort, ToPort",
+                  "source_field": "ec2 describe-security-groups: IpPermissions[].FromPort, ToPort",
                   "value": {
                     "status": "known",
                     "value": "5432"
@@ -3639,6 +3739,28 @@
               }
             ]
           },
+          "path_refs": [
+            {
+              "edge": "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-web|\"\\\"tcp\\\":\\\"443\\\"\"",
+              "along": true
+            },
+            {
+              "edge": "rel:shop/123456789012:us-east-1:i-web1|PROTECTED_BY|123456789012:us-east-1:sg-web",
+              "along": false
+            },
+            {
+              "edge": "rel:shop/123456789012:us-east-1:i-web1|PROTECTED_BY|123456789012:us-east-1:sg-web",
+              "along": true
+            },
+            {
+              "edge": "rel:shop/123456789012:us-east-1:sg-web|ALLOWS|123456789012:us-east-1:sg-db|\"\\\"tcp\\\":\\\"5432\\\"\"",
+              "along": true
+            },
+            {
+              "edge": "rel:shop/123456789012:us-east-1:i-db1|PROTECTED_BY|123456789012:us-east-1:sg-db",
+              "along": false
+            }
+          ],
           "walk": {
             "from": "shop/cidr:internet",
             "to": "shop/123456789012:us-east-1:i-db1",
@@ -3937,7 +4059,7 @@
                 {
                   "record": "node:shop/123456789012:us-east-1:i-legacy1",
                   "field": "state",
-                  "aws_field": "ec2 describe-instances: State.Name",
+                  "source_field": "ec2 describe-instances: State.Name",
                   "value": {
                     "status": "known",
                     "value": "running"
@@ -3954,7 +4076,7 @@
                 {
                   "record": "node:shop/123456789012:us-east-1:i-legacy1",
                   "field": "public_ip",
-                  "aws_field": "ec2 describe-instances: PublicIpAddress",
+                  "source_field": "ec2 describe-instances: PublicIpAddress",
                   "value": {
                     "status": "known",
                     "value": "198.51.100.77"
@@ -3963,7 +4085,7 @@
                 {
                   "record": "node:shop/123456789012:us-east-1:i-legacy1",
                   "field": "ipv6_address",
-                  "aws_field": "ec2 describe-instances: Ipv6Address",
+                  "source_field": "ec2 describe-instances: Ipv6Address",
                   "value": {
                     "status": "unknown"
                   }
@@ -3978,8 +4100,8 @@
               "fields": [
                 {
                   "record": "rel:shop/123456789012:us-east-1:i-legacy1|PROTECTED_BY|123456789012:us-east-1:sg-legacy",
-                  "field": "PROTECTED_BY",
-                  "aws_field": "ec2 describe-instances: SecurityGroups[].GroupId",
+                  "field": "@to",
+                  "source_field": "ec2 describe-instances: SecurityGroups[].GroupId",
                   "value": {
                     "status": "known",
                     "value": "node:shop/123456789012:us-east-1:sg-legacy"
@@ -3988,7 +4110,7 @@
                 {
                   "record": "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-legacy|\"\\\"tcp\\\":\\\"80\\\"\"",
                   "field": "protocol",
-                  "aws_field": "ec2 describe-security-groups: IpPermissions[].IpProtocol",
+                  "source_field": "ec2 describe-security-groups: IpPermissions[].IpProtocol",
                   "value": {
                     "status": "known",
                     "value": "tcp"
@@ -3997,7 +4119,7 @@
                 {
                   "record": "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-legacy|\"\\\"tcp\\\":\\\"80\\\"\"",
                   "field": "ports",
-                  "aws_field": "ec2 describe-security-groups: IpPermissions[].FromPort, ToPort",
+                  "source_field": "ec2 describe-security-groups: IpPermissions[].FromPort, ToPort",
                   "value": {
                     "status": "known",
                     "value": "80"
@@ -4187,6 +4309,16 @@
               }
             ]
           },
+          "path_refs": [
+            {
+              "edge": "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-legacy|\"\\\"tcp\\\":\\\"80\\\"\"",
+              "along": true
+            },
+            {
+              "edge": "rel:shop/123456789012:us-east-1:i-legacy1|PROTECTED_BY|123456789012:us-east-1:sg-legacy",
+              "along": false
+            }
+          ],
           "walk": {
             "from": "shop/cidr:internet",
             "to": "shop/123456789012:us-east-1:i-legacy1",
@@ -4392,7 +4524,7 @@
                 {
                   "record": "node:shop/123456789012:us-east-1:i-app1",
                   "field": "state",
-                  "aws_field": "ec2 describe-instances: State.Name",
+                  "source_field": "ec2 describe-instances: State.Name",
                   "value": {
                     "status": "known",
                     "value": "running"
@@ -4409,7 +4541,7 @@
                 {
                   "record": "node:shop/123456789012:us-east-1:i-app1",
                   "field": "public_ip",
-                  "aws_field": "ec2 describe-instances: PublicIpAddress",
+                  "source_field": "ec2 describe-instances: PublicIpAddress",
                   "value": {
                     "status": "unknown"
                   }
@@ -4417,7 +4549,7 @@
                 {
                   "record": "node:shop/123456789012:us-east-1:i-app1",
                   "field": "ipv6_address",
-                  "aws_field": "ec2 describe-instances: Ipv6Address",
+                  "source_field": "ec2 describe-instances: Ipv6Address",
                   "value": {
                     "status": "unknown"
                   }
@@ -4432,8 +4564,8 @@
               "fields": [
                 {
                   "record": "rel:shop/123456789012:us-east-1:i-app1|PROTECTED_BY|123456789012:us-east-1:sg-app",
-                  "field": "PROTECTED_BY",
-                  "aws_field": "ec2 describe-instances: SecurityGroups[].GroupId",
+                  "field": "@to",
+                  "source_field": "ec2 describe-instances: SecurityGroups[].GroupId",
                   "value": {
                     "status": "known",
                     "value": "node:shop/123456789012:us-east-1:sg-app"
@@ -4450,7 +4582,7 @@
                 {
                   "record": "node:shop/123456789012:us-east-1:rtb-main",
                   "field": "ipv4_default_target",
-                  "aws_field": "ec2 describe-route-tables: Routes[DestinationCidrBlock=0.0.0.0/0]",
+                  "source_field": "ec2 describe-route-tables: Routes[DestinationCidrBlock=0.0.0.0/0]",
                   "value": {
                     "status": "known",
                     "value": "nat-shop"
@@ -4459,7 +4591,7 @@
                 {
                   "record": "node:shop/123456789012:us-east-1:rtb-main",
                   "field": "ipv6_default_target",
-                  "aws_field": "ec2 describe-route-tables: Routes[DestinationIpv6CidrBlock=::/0]",
+                  "source_field": "ec2 describe-route-tables: Routes[DestinationIpv6CidrBlock=::/0]",
                   "value": {
                     "status": "unknown"
                   }
@@ -4611,7 +4743,7 @@
                 {
                   "record": "node:shop/123456789012:us-east-1:i-batch1",
                   "field": "state",
-                  "aws_field": "ec2 describe-instances: State.Name",
+                  "source_field": "ec2 describe-instances: State.Name",
                   "value": {
                     "status": "known",
                     "value": "running"
@@ -4628,7 +4760,7 @@
                 {
                   "record": "node:shop/123456789012:us-east-1:i-batch1",
                   "field": "public_ip",
-                  "aws_field": "ec2 describe-instances: PublicIpAddress",
+                  "source_field": "ec2 describe-instances: PublicIpAddress",
                   "value": {
                     "status": "unknown"
                   }
@@ -4636,7 +4768,7 @@
                 {
                   "record": "node:shop/123456789012:us-east-1:i-batch1",
                   "field": "ipv6_address",
-                  "aws_field": "ec2 describe-instances: Ipv6Address",
+                  "source_field": "ec2 describe-instances: Ipv6Address",
                   "value": {
                     "status": "unknown"
                   }
@@ -4651,8 +4783,8 @@
               "fields": [
                 {
                   "record": "rel:shop/123456789012:us-east-1:i-batch1|PROTECTED_BY|123456789012:us-east-1:sg-batch",
-                  "field": "PROTECTED_BY",
-                  "aws_field": "ec2 describe-instances: SecurityGroups[].GroupId",
+                  "field": "@to",
+                  "source_field": "ec2 describe-instances: SecurityGroups[].GroupId",
                   "value": {
                     "status": "known",
                     "value": "node:shop/123456789012:us-east-1:sg-batch"
@@ -4661,7 +4793,7 @@
                 {
                   "record": "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-batch|\"\\\"tcp\\\":\\\"22\\\"\"",
                   "field": "protocol",
-                  "aws_field": "ec2 describe-security-groups: IpPermissions[].IpProtocol",
+                  "source_field": "ec2 describe-security-groups: IpPermissions[].IpProtocol",
                   "value": {
                     "status": "known",
                     "value": "tcp"
@@ -4670,7 +4802,7 @@
                 {
                   "record": "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-batch|\"\\\"tcp\\\":\\\"22\\\"\"",
                   "field": "ports",
-                  "aws_field": "ec2 describe-security-groups: IpPermissions[].FromPort, ToPort",
+                  "source_field": "ec2 describe-security-groups: IpPermissions[].FromPort, ToPort",
                   "value": {
                     "status": "known",
                     "value": "22"
@@ -4687,7 +4819,7 @@
                 {
                   "record": "node:shop/123456789012:us-east-1:rtb-main",
                   "field": "ipv4_default_target",
-                  "aws_field": "ec2 describe-route-tables: Routes[DestinationCidrBlock=0.0.0.0/0]",
+                  "source_field": "ec2 describe-route-tables: Routes[DestinationCidrBlock=0.0.0.0/0]",
                   "value": {
                     "status": "known",
                     "value": "nat-shop"
@@ -4696,7 +4828,7 @@
                 {
                   "record": "node:shop/123456789012:us-east-1:rtb-main",
                   "field": "ipv6_default_target",
-                  "aws_field": "ec2 describe-route-tables: Routes[DestinationIpv6CidrBlock=::/0]",
+                  "source_field": "ec2 describe-route-tables: Routes[DestinationIpv6CidrBlock=::/0]",
                   "value": {
                     "status": "unknown"
                   }
@@ -4875,6 +5007,16 @@
               }
             ]
           },
+          "path_refs": [
+            {
+              "edge": "rel:shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-batch|\"\\\"tcp\\\":\\\"22\\\"\"",
+              "along": true
+            },
+            {
+              "edge": "rel:shop/123456789012:us-east-1:i-batch1|PROTECTED_BY|123456789012:us-east-1:sg-batch",
+              "along": false
+            }
+          ],
           "walk": {
             "from": "shop/cidr:internet",
             "to": "shop/123456789012:us-east-1:i-batch1",
@@ -5106,7 +5248,7 @@
                 {
                   "record": "node:shop/123456789012:us-east-1:i-db1",
                   "field": "state",
-                  "aws_field": "ec2 describe-instances: State.Name",
+                  "source_field": "ec2 describe-instances: State.Name",
                   "value": {
                     "status": "known",
                     "value": "running"
@@ -5123,7 +5265,7 @@
                 {
                   "record": "node:shop/123456789012:us-east-1:i-db1",
                   "field": "public_ip",
-                  "aws_field": "ec2 describe-instances: PublicIpAddress",
+                  "source_field": "ec2 describe-instances: PublicIpAddress",
                   "value": {
                     "status": "unknown"
                   }
@@ -5131,7 +5273,7 @@
                 {
                   "record": "node:shop/123456789012:us-east-1:i-db1",
                   "field": "ipv6_address",
-                  "aws_field": "ec2 describe-instances: Ipv6Address",
+                  "source_field": "ec2 describe-instances: Ipv6Address",
                   "value": {
                     "status": "unknown"
                   }
@@ -5146,8 +5288,8 @@
               "fields": [
                 {
                   "record": "rel:shop/123456789012:us-east-1:i-db1|PROTECTED_BY|123456789012:us-east-1:sg-db",
-                  "field": "PROTECTED_BY",
-                  "aws_field": "ec2 describe-instances: SecurityGroups[].GroupId",
+                  "field": "@to",
+                  "source_field": "ec2 describe-instances: SecurityGroups[].GroupId",
                   "value": {
                     "status": "known",
                     "value": "node:shop/123456789012:us-east-1:sg-db"
@@ -5164,7 +5306,7 @@
                 {
                   "record": "node:shop/123456789012:us-east-1:rtb-main",
                   "field": "ipv4_default_target",
-                  "aws_field": "ec2 describe-route-tables: Routes[DestinationCidrBlock=0.0.0.0/0]",
+                  "source_field": "ec2 describe-route-tables: Routes[DestinationCidrBlock=0.0.0.0/0]",
                   "value": {
                     "status": "known",
                     "value": "nat-shop"
@@ -5173,7 +5315,7 @@
                 {
                   "record": "node:shop/123456789012:us-east-1:rtb-main",
                   "field": "ipv6_default_target",
-                  "aws_field": "ec2 describe-route-tables: Routes[DestinationIpv6CidrBlock=::/0]",
+                  "source_field": "ec2 describe-route-tables: Routes[DestinationIpv6CidrBlock=::/0]",
                   "value": {
                     "status": "unknown"
                   }
