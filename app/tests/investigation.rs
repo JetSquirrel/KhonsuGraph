@@ -1253,10 +1253,24 @@ fn a_findings_path_can_be_saved_and_reopened_as_it_was() {
     assert_eq!(lateral["path_refs"].as_array().unwrap().len(), 5);
 
     // Remove a record it rests on: reopening says so rather than showing another path.
+    let env = Env::new();
+    let saved = env.path("saved");
+    copy_dir(&exposure_fixture(), &saved);
+    let moved = env.path("moved");
+    env.add_source(&moved, &saved);
+    env.ok(&["plugin", "sync", "--source", "shop"]);
+    let report = env.ok(&["plugin", "analyze", "aws", "exposure", "-d", text(&moved)]);
+    let lateral = finding(&report, LATERAL, &instance("i-db1"));
     let file = env.path("lateral.investigation");
-    env.ok(&["investigation", "save", text(&file), "-d", text(&db), "--path-refs", &serde_json::to_string(&lateral["path_refs"]).unwrap()]);
-    let gone = lateral["path_refs"][3]["edge"].as_str().unwrap().strip_prefix("rel:").unwrap();
-    env.ok(&["query", "-d", text(&db), "--write", "--cypher", "MATCH ()-[r:ALLOWS]->() WHERE r.khonsu_id = $id DELETE r", "-p", &format!("id={}", serde_json::to_string(gone).unwrap())]);
+    env.ok(&["investigation", "save", text(&file), "-d", text(&moved), "--path-refs", &serde_json::to_string(&lateral["path_refs"]).unwrap()]);
+    assert_eq!(env.ok(&["investigation", "reopen", text(&file)])["path_same"], true);
+
+    let groups_file = saved.join("us-east-1/ec2-describe-security-groups.json");
+    let mut groups: Value = serde_json::from_str(&std::fs::read_to_string(&groups_file).unwrap()).unwrap();
+    let database_group = groups["SecurityGroups"].as_array_mut().unwrap().iter_mut().find(|group| group["GroupId"] == "sg-db").unwrap();
+    database_group["IpPermissions"] = json!([]);
+    std::fs::write(&groups_file, groups.to_string()).unwrap();
+    env.ok(&["plugin", "sync", "--source", "shop"]);
     let reopened = env.ok(&["investigation", "reopen", text(&file)]);
     assert_eq!(reopened["graph_state"], "changed", "{reopened}");
     assert_eq!(reopened["path_same"], false, "{reopened}");
