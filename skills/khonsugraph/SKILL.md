@@ -50,6 +50,8 @@ Read `complete` first. When it is false, `limits` says which cap cut the walk, s
 
 A plugin can offer analyses: `khonsu plugin describe ID` lists them under `analyses`, and `khonsu plugin analyze ID ANALYSIS --db DIR` runs one. On an AWS graph, `khonsu plugin analyze aws exposure --db DIR` gives findings with a `verdict`: `potential_exposure`, `insufficient_data` or `not_indicated`. Report a finding by its `finding_id`, `rule_id`, `path.hops`, `unknowns` and `assumptions`. Say "potential exposure from configuration": never call a resource reachable or safe from a finding. When the report's `complete` is false, say a missing finding means nothing and name the sources in `sources` whose last run wasn't `complete`. Narrow it with `--resource ID` and `--verdict`, and pass a finding's `walk` to `khonsu explore`. See `references/cli.md`.
 
+To answer "what changed?", take snapshots with `khonsu snapshot save FILE --db DIR` and compare them with `khonsu snapshot diff BEFORE AFTER`. Report `not_seen` as possibly still there, never as deleted, and read `warnings`. See `references/cli.md`.
+
 To keep a line of inquiry, `khonsu investigation save FILE --db DIR --from NODE --to NODE` writes a file of its own, and `khonsu investigation reopen FILE` runs it again. Read `graph_state` first: when it is `changed`, say so, and read `path_same`, `missing_seeds`, `target_missing` and `unsure` before treating the answer as the saved one. See `references/cli.md`.
 
 ## The window and the graph lease

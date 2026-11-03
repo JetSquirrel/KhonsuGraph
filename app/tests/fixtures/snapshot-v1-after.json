@@ -1,0 +1,436 @@
+{
+  "format": "khonsu-snapshot",
+  "version": 1,
+  "snapshot_id": "snapshot:14ca56cc22b6e995",
+  "captured_at": 1793647248,
+  "fingerprint": {
+    "nodes": 16,
+    "relationships": 23,
+    "hash": "14ca56cc22b6e995",
+    "sources": [
+      "shop"
+    ]
+  },
+  "sources": {
+    "shop": {
+      "coverage": {
+        "status": "known",
+        "value": {
+          "run_id": "shop#2",
+          "status": "complete"
+        }
+      },
+      "plugin": {
+        "status": "known",
+        "value": "aws@0.2.0"
+      }
+    }
+  },
+  "nodes": [
+    {
+      "id": "shop/123456789012:us-east-1:i-db1",
+      "labels": [
+        "Instance"
+      ],
+      "source": "shop",
+      "properties": {
+        "image_id": "ami-db",
+        "instance_id": "i-db1",
+        "launched_at": "2026-09-01T08:00:00+00:00",
+        "name": "db-1",
+        "private_ip": "10.0.2.20",
+        "state": "running",
+        "type": "r6g.large"
+      }
+    },
+    {
+      "id": "shop/123456789012:us-east-1:i-web1",
+      "labels": [
+        "Instance"
+      ],
+      "source": "shop",
+      "properties": {
+        "image_id": "ami-web",
+        "instance_id": "i-web1",
+        "launched_at": "2026-09-01T08:00:00+00:00",
+        "name": "web-1",
+        "private_ip": "10.0.1.10",
+        "public_ip": "198.51.100.10",
+        "state": "running",
+        "type": "t3.small"
+      }
+    },
+    {
+      "id": "shop/123456789012:us-east-1:igw-shop",
+      "labels": [
+        "InternetGateway"
+      ],
+      "source": "shop",
+      "properties": {
+        "name": "igw-shop"
+      }
+    },
+    {
+      "id": "shop/123456789012:us-east-1:sg-db",
+      "labels": [
+        "SecurityGroup"
+      ],
+      "source": "shop",
+      "properties": {
+        "description": "database",
+        "group_id": "sg-db",
+        "name": "db"
+      }
+    },
+    {
+      "id": "shop/123456789012:us-east-1:sg-web",
+      "labels": [
+        "SecurityGroup"
+      ],
+      "source": "shop",
+      "properties": {
+        "description": "web tier",
+        "group_id": "sg-web",
+        "name": "web"
+      }
+    },
+    {
+      "id": "shop/123456789012:us-east-1:vpc-shop",
+      "labels": [
+        "Vpc"
+      ],
+      "source": "shop",
+      "properties": {
+        "cidr": "10.0.0.0/16",
+        "is_default": false,
+        "name": "shop",
+        "vpc_id": "vpc-shop"
+      }
+    },
+    {
+      "id": "shop/account:123456789012",
+      "labels": [
+        "Account"
+      ],
+      "source": "shop",
+      "properties": {
+        "account_id": "123456789012"
+      }
+    },
+    {
+      "id": "shop/arn:aws:ec2:us-east-1:123456789012:subnet/subnet-private",
+      "labels": [
+        "Subnet"
+      ],
+      "source": "shop",
+      "properties": {
+        "availability_zone": "us-east-1a",
+        "cidr": "10.0.2.0/24",
+        "name": "private-a",
+        "public_ip_on_launch": false,
+        "subnet_id": "subnet-private"
+      }
+    },
+    {
+      "id": "shop/arn:aws:ec2:us-east-1:123456789012:subnet/subnet-public",
+      "labels": [
+        "Subnet"
+      ],
+      "source": "shop",
+      "properties": {
+        "availability_zone": "us-east-1a",
+        "cidr": "10.0.1.0/24",
+        "name": "public-a",
+        "public_ip_on_launch": true,
+        "subnet_id": "subnet-public"
+      }
+    },
+    {
+      "id": "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
+      "labels": [
+        "LoadBalancer"
+      ],
+      "source": "shop",
+      "properties": {
+        "dns_name": "shop-123.us-east-1.elb.amazonaws.com",
+        "name": "shop",
+        "scheme": "internet-facing",
+        "type": "application"
+      }
+    },
+    {
+      "id": "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/def",
+      "labels": [
+        "TargetGroup"
+      ],
+      "source": "shop",
+      "properties": {
+        "name": "web",
+        "port": 8080,
+        "protocol": "HTTP"
+      }
+    },
+    {
+      "id": "shop/arn:aws:iam::123456789012:role/db-backup",
+      "labels": [
+        "Role"
+      ],
+      "source": "shop",
+      "properties": {
+        "arn": "arn:aws:iam::123456789012:role/db-backup",
+        "name": "db-backup",
+        "path": "/",
+        "trust_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"ec2.amazonaws.com\"},\"Action\":\"sts:AssumeRole\"}]}"
+      }
+    },
+    {
+      "id": "shop/arn:aws:iam::123456789012:role/web-app",
+      "labels": [
+        "Role"
+      ],
+      "source": "shop",
+      "properties": {
+        "arn": "arn:aws:iam::123456789012:role/web-app",
+        "name": "web-app",
+        "path": "/",
+        "trust_policy": "{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"Service\":\"ec2.amazonaws.com\"},\"Action\":\"sts:AssumeRole\"}]}"
+      }
+    },
+    {
+      "id": "shop/cidr:203.0.113.0/24",
+      "labels": [
+        "Cidr"
+      ],
+      "source": "shop",
+      "properties": {
+        "cidr": "203.0.113.0/24",
+        "name": "203.0.113.0/24"
+      }
+    },
+    {
+      "id": "shop/cidr:internet",
+      "labels": [
+        "Cidr"
+      ],
+      "source": "shop",
+      "properties": {
+        "cidr": "0.0.0.0/0",
+        "name": "Internet"
+      }
+    },
+    {
+      "id": "shop/region:123456789012:us-east-1",
+      "labels": [
+        "Region"
+      ],
+      "source": "shop",
+      "properties": {
+        "name": "us-east-1"
+      }
+    }
+  ],
+  "relationships": [
+    {
+      "id": "shop/123456789012:us-east-1:i-db1|ASSUMES|arn:aws:iam::123456789012:role/db-backup",
+      "rel_type": "ASSUMES",
+      "from": "shop/123456789012:us-east-1:i-db1",
+      "to": "shop/arn:aws:iam::123456789012:role/db-backup",
+      "source": "shop",
+      "properties": {
+        "instance_profile": "arn:aws:iam::123456789012:instance-profile/db-backup"
+      }
+    },
+    {
+      "id": "shop/123456789012:us-east-1:i-db1|IN_SUBNET|arn:aws:ec2:us-east-1:123456789012:subnet/subnet-private",
+      "rel_type": "IN_SUBNET",
+      "from": "shop/123456789012:us-east-1:i-db1",
+      "to": "shop/arn:aws:ec2:us-east-1:123456789012:subnet/subnet-private",
+      "source": "shop",
+      "properties": {}
+    },
+    {
+      "id": "shop/123456789012:us-east-1:i-db1|PROTECTED_BY|123456789012:us-east-1:sg-db",
+      "rel_type": "PROTECTED_BY",
+      "from": "shop/123456789012:us-east-1:i-db1",
+      "to": "shop/123456789012:us-east-1:sg-db",
+      "source": "shop",
+      "properties": {}
+    },
+    {
+      "id": "shop/123456789012:us-east-1:i-web1|ASSUMES|arn:aws:iam::123456789012:role/web-app",
+      "rel_type": "ASSUMES",
+      "from": "shop/123456789012:us-east-1:i-web1",
+      "to": "shop/arn:aws:iam::123456789012:role/web-app",
+      "source": "shop",
+      "properties": {
+        "instance_profile": "arn:aws:iam::123456789012:instance-profile/web-app"
+      }
+    },
+    {
+      "id": "shop/123456789012:us-east-1:i-web1|IN_SUBNET|arn:aws:ec2:us-east-1:123456789012:subnet/subnet-public",
+      "rel_type": "IN_SUBNET",
+      "from": "shop/123456789012:us-east-1:i-web1",
+      "to": "shop/arn:aws:ec2:us-east-1:123456789012:subnet/subnet-public",
+      "source": "shop",
+      "properties": {}
+    },
+    {
+      "id": "shop/123456789012:us-east-1:i-web1|PROTECTED_BY|123456789012:us-east-1:sg-web",
+      "rel_type": "PROTECTED_BY",
+      "from": "shop/123456789012:us-east-1:i-web1",
+      "to": "shop/123456789012:us-east-1:sg-web",
+      "source": "shop",
+      "properties": {}
+    },
+    {
+      "id": "shop/123456789012:us-east-1:igw-shop|ATTACHED_TO|123456789012:us-east-1:vpc-shop",
+      "rel_type": "ATTACHED_TO",
+      "from": "shop/123456789012:us-east-1:igw-shop",
+      "to": "shop/123456789012:us-east-1:vpc-shop",
+      "source": "shop",
+      "properties": {}
+    },
+    {
+      "id": "shop/123456789012:us-east-1:sg-db|IN_VPC|123456789012:us-east-1:vpc-shop",
+      "rel_type": "IN_VPC",
+      "from": "shop/123456789012:us-east-1:sg-db",
+      "to": "shop/123456789012:us-east-1:vpc-shop",
+      "source": "shop",
+      "properties": {}
+    },
+    {
+      "id": "shop/123456789012:us-east-1:sg-web|ALLOWS|123456789012:us-east-1:sg-db|\"\\\"tcp\\\":\\\"5432\\\"\"",
+      "rel_type": "ALLOWS",
+      "from": "shop/123456789012:us-east-1:sg-web",
+      "to": "shop/123456789012:us-east-1:sg-db",
+      "source": "shop",
+      "properties": {
+        "ports": "5432",
+        "protocol": "tcp",
+        "rule": "\"tcp\":\"5432\""
+      }
+    },
+    {
+      "id": "shop/123456789012:us-east-1:sg-web|IN_VPC|123456789012:us-east-1:vpc-shop",
+      "rel_type": "IN_VPC",
+      "from": "shop/123456789012:us-east-1:sg-web",
+      "to": "shop/123456789012:us-east-1:vpc-shop",
+      "source": "shop",
+      "properties": {}
+    },
+    {
+      "id": "shop/123456789012:us-east-1:vpc-shop|IN_REGION|region:123456789012:us-east-1",
+      "rel_type": "IN_REGION",
+      "from": "shop/123456789012:us-east-1:vpc-shop",
+      "to": "shop/region:123456789012:us-east-1",
+      "source": "shop",
+      "properties": {}
+    },
+    {
+      "id": "shop/account:123456789012|OWNS|arn:aws:iam::123456789012:role/db-backup",
+      "rel_type": "OWNS",
+      "from": "shop/account:123456789012",
+      "to": "shop/arn:aws:iam::123456789012:role/db-backup",
+      "source": "shop",
+      "properties": {}
+    },
+    {
+      "id": "shop/account:123456789012|OWNS|arn:aws:iam::123456789012:role/web-app",
+      "rel_type": "OWNS",
+      "from": "shop/account:123456789012",
+      "to": "shop/arn:aws:iam::123456789012:role/web-app",
+      "source": "shop",
+      "properties": {}
+    },
+    {
+      "id": "shop/account:123456789012|OWNS|region:123456789012:us-east-1",
+      "rel_type": "OWNS",
+      "from": "shop/account:123456789012",
+      "to": "shop/region:123456789012:us-east-1",
+      "source": "shop",
+      "properties": {}
+    },
+    {
+      "id": "shop/arn:aws:ec2:us-east-1:123456789012:subnet/subnet-private|IN_VPC|123456789012:us-east-1:vpc-shop",
+      "rel_type": "IN_VPC",
+      "from": "shop/arn:aws:ec2:us-east-1:123456789012:subnet/subnet-private",
+      "to": "shop/123456789012:us-east-1:vpc-shop",
+      "source": "shop",
+      "properties": {}
+    },
+    {
+      "id": "shop/arn:aws:ec2:us-east-1:123456789012:subnet/subnet-public|IN_VPC|123456789012:us-east-1:vpc-shop",
+      "rel_type": "IN_VPC",
+      "from": "shop/arn:aws:ec2:us-east-1:123456789012:subnet/subnet-public",
+      "to": "shop/123456789012:us-east-1:vpc-shop",
+      "source": "shop",
+      "properties": {}
+    },
+    {
+      "id": "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc|FORWARDS_TO|arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/def",
+      "rel_type": "FORWARDS_TO",
+      "from": "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
+      "to": "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/def",
+      "source": "shop",
+      "properties": {}
+    },
+    {
+      "id": "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc|IN_VPC|123456789012:us-east-1:vpc-shop",
+      "rel_type": "IN_VPC",
+      "from": "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
+      "to": "shop/123456789012:us-east-1:vpc-shop",
+      "source": "shop",
+      "properties": {}
+    },
+    {
+      "id": "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc|PROTECTED_BY|123456789012:us-east-1:sg-web",
+      "rel_type": "PROTECTED_BY",
+      "from": "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
+      "to": "shop/123456789012:us-east-1:sg-web",
+      "source": "shop",
+      "properties": {}
+    },
+    {
+      "id": "shop/cidr:203.0.113.0/24|ALLOWS|123456789012:us-east-1:sg-web|\"\\\"tcp\\\":\\\"22\\\"\"",
+      "rel_type": "ALLOWS",
+      "from": "shop/cidr:203.0.113.0/24",
+      "to": "shop/123456789012:us-east-1:sg-web",
+      "source": "shop",
+      "properties": {
+        "ports": "22",
+        "protocol": "tcp",
+        "rule": "\"tcp\":\"22\""
+      }
+    },
+    {
+      "id": "shop/cidr:internet|ALLOWS|123456789012:us-east-1:sg-web|\"\\\"tcp\\\":\\\"443\\\"\"",
+      "rel_type": "ALLOWS",
+      "from": "shop/cidr:internet",
+      "to": "shop/123456789012:us-east-1:sg-web",
+      "source": "shop",
+      "properties": {
+        "ports": "443",
+        "protocol": "tcp",
+        "rule": "\"tcp\":\"443\""
+      }
+    },
+    {
+      "id": "shop/cidr:internet|ROUTES_TO|123456789012:us-east-1:igw-shop",
+      "rel_type": "ROUTES_TO",
+      "from": "shop/cidr:internet",
+      "to": "shop/123456789012:us-east-1:igw-shop",
+      "source": "shop",
+      "properties": {}
+    },
+    {
+      "id": "shop/cidr:internet|ROUTES_TO|arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
+      "rel_type": "ROUTES_TO",
+      "from": "shop/cidr:internet",
+      "to": "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
+      "source": "shop",
+      "properties": {}
+    }
+  ],
+  "unstable_nodes": 0,
+  "unstable_relationships": 0
+}

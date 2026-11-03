@@ -25,6 +25,7 @@ cargo test --locked --workspace --test investigation
 | Plugin analyses | An example analyzer with nothing to do with AWS gives findings on a graph of its own; a forged reference, a missing end and a failure are each refused; a plugin with no analyses goes on syncing |
 | Saved investigations | Reopening restores a walk and path on unchanged data, and flags a changed source, a missing record, a missing graph and a bad file; the golden file holds a reopened walk and the fixture's fingerprint. See [saved investigations](investigations.md) |
 | Sync coverage | A scripted plugin fails midway, stops without `done`, reports gaps, sends duplicates and missing endpoints, and moves its cursor; none of it removes records or moves the cursor unless the sync was complete |
+| Snapshots and diff | Two kept snapshots give a fixed diff; the AWS and CSV examples report what changed, a no-op re-sync gives none, and incomplete coverage is never called a removal. See [snapshots](snapshots.md) |
 | HawDB upgrades | `app/tests/fixtures/graph-hawdb-*.zip` must still give the golden answers and fingerprint, and accept a write |
 
 Timings, sync times, paths, line numbers and plugin versions are left out of the
@@ -81,7 +82,6 @@ These are written down so that nobody reads an empty result as proof:
 - **An exposure finding is not reachability.** It says what configuration allows.
   [The rules](exposure-rules.md) list what they do not read.
 
-Source snapshots are always unknown until #37.
 
 ## Baselines
 

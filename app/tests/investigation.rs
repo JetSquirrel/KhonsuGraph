@@ -453,7 +453,7 @@ fn evidence_is_machine_readable_and_states_what_is_unknown() {
     assert_eq!(record["source"], json!({"status": "known", "value": "shop"}));
     assert_eq!(record["assertion"], "explicit");
     assert_eq!(record["properties"]["ports"], "443");
-    assert_eq!(record["source_snapshot"], json!({"status": "unknown"}));
+    assert_eq!(record["source_snapshot"], json!({"status": "known", "value": "shop#1"}));
     assert_eq!(record["record_written_at"]["status"], "known");
     assert_eq!(record["source_last_successful_sync"]["status"], "known");
 
@@ -882,6 +882,186 @@ fn a_file_it_cannot_use_and_a_bad_request_fail_with_a_reason() {
     let (code, out) = env.khonsu(&["investigation", "save", text(&env.path("x")), "-d", text(&db), "--from", "shop/no-such-node"]);
     assert_eq!((code, out["error"]["kind"].as_str()), (1, Some("not_found")), "{out}");
     assert!(!env.path("x").exists());
+}
+
+/// Saves the graph's records to a snapshot named `name` and returns the path.
+fn take_snapshot(env: &Env, db: &Path, name: &str) -> PathBuf {
+    let file = env.path(name);
+    env.ok(&["snapshot", "save", text(&file), "-d", text(db)]);
+    file
+}
+
+fn ids_of(list: &Value) -> Vec<String> {
+    list.as_array().unwrap().iter().map(|change| change["id"].as_str().unwrap().to_string()).collect()
+}
+
+/// #37 on the AWS example: what changed between two syncs, by stable IDs.
+#[test]
+fn a_diff_of_two_aws_snapshots_reports_what_changed() {
+    let env = Env::new();
+    let saved = env.path("saved");
+    copy_dir(&fixture(), &saved);
+    let db = env.path("graph");
+    env.add_source(&db, &saved);
+    env.ok(&["plugin", "sync", "--source", "shop"]);
+    let monday = take_snapshot(&env, &db, "monday.json");
+
+    // A re-sync that changes nothing gives an empty diff and the same ID.
+    env.ok(&["plugin", "sync", "--source", "shop"]);
+    let same = take_snapshot(&env, &db, "same.json");
+    let out = env.ok(&["snapshot", "diff", text(&monday), text(&same)]);
+    assert_eq!(out["node_counts"], json!({"added": 0, "removed": 0, "not_seen": 0, "changed": 0}), "{out}");
+    assert_eq!(out["relationship_counts"], json!({"added": 0, "removed": 0, "not_seen": 0, "changed": 0}), "{out}");
+    assert_eq!(out["before"]["snapshot_id"], out["after"]["snapshot_id"], "{out}");
+    let check = env.ok(&["snapshot", "check", text(&monday), "-d", text(&db)]);
+    assert_eq!(check["graph_state"], "unchanged", "{check}");
+
+    // db-1 goes, and a rule's port changes.
+    let instances = saved.join("us-east-1/ec2-describe-instances.json");
+    let value: Value = serde_json::from_str(&std::fs::read_to_string(&instances).unwrap()).unwrap();
+    let kept: Vec<&Value> = value["Reservations"][0]["Instances"].as_array().unwrap().iter().filter(|i| i["InstanceId"] != "i-db1").collect();
+    std::fs::write(&instances, json!({"Reservations": [{"Instances": kept}]}).to_string()).unwrap();
+    let groups = saved.join("us-east-1/ec2-describe-security-groups.json");
+    let text_before = std::fs::read_to_string(&groups).unwrap();
+    std::fs::write(&groups, text_before.replace("\"FromPort\": 443, \"ToPort\": 443", "\"FromPort\": 8443, \"ToPort\": 8443")).unwrap();
+    env.ok(&["plugin", "sync", "--source", "shop"]);
+    let tuesday = take_snapshot(&env, &db, "tuesday.json");
+
+    let out = env.ok(&["snapshot", "diff", text(&monday), text(&tuesday)]);
+    assert_eq!(ids_of(&out["nodes"]["removed"]), [DB_1], "{out}");
+    assert_eq!(out["nodes"]["not_seen"], json!([]), "{out}");
+    let removed = ids_of(&out["relationships"]["removed"]);
+    assert!(removed.contains(&ALLOWS_443.to_string()), "the old port's rule has gone: {removed:?}");
+    assert!(removed.iter().any(|id| id.contains("i-db1")), "and db-1's relationships: {removed:?}");
+    let added = ids_of(&out["relationships"]["added"]);
+    assert!(added.iter().any(|id| id.contains("8443")), "the new port's rule: {added:?}");
+    assert_eq!(out["warnings"], json!([]), "{out}");
+    assert_eq!(out, env.ok(&["snapshot", "diff", text(&monday), text(&tuesday)]), "the same files give the same diff");
+
+    let check = env.ok(&["snapshot", "check", text(&monday), "-d", text(&db)]);
+    assert_eq!(check["graph_state"], "changed", "{check}");
+
+    let capped = env.ok(&["snapshot", "diff", text(&monday), text(&tuesday), "--max-changes", "1"]);
+    assert!(capped["truncated"].as_u64().unwrap() > 0, "{capped}");
+    assert_eq!(capped["relationship_counts"], out["relationship_counts"], "counts are not cut");
+}
+
+/// A partial sync keeps old records, and a diff must not call anything gone.
+#[test]
+fn incomplete_coverage_is_never_reported_as_a_removal() {
+    let env = Env::new();
+    let saved = env.path("saved");
+    copy_dir(&fixture(), &saved);
+    let db = env.path("graph");
+    env.add_source(&db, &saved);
+    env.ok(&["plugin", "sync", "--source", "shop"]);
+    let before = take_snapshot(&env, &db, "before.json");
+
+    std::fs::remove_file(saved.join("us-east-1/ec2-describe-instances.json")).unwrap();
+    env.ok(&["plugin", "sync", "--source", "shop"]);
+    let partial = take_snapshot(&env, &db, "partial.json");
+    let out = env.ok(&["snapshot", "diff", text(&before), text(&partial)]);
+    assert_eq!(out["after"]["sources"]["shop"]["coverage"]["value"]["status"], "partial", "{out}");
+    assert_eq!(out["node_counts"]["removed"], 0, "{out}");
+    assert_eq!(out["relationship_counts"]["removed"], 0, "{out}");
+    assert!(out["warnings"].to_string().contains("not complete"), "{out}");
+
+    // A record really missing from a snapshot on an incomplete source: not seen, not removed.
+    let mut altered: Value = serde_json::from_str(&std::fs::read_to_string(&partial).unwrap()).unwrap();
+    altered["nodes"].as_array_mut().unwrap().retain(|node| node["id"] != WEB_1);
+    let file = env.path("altered.json");
+    std::fs::write(&file, altered.to_string()).unwrap();
+    let out = env.ok(&["snapshot", "diff", text(&before), text(&file)]);
+    assert_eq!(ids_of(&out["nodes"]["not_seen"]), [WEB_1], "{out}");
+    assert_eq!(out["node_counts"]["removed"], 0, "{out}");
+
+    // Source configuration stays out of the file.
+    let raw = std::fs::read_to_string(&before).unwrap();
+    assert!(!raw.contains("fixture_dir") && !raw.contains(text(&saved)), "{raw}");
+}
+
+/// The other example: a blast radius on the CSV demo, where a link goes away.
+#[test]
+fn a_diff_works_on_the_csv_example_too() {
+    let env = Env::new();
+    let db = env.path("graph");
+    let csv = env.path("csv");
+    copy_dir(&repo().join("examples/csv"), &csv);
+    let file = |name: &str| csv.join(name).to_str().unwrap().replace('\\', "/");
+    env.ok(&["init", text(&db)]);
+    env.ok(&[
+        "source", "add", "-d", text(&db), "--plugin", "csv", "--name", "infra",
+        "-c", &format!(r#"nodes=[{{"path":"{}","label_column":"kind","id_column":"id"}}]"#, file("assets.csv")),
+        "-c", &format!(r#"edges=[{{"path":"{}","type_column":"type","source_column":"source","target_column":"target","id_column":"id"}}]"#, file("links.csv")),
+    ]);
+    env.ok(&["plugin", "sync", "--source", "infra"]);
+    let before = take_snapshot(&env, &db, "before.json");
+
+    let links = csv.join("links.csv");
+    let all = std::fs::read_to_string(&links).unwrap();
+    let mut lines: Vec<&str> = all.lines().collect();
+    let gone = lines.pop().unwrap().to_string();
+    std::fs::write(&links, lines.join("\n") + "\n").unwrap();
+    env.ok(&["plugin", "sync", "--source", "infra"]);
+    let after = take_snapshot(&env, &db, "after.json");
+
+    let out = env.ok(&["snapshot", "diff", text(&before), text(&after)]);
+    assert_eq!(out["relationship_counts"], json!({"added": 0, "removed": 1, "not_seen": 0, "changed": 0}), "{gone}: {out}");
+    assert_eq!(out["node_counts"], json!({"added": 0, "removed": 0, "not_seen": 0, "changed": 0}), "{out}");
+}
+
+/// Two snapshots kept in the repository, so that the file format and the diff
+/// of fixed input stay as they are. Written once, by the first run that blesses.
+#[test]
+fn two_fixed_snapshots_keep_their_diff() {
+    let dir = snapshots_dir();
+    let (before, after) = (dir.join("snapshot-v1-before.json"), dir.join("snapshot-v1-after.json"));
+    if blessing() && !(before.exists() && after.exists()) {
+        let env = Env::new();
+        let saved = env.path("saved");
+        copy_dir(&fixture(), &saved);
+        let db = env.path("graph");
+        env.add_source(&db, &saved);
+        env.ok(&["plugin", "sync", "--source", "shop"]);
+        env.ok(&["snapshot", "save", text(&before), "-d", text(&db), "--force"]);
+        std::fs::write(saved.join("us-east-1/elbv2-describe-target-health-web.json"), r#"{"TargetHealthDescriptions": []}"#).unwrap();
+        env.ok(&["plugin", "sync", "--source", "shop"]);
+        env.ok(&["snapshot", "save", text(&after), "-d", text(&db), "--force"]);
+    }
+    let env = Env::new();
+    let out = env.ok(&["snapshot", "diff", text(&before), text(&after)]);
+    assert_eq!(out["relationship_counts"], json!({"added": 0, "removed": 1, "not_seen": 0, "changed": 0}), "{out}");
+    let removed = ids_of(&out["relationships"]["removed"]);
+    assert!(removed[0].contains("targetgroup/web") && removed[0].contains("i-web1"), "{removed:?}");
+    assert_eq!(out["node_counts"], json!({"added": 0, "removed": 0, "not_seen": 0, "changed": 0}), "{out}");
+}
+
+/// A pinned investigation names the runs when the data has moved, and a no-op
+/// re-sync is not a change.
+#[test]
+fn a_reopened_investigation_names_the_runs_it_was_pinned_to() {
+    let env = Env::new();
+    let saved = env.path("saved");
+    copy_dir(&fixture(), &saved);
+    let db = env.path("graph");
+    env.add_source(&db, &saved);
+    env.ok(&["plugin", "sync", "--source", "shop"]);
+    let file = env.path("web.investigation");
+    let out = env.ok(&investigation_save(&db, &file));
+    assert_eq!(out["investigation"]["pinned_runs"]["shop"]["value"]["run_id"], "shop#1", "{out}");
+
+    env.ok(&["plugin", "sync", "--source", "shop"]);
+    let out = env.ok(&["investigation", "reopen", text(&file)]);
+    assert_eq!((out["graph_state"].as_str(), out["differences"].as_array().map(Vec::len)), (Some("unchanged"), Some(0)), "{out}");
+
+    let path = saved.join("us-east-1/ec2-describe-security-groups.json");
+    let groups = std::fs::read_to_string(&path).unwrap();
+    std::fs::write(&path, groups.replace("\"FromPort\": 443, \"ToPort\": 443", "\"FromPort\": 8443, \"ToPort\": 8443")).unwrap();
+    env.ok(&["plugin", "sync", "--source", "shop"]);
+    let out = env.ok(&["investigation", "reopen", text(&file)]);
+    assert_eq!(out["graph_state"], "changed", "{out}");
+    let said = out["differences"].to_string();
+    assert!(said.contains("shop#1") && said.contains("shop#3"), "{said}");
 }
 
 #[test]

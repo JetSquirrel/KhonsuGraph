@@ -8,7 +8,7 @@
 //! `docs/investigations.md`.
 
 use crate::engine::{Graph, QueryError};
-use crate::evidence::{self, Field, PathEvidence};
+use crate::evidence::{self, Field, PathEvidence, SourceCoverage};
 use crate::explore::{Direction, Exploration, ExploreRequest, Hop, DEFAULT_MAX_EDGES, DEFAULT_MAX_NODES};
 use crate::merge::{ID_PROPERTY, PLUGIN_PROPERTY, SOURCE_PROPERTY, SYNCED_AT_PROPERTY};
 use crate::protocol::HopRef;
@@ -86,6 +86,9 @@ pub struct Investigation {
     pub graph: PathBuf,
     pub saved_at: u64,
     pub fingerprint: Fingerprint,
+    /// The source runs this was evaluated against.
+    #[serde(default)]
+    pub pinned_runs: BTreeMap<String, Field<SourceCoverage>>,
     #[serde(default)]
     pub query: Option<SavedQuery>,
     #[serde(default)]
@@ -120,44 +123,59 @@ impl Investigation {
     }
 
     pub fn parse(text: &str) -> Result<Self, FileError> {
-        let invalid = |message: String| FileError { kind: "invalid", message };
-        let value: Json = serde_json::from_str(text).map_err(|error| invalid(format!("not valid JSON: {error}")))?;
-        if value.get("format").and_then(Json::as_str) != Some(FORMAT) {
-            return Err(invalid(format!("not a saved investigation: its format is not {FORMAT:?}")));
-        }
-        let version = value.get("version").and_then(Json::as_u64).ok_or_else(|| invalid("it has no version number".into()))?;
-        if version > u64::from(VERSION) {
-            return Err(FileError {
-                kind: "too_new",
-                message: format!("it is version {version}, and this build reads up to version {VERSION}; update KhonsuGraph"),
-            });
-        }
-        serde_json::from_value(value).map_err(|error| invalid(format!("its contents are not usable: {error}")))
+        let value = check_header(text, FORMAT, VERSION)?;
+        serde_json::from_value(value).map_err(|error| FileError {
+            kind: "invalid",
+            message: format!("its contents are not usable: {error}"),
+        })
     }
 
     /// Writes the file whole or not at all. An existing file is kept unless
     /// `overwrite` says otherwise.
     pub fn save(&self, path: &Path, overwrite: bool) -> Result<(), FileError> {
-        let io = |error: std::io::Error| FileError {
-            kind: "io",
-            message: format!("cannot write {}: {error}", path.display()),
-        };
-        if !overwrite && path.exists() {
-            return Err(FileError {
-                kind: "exists",
-                message: format!("{} already exists", path.display()),
-            });
-        }
         let text = serde_json::to_string_pretty(self).expect("an investigation serializes") + "\n";
-        let mut scratch = path.as_os_str().to_owned();
-        scratch.push(".tmp");
-        let scratch = PathBuf::from(scratch);
-        std::fs::write(&scratch, text).map_err(io)?;
-        std::fs::rename(&scratch, path).map_err(|error| {
-            let _ = std::fs::remove_file(&scratch);
-            io(error)
-        })
+        write_whole(path, &text, overwrite)
     }
+}
+
+/// Parses a file's JSON and checks that it is `format`, at a version this build
+/// reads. Fields it does not know are left for the caller to ignore.
+pub(crate) fn check_header(text: &str, format: &str, supported: u32) -> Result<Json, FileError> {
+    let invalid = |message: String| FileError { kind: "invalid", message };
+    let value: Json = serde_json::from_str(text).map_err(|error| invalid(format!("not valid JSON: {error}")))?;
+    if value.get("format").and_then(Json::as_str) != Some(format) {
+        return Err(invalid(format!("its format is not {format:?}")));
+    }
+    let version = value.get("version").and_then(Json::as_u64).ok_or_else(|| invalid("it has no version number".into()))?;
+    if version > u64::from(supported) {
+        return Err(FileError {
+            kind: "too_new",
+            message: format!("it is version {version}, and this build reads up to version {supported}; update KhonsuGraph"),
+        });
+    }
+    Ok(value)
+}
+
+/// Writes a file whole or not at all, keeping an existing one unless `overwrite`.
+pub(crate) fn write_whole(path: &Path, text: &str, overwrite: bool) -> Result<(), FileError> {
+    let io = |error: std::io::Error| FileError {
+        kind: "io",
+        message: format!("cannot write {}: {error}", path.display()),
+    };
+    if !overwrite && path.exists() {
+        return Err(FileError {
+            kind: "exists",
+            message: format!("{} already exists", path.display()),
+        });
+    }
+    let mut scratch = path.as_os_str().to_owned();
+    scratch.push(".tmp");
+    let scratch = PathBuf::from(scratch);
+    std::fs::write(&scratch, text).map_err(io)?;
+    std::fs::rename(&scratch, path).map_err(|error| {
+        let _ = std::fs::remove_file(&scratch);
+        io(error)
+    })
 }
 
 /// What to save, by internal IDs as the caller has them.
@@ -225,13 +243,7 @@ impl Graph {
                 sources: Vec::new(),
             });
         }
-        let mut collector = GraphCollector::default();
-        for text in ["MATCH (n) RETURN n", "MATCH ()-[r]->() RETURN r"] {
-            for row in self.raw_cypher(text, &params)? {
-                row.iter().for_each(|value| collector.visit(&value_to_json(value)));
-            }
-        }
-        let data = collector.finish().unwrap_or_default();
+        let data = self.read_all_records()?;
         let (hash, sources) = content_hash(&data);
         Ok(Fingerprint {
             nodes,
@@ -239,6 +251,18 @@ impl Graph {
             hash: Some(hash),
             sources,
         })
+    }
+
+    /// Every node and relationship. The caller has checked how many there are.
+    pub(crate) fn read_all_records(&mut self) -> Result<GraphData, QueryError> {
+        let params = BTreeMap::new();
+        let mut collector = GraphCollector::default();
+        for text in ["MATCH (n) RETURN n", "MATCH ()-[r]->() RETURN r"] {
+            for row in self.raw_cypher(text, &params)? {
+                row.iter().for_each(|value| collector.visit(&value_to_json(value)));
+            }
+        }
+        Ok(collector.finish().unwrap_or_default())
     }
 
     /// Records what `capture` describes, as it stands now.
@@ -282,13 +306,16 @@ impl Graph {
                 max_edges: request.max_edges,
             });
         }
+        let fingerprint = self.fingerprint()?;
+        let pinned_runs = fingerprint.sources.iter().map(|source| (source.clone(), evidence::coverage_of(source, sources))).collect();
         Ok(Investigation {
             format: FORMAT.into(),
             version: VERSION,
             name: capture.name,
             graph: graph.to_path_buf(),
             saved_at: unix_now(),
-            fingerprint: self.fingerprint()?,
+            fingerprint,
+            pinned_runs,
             query: capture.query,
             walk,
             path,
@@ -300,7 +327,17 @@ impl Graph {
     /// has gone, or a graph that has changed, is reported and not an error.
     pub fn reopen_investigation(&mut self, saved: &Investigation, sources: &[Source], cancel: &AtomicBool) -> Result<Reopened, QueryError> {
         let now = self.fingerprint()?;
-        let (graph_state, differences) = compare(&saved.fingerprint, &now);
+        let (graph_state, mut differences) = compare(&saved.fingerprint, &now);
+        // Runs alone say nothing: a re-sync that changes nothing is a new run.
+        if graph_state == GraphState::Changed {
+            for (source, pinned) in &saved.pinned_runs {
+                let current = evidence::coverage_of(source, sources);
+                let name = |coverage: &Field<SourceCoverage>| coverage.known().map_or("an unknown run".to_string(), |coverage| coverage.run_id.clone());
+                if current != *pinned {
+                    differences.push(format!("Source {source} was at {} when saved, and is at {} now.", name(pinned), name(&current)));
+                }
+            }
+        }
 
         let mut missing_seeds = Vec::new();
         let mut unsure = Vec::new();
@@ -462,7 +499,7 @@ fn plan_for(hops: &[Hop]) -> ExploreRequest {
     }
 }
 
-fn compare(saved: &Fingerprint, now: &Fingerprint) -> (GraphState, Vec<String>) {
+pub(crate) fn compare(saved: &Fingerprint, now: &Fingerprint) -> (GraphState, Vec<String>) {
     let mut differences = Vec::new();
     if saved.nodes != now.nodes {
         differences.push(format!("Nodes: {} when saved, {} now.", saved.nodes, now.nodes));
@@ -492,7 +529,7 @@ fn compare(saved: &Fingerprint, now: &Fingerprint) -> (GraphState, Vec<String>) 
 /// A hash of what the records say, whatever order they are read in. Internal
 /// IDs, sync times and plugin versions are left out: they differ between
 /// graphs holding the same data.
-fn content_hash(data: &GraphData) -> (String, Vec<String>) {
+pub(crate) fn content_hash(data: &GraphData) -> (String, Vec<String>) {
     let mut sources = BTreeSet::new();
     let mut names: BTreeMap<i64, String> = BTreeMap::new();
     let mut lines = Vec::with_capacity(data.nodes.len() + data.edges.len());
@@ -555,6 +592,7 @@ mod tests {
             graph: PathBuf::from("graphs/shop"),
             saved_at: 1000,
             fingerprint: Fingerprint { nodes: 1, relationships: 0, hash: Some("abc".into()), sources: vec!["shop".into()] },
+            pinned_runs: BTreeMap::new(),
             query: None,
             walk: None,
             path: None,

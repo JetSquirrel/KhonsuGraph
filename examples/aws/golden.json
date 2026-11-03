@@ -1087,7 +1087,8 @@
             }
           },
           "source_snapshot": {
-            "status": "unknown"
+            "status": "known",
+            "value": "shop#2"
           },
           "assertion": "explicit",
           "rule_id": {
@@ -1136,7 +1137,8 @@
             }
           },
           "source_snapshot": {
-            "status": "unknown"
+            "status": "known",
+            "value": "shop#2"
           },
           "assertion": "explicit",
           "rule_id": {
@@ -1394,7 +1396,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#2"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -1433,7 +1436,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#2"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -1461,7 +1465,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#2"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -1502,7 +1507,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#2"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -1530,7 +1536,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#2"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -1570,7 +1577,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#2"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -1600,7 +1608,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#2"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -1913,7 +1922,8 @@
             }
           },
           "source_snapshot": {
-            "status": "unknown"
+            "status": "known",
+            "value": "shop#2"
           },
           "assertion": "explicit",
           "rule_id": {
@@ -1952,7 +1962,8 @@
             }
           },
           "source_snapshot": {
-            "status": "unknown"
+            "status": "known",
+            "value": "shop#2"
           },
           "assertion": "explicit",
           "rule_id": {
@@ -1980,7 +1991,8 @@
             }
           },
           "source_snapshot": {
-            "status": "unknown"
+            "status": "known",
+            "value": "shop#2"
           },
           "assertion": "explicit",
           "rule_id": {
@@ -2021,7 +2033,8 @@
             }
           },
           "source_snapshot": {
-            "status": "unknown"
+            "status": "known",
+            "value": "shop#2"
           },
           "assertion": "explicit",
           "rule_id": {
@@ -2049,7 +2062,8 @@
             }
           },
           "source_snapshot": {
-            "status": "unknown"
+            "status": "known",
+            "value": "shop#2"
           },
           "assertion": "explicit",
           "rule_id": {
@@ -2089,7 +2103,8 @@
             }
           },
           "source_snapshot": {
-            "status": "unknown"
+            "status": "known",
+            "value": "shop#2"
           },
           "assertion": "explicit",
           "rule_id": {
@@ -2119,7 +2134,8 @@
             }
           },
           "source_snapshot": {
-            "status": "unknown"
+            "status": "known",
+            "value": "shop#2"
           },
           "assertion": "explicit",
           "rule_id": {
@@ -2412,7 +2428,8 @@
                   }
                 },
                 "source_snapshot": {
-                  "status": "unknown"
+                  "status": "known",
+                  "value": "shop#1"
                 },
                 "assertion": "explicit",
                 "rule_id": {
@@ -2451,7 +2468,8 @@
                   }
                 },
                 "source_snapshot": {
-                  "status": "unknown"
+                  "status": "known",
+                  "value": "shop#1"
                 },
                 "assertion": "explicit",
                 "rule_id": {
@@ -2483,7 +2501,8 @@
                   }
                 },
                 "source_snapshot": {
-                  "status": "unknown"
+                  "status": "known",
+                  "value": "shop#1"
                 },
                 "assertion": "explicit",
                 "rule_id": {
@@ -2523,7 +2542,8 @@
                   }
                 },
                 "source_snapshot": {
-                  "status": "unknown"
+                  "status": "known",
+                  "value": "shop#1"
                 },
                 "assertion": "explicit",
                 "rule_id": {
@@ -2551,7 +2571,8 @@
                   }
                 },
                 "source_snapshot": {
-                  "status": "unknown"
+                  "status": "known",
+                  "value": "shop#1"
                 },
                 "assertion": "explicit",
                 "rule_id": {
@@ -2621,7 +2642,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -2660,7 +2682,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -2692,7 +2715,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -2732,7 +2756,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -2760,7 +2785,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -2797,7 +2823,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -2830,7 +2857,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -2872,7 +2900,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -3086,7 +3115,8 @@
                   }
                 },
                 "source_snapshot": {
-                  "status": "unknown"
+                  "status": "known",
+                  "value": "shop#1"
                 },
                 "assertion": "explicit",
                 "rule_id": {
@@ -3125,7 +3155,8 @@
                   }
                 },
                 "source_snapshot": {
-                  "status": "unknown"
+                  "status": "known",
+                  "value": "shop#1"
                 },
                 "assertion": "explicit",
                 "rule_id": {
@@ -3153,7 +3184,8 @@
                   }
                 },
                 "source_snapshot": {
-                  "status": "unknown"
+                  "status": "known",
+                  "value": "shop#1"
                 },
                 "assertion": "explicit",
                 "rule_id": {
@@ -3194,7 +3226,8 @@
                   }
                 },
                 "source_snapshot": {
-                  "status": "unknown"
+                  "status": "known",
+                  "value": "shop#1"
                 },
                 "assertion": "explicit",
                 "rule_id": {
@@ -3222,7 +3255,8 @@
                   }
                 },
                 "source_snapshot": {
-                  "status": "unknown"
+                  "status": "known",
+                  "value": "shop#1"
                 },
                 "assertion": "explicit",
                 "rule_id": {
@@ -3262,7 +3296,8 @@
                   }
                 },
                 "source_snapshot": {
-                  "status": "unknown"
+                  "status": "known",
+                  "value": "shop#1"
                 },
                 "assertion": "explicit",
                 "rule_id": {
@@ -3292,7 +3327,8 @@
                   }
                 },
                 "source_snapshot": {
-                  "status": "unknown"
+                  "status": "known",
+                  "value": "shop#1"
                 },
                 "assertion": "explicit",
                 "rule_id": {
@@ -3368,7 +3404,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -3407,7 +3444,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -3435,7 +3473,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -3476,7 +3515,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -3504,7 +3544,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -3544,7 +3585,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -3574,7 +3616,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -3618,7 +3661,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -3654,7 +3698,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -3694,7 +3739,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -3730,7 +3776,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -3858,7 +3905,8 @@
                   }
                 },
                 "source_snapshot": {
-                  "status": "unknown"
+                  "status": "known",
+                  "value": "shop#1"
                 },
                 "assertion": "explicit",
                 "rule_id": {
@@ -3897,7 +3945,8 @@
                   }
                 },
                 "source_snapshot": {
-                  "status": "unknown"
+                  "status": "known",
+                  "value": "shop#1"
                 },
                 "assertion": "explicit",
                 "rule_id": {
@@ -3929,7 +3978,8 @@
                   }
                 },
                 "source_snapshot": {
-                  "status": "unknown"
+                  "status": "known",
+                  "value": "shop#1"
                 },
                 "assertion": "explicit",
                 "rule_id": {
@@ -3969,7 +4019,8 @@
                   }
                 },
                 "source_snapshot": {
-                  "status": "unknown"
+                  "status": "known",
+                  "value": "shop#1"
                 },
                 "assertion": "explicit",
                 "rule_id": {
@@ -3997,7 +4048,8 @@
                   }
                 },
                 "source_snapshot": {
-                  "status": "unknown"
+                  "status": "known",
+                  "value": "shop#1"
                 },
                 "assertion": "explicit",
                 "rule_id": {
@@ -4042,7 +4094,8 @@
                   }
                 },
                 "source_snapshot": {
-                  "status": "unknown"
+                  "status": "known",
+                  "value": "shop#1"
                 },
                 "assertion": "explicit",
                 "rule_id": {
@@ -4074,7 +4127,8 @@
                   }
                 },
                 "source_snapshot": {
-                  "status": "unknown"
+                  "status": "known",
+                  "value": "shop#1"
                 },
                 "assertion": "explicit",
                 "rule_id": {
@@ -4114,7 +4168,8 @@
                   }
                 },
                 "source_snapshot": {
-                  "status": "unknown"
+                  "status": "known",
+                  "value": "shop#1"
                 },
                 "assertion": "explicit",
                 "rule_id": {
@@ -4142,7 +4197,8 @@
                   }
                 },
                 "source_snapshot": {
-                  "status": "unknown"
+                  "status": "known",
+                  "value": "shop#1"
                 },
                 "assertion": "explicit",
                 "rule_id": {
@@ -4225,7 +4281,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -4264,7 +4321,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -4296,7 +4354,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -4336,7 +4395,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -4364,7 +4424,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -4409,7 +4470,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -4441,7 +4503,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -4481,7 +4544,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -4509,7 +4573,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -4670,7 +4735,8 @@
                   }
                 },
                 "source_snapshot": {
-                  "status": "unknown"
+                  "status": "known",
+                  "value": "shop#1"
                 },
                 "assertion": "explicit",
                 "rule_id": {
@@ -4709,7 +4775,8 @@
                   }
                 },
                 "source_snapshot": {
-                  "status": "unknown"
+                  "status": "known",
+                  "value": "shop#1"
                 },
                 "assertion": "explicit",
                 "rule_id": {
@@ -4741,7 +4808,8 @@
                   }
                 },
                 "source_snapshot": {
-                  "status": "unknown"
+                  "status": "known",
+                  "value": "shop#1"
                 },
                 "assertion": "explicit",
                 "rule_id": {
@@ -4781,7 +4849,8 @@
                   }
                 },
                 "source_snapshot": {
-                  "status": "unknown"
+                  "status": "known",
+                  "value": "shop#1"
                 },
                 "assertion": "explicit",
                 "rule_id": {
@@ -4809,7 +4878,8 @@
                   }
                 },
                 "source_snapshot": {
-                  "status": "unknown"
+                  "status": "known",
+                  "value": "shop#1"
                 },
                 "assertion": "explicit",
                 "rule_id": {
@@ -4877,7 +4947,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -4916,7 +4987,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -4948,7 +5020,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -4988,7 +5061,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -5016,7 +5090,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -5053,7 +5128,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -5195,7 +5271,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -5231,7 +5308,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -5264,7 +5342,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -5306,7 +5385,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -5474,7 +5554,8 @@
                   }
                 },
                 "source_snapshot": {
-                  "status": "unknown"
+                  "status": "known",
+                  "value": "shop#1"
                 },
                 "assertion": "explicit",
                 "rule_id": {
@@ -5513,7 +5594,8 @@
                   }
                 },
                 "source_snapshot": {
-                  "status": "unknown"
+                  "status": "known",
+                  "value": "shop#1"
                 },
                 "assertion": "explicit",
                 "rule_id": {
@@ -5545,7 +5627,8 @@
                   }
                 },
                 "source_snapshot": {
-                  "status": "unknown"
+                  "status": "known",
+                  "value": "shop#1"
                 },
                 "assertion": "explicit",
                 "rule_id": {
@@ -5585,7 +5668,8 @@
                   }
                 },
                 "source_snapshot": {
-                  "status": "unknown"
+                  "status": "known",
+                  "value": "shop#1"
                 },
                 "assertion": "explicit",
                 "rule_id": {
@@ -5613,7 +5697,8 @@
                   }
                 },
                 "source_snapshot": {
-                  "status": "unknown"
+                  "status": "known",
+                  "value": "shop#1"
                 },
                 "assertion": "explicit",
                 "rule_id": {
@@ -5681,7 +5766,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -5720,7 +5806,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -5752,7 +5839,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -5792,7 +5880,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -5820,7 +5909,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -5856,7 +5946,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -5889,7 +5980,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -6031,7 +6123,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -6067,7 +6160,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -6100,7 +6194,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {
@@ -6142,7 +6237,8 @@
                 }
               },
               "source_snapshot": {
-                "status": "unknown"
+                "status": "known",
+                "value": "shop#1"
               },
               "assertion": "explicit",
               "rule_id": {

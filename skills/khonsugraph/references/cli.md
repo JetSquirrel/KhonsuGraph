@@ -71,7 +71,7 @@ khonsu evidence --db graphs/aws --node shop/123456789012:us-east-1:i-web1
 | `source`, `plugin` | What wrote it |
 | `record_written_at` | When it last changed, in Unix seconds; can predate the last sync |
 | `source_last_successful_sync` | From the source's settings; unknown when its last sync failed |
-| `source_snapshot` | Unknown for now |
+| `source_snapshot` | The source's last run when it was complete; unknown otherwise |
 | `source_coverage` | The source's last sync: `run_id`, `status` (`complete`, `partial`, `failed`, `cancelled`) and any `gaps`. Unknown when the source isn't configured or predates runs |
 | `rule_id` | Unknown on a record; known on a finding's `path` |
 | `assertion` | `explicit` (a source reported it), `derived`, or `unknown` |
@@ -124,6 +124,16 @@ khonsu investigation reopen web.investigation
 | `saved_walk`, `query`, `dashboard` | The saved filters, query and dashboard. A saved query is returned, not run |
 
 Errors have kind `graph_missing`, `not_found`, `invalid` or `too_new`. See `docs/investigations.md`.
+
+## Snapshots and diff
+
+```sh
+khonsu snapshot save monday.snapshot.json --db graphs/aws
+khonsu snapshot diff monday.snapshot.json tuesday.snapshot.json
+khonsu snapshot check monday.snapshot.json --db graphs/aws
+```
+
+`diff` gives `nodes` and `relationships`, each with `added`, `removed`, `not_seen` and `changed`, plus `node_counts`, `relationship_counts`, `truncated` (cut by `--max-changes`, 1,000 by default) and `warnings`. `removed` means the later snapshot's source was read completely; `not_seen` means it may still exist, so never report that as deleted. `check` gives `graph_state` and `differences`. A graph over 200,000 nodes or relationships fails with kind `too_large`. See `docs/snapshots.md`.
 
 ## Graph analysis
 
