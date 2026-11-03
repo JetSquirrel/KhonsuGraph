@@ -530,6 +530,7 @@ impl GraphCanvas {
         if let Some(walk) = walk.filter(|walk| !walk.starts.is_empty()) {
             request.starts = walk.starts.clone();
         }
+        let path_refs = self.explorer.exact_path_to(node);
         let query = self.query.clone();
         let suggested = format!("investigation.{EXTENSION}");
         let directory = directories::UserDirs::new().map(|dirs| dirs.home_dir().to_path_buf()).unwrap_or_else(std::env::temp_dir);
@@ -547,6 +548,7 @@ impl GraphCanvas {
                             query,
                             walk: Some(request),
                             target,
+                            path_refs,
                             dashboard: None,
                         };
                         let saved = crate::db::capture_investigation(capture).map_err(|error| error.message)?;
@@ -578,7 +580,10 @@ impl GraphCanvas {
         self.explorer.restored = Some(explorer::Restored::new(saved, &reopened));
         self.explorer.walk = reopened.walk;
         self.load_relationship_types(window, cx);
-        if let Some(target) = reopened.target.filter(|_| reopened.path.is_some()) {
+        if reopened.exact_path {
+            // The canvas already holds that path and nothing else.
+            self.set_path_view(true, cx);
+        } else if let Some(target) = reopened.target.filter(|_| reopened.path.is_some()) {
             self.show_path(target, cx);
         }
         cx.notify();
@@ -641,12 +646,14 @@ impl GraphCanvas {
         let report = self.explorer.reports.get(key);
         let finding = report.and_then(|report| report.findings.iter().find(|finding| finding.finding_id == finding_id));
         let hint = finding.and_then(|finding| finding.walk.clone());
+        let saved_as = finding.and_then(|finding| Some((finding.hops.clone(), finding.path_refs.clone()?)));
         let Some(walk) = finding.and_then(|finding| finding.exploration()) else {
             return;
         };
         self.explorer.push_view(self.view());
         self.replace_canvas(walk.graph.nodes.clone(), walk.graph.edges.clone(), cx);
         self.explorer.walk = Some(walk);
+        self.explorer.finding_path = saved_as;
         // The filters that find this path again, so that saving or walking on
         // from here means the same thing.
         if let Some(hint) = hint {

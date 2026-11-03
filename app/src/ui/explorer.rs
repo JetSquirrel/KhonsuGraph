@@ -6,10 +6,10 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 use khonsu_core::evidence::{Assertion, Evidence, Field};
-use khonsu_core::explore::{Direction, Exploration, ExploreRequest, Limit, DEFAULT_MAX_HOPS, MAX_HOPS};
+use khonsu_core::explore::{Direction, Exploration, ExploreRequest, Hop, Limit, DEFAULT_MAX_HOPS, MAX_HOPS};
 use khonsu_core::investigation::{GraphState, Investigation, RecordRef, Reopened};
 use khonsu_core::plugin_analysis::{Finding, Offered, Report};
-use khonsu_core::protocol::{AnalysisInfo, ConditionStatus};
+use khonsu_core::protocol::{AnalysisInfo, ConditionStatus, HopRef};
 use khonsu_core::util::format_unix_time;
 use khonsu_core::{GraphData, GraphEdge, GraphNode};
 
@@ -107,6 +107,8 @@ pub struct Explorer {
     pub analysis_errors: BTreeMap<String, String>,
     /// The reopened investigation this walk came from.
     pub restored: Option<Restored>,
+    /// The finding path on the canvas, as hops and as what to save for it.
+    pub finding_path: Option<(Vec<Hop>, Vec<HopRef>)>,
     history: Vec<View>,
 }
 
@@ -126,6 +128,7 @@ impl Default for Explorer {
             checking: BTreeMap::new(),
             analysis_errors: BTreeMap::new(),
             restored: None,
+            finding_path: None,
             history: Vec::new(),
         }
     }
@@ -190,6 +193,7 @@ impl Explorer {
             cancel.store(true, Ordering::Relaxed);
         }
         self.restored = None;
+        self.finding_path = None;
         self.starts.clear();
         self.history.clear();
     }
@@ -273,6 +277,18 @@ pub fn evidence_rows(record: &Evidence) -> Vec<(&'static str, String)> {
 pub fn findings_for<'a>(report: &'a Report, node: &GraphNode) -> Vec<&'a Finding> {
     let resource = khonsu_core::evidence::for_node(node, &[]).evidence_id;
     report.findings.iter().filter(|finding| finding.resource == resource).collect()
+}
+
+impl Explorer {
+    /// What to save as the exact path when saving at `node`: the finding path, if
+    /// the walk is still that path and `node` is where it ends.
+    pub fn exact_path_to(&self, node: i64) -> Vec<HopRef> {
+        let current = self.walk.as_ref().map(|walk| walk.hops.as_slice());
+        match &self.finding_path {
+            Some((hops, refs)) if current == Some(hops.as_slice()) && hops.last().is_some_and(|hop| hop.to == node) => refs.clone(),
+            _ => Vec::new(),
+        }
+    }
 }
 
 /// Which run of an analysis this is about: plugins each name their own.
@@ -525,6 +541,25 @@ mod tests {
 
         explorer.forget_walks();
         assert!(explorer.restored.is_none() && explorer.warning().is_none());
+    }
+
+    /// Saving a finding's path keeps that path, not the fewest hops a walk
+    /// would find. Once the walk or the selection moves on it is a normal save.
+    #[test]
+    fn only_the_finding_path_still_on_the_canvas_is_saved_exactly() {
+        let hops = vec![hop(1, 1, 2, 10), hop(2, 2, 3, 11)];
+        let refs = vec![HopRef { edge: "rel:ab".into(), along: true }, HopRef { edge: "rel:bc".into(), along: true }];
+        let mut explorer = Explorer {
+            walk: Some(Exploration { hops: hops.clone(), ..Exploration::default() }),
+            finding_path: Some((hops, refs.clone())),
+            ..Explorer::default()
+        };
+        assert_eq!(explorer.exact_path_to(3), refs);
+        assert!(explorer.exact_path_to(2).is_empty(), "another node on it means the path to that node");
+        explorer.walk = Some(walk());
+        assert!(explorer.exact_path_to(3).is_empty(), "another walk replaced it");
+        explorer.forget_walks();
+        assert!(explorer.finding_path.is_none());
     }
 
     #[test]

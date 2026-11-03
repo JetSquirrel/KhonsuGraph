@@ -104,6 +104,7 @@ See `docs/exposure-rules.md` for the rules and a walkthrough.
 
 ```sh
 khonsu investigation save web.investigation --db graphs/aws --from shop/cidr:internet --to shop/123456789012:us-east-1:i-web1 --type ROUTES_TO,FORWARDS_TO
+khonsu investigation save finding.investigation --db graphs/aws --path-refs "$PATH_REFS_FROM_A_FINDING"
 khonsu investigation reopen web.investigation
 ```
 
