@@ -22,6 +22,7 @@ cargo test --locked --workspace --test investigation
 | Cycles | A shortest path and a variable-length pattern both end on a cycle |
 | Evidence | `khonsu evidence` and `explore --to` give stable IDs, state what is unknown, and mask secrets; the golden file holds a node and a relationship |
 | Exposure rules | `plugins/aws/tests/fixture-exposure` has a positive, a negative and an undecided case; the golden file holds its whole report, and rule IDs and verdicts for the shop fixture. See [the rules](exposure-rules.md) |
+| Plugin analyses | An example analyzer with nothing to do with AWS gives findings on a graph of its own; a forged reference, a missing end and a failure are each refused; a plugin with no analyses goes on syncing |
 | HawDB upgrades | `app/tests/fixtures/graph-hawdb-*.zip` must still give the golden answers and accept a write |
 
 Timings, sync times, paths, line numbers and plugin versions are left out of the
