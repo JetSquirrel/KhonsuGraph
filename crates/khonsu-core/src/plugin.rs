@@ -528,7 +528,7 @@ pub fn run_sync(
                 let _ = child.kill();
                 break Err(failure(plugin, message, &stderr));
             }
-            Message::Describe(_) | Message::TestResult { .. } => Ok(()),
+            Message::Describe(_) | Message::TestResult { .. } | Message::Finding(_) | Message::AnalysisDone { .. } => Ok(()),
         };
         if let Err(err) = step {
             let _ = child.kill();
@@ -618,6 +618,99 @@ pub fn request_for(source: &Source, mode: SyncMode) -> Result<Request, PluginErr
     })
 }
 
+/// Refuses a plugin that has not been approved as it is now.
+pub(crate) fn require_approved(plugin: &PluginInfo) -> Result<(), PluginError> {
+    if !plugin.builtin && !settings::is_approved(plugin.id(), &plugin.manifest.version, &plugin.manifest.permissions) {
+        return Err(PluginError::NotApproved {
+            plugin: plugin.id().to_string(),
+            permissions: plugin.manifest.permissions.clone(),
+        });
+    }
+    Ok(())
+}
+
+/// How an `analyze` ended.
+pub(crate) struct AnalysisEnd {
+    pub findings: Vec<khonsu_plugin_protocol::FindingRecord>,
+    pub subjects: u64,
+}
+
+/// Runs `analyze`, sending `request` on a thread so that a plugin that writes
+/// before it reads cannot wedge the host. The plugin is ended when `cancel` is set.
+pub(crate) fn run_analyze(
+    plugin: &PluginInfo,
+    request: &khonsu_plugin_protocol::AnalyzeRequest,
+    cancel: &AtomicBool,
+    mut on_event: impl FnMut(SyncEvent),
+) -> Result<AnalysisEnd, PluginError> {
+    let mut line = serde_json::to_vec(request).map_err(std::io::Error::other)?;
+    line.push(b'\n');
+    let mut child = plugin
+        .command()
+        .arg("analyze")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| PluginError::Failed {
+            plugin: plugin.id().to_string(),
+            message: format!("cannot start {}: {e}", plugin.executable().display()),
+        })?;
+    let mut stdin = child.stdin.take().expect("stdin is piped");
+    thread::spawn(move || {
+        // A plugin that exits without reading is reported by what follows.
+        let _ = stdin.write_all(&line);
+    });
+    let stderr = drain_stderr(&mut child);
+    let stdout = child.stdout.take().expect("stdout is piped");
+    let (tx, rx) = std::sync::mpsc::sync_channel::<String>(1024);
+    thread::spawn(move || {
+        for line in BufReader::new(stdout).lines() {
+            let Ok(line) = line else { break };
+            if tx.send(line).is_err() {
+                break;
+            }
+        }
+    });
+
+    let mut findings = Vec::new();
+    let mut subjects = None;
+    let result = loop {
+        if cancel.load(Ordering::Relaxed) {
+            let _ = child.kill();
+            break Err(PluginError::Cancelled);
+        }
+        let line = match rx.recv_timeout(std::time::Duration::from_millis(100)) {
+            Ok(line) => line,
+            Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
+            Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => break Ok(()),
+        };
+        match parse_line(&line) {
+            None => {}
+            Some(Err(err)) => {
+                let _ = child.kill();
+                let shown: String = line.chars().take(200).collect();
+                break Err(failure(plugin, format!("invalid output line: {err}: {shown}"), &stderr));
+            }
+            Some(Ok(Message::Finding(finding))) => findings.push(*finding),
+            Some(Ok(Message::AnalysisDone { subjects: seen })) => subjects = Some(seen),
+            Some(Ok(Message::Progress { message, current, total })) => on_event(SyncEvent::Progress { message, current, total }),
+            Some(Ok(Message::Log { level, message })) => on_event(SyncEvent::Log { level, message }),
+            Some(Ok(Message::Error { message })) => {
+                let _ = child.kill();
+                break Err(failure(plugin, message, &stderr));
+            }
+            Some(Ok(_)) => {}
+        }
+    };
+    let status = child.wait()?;
+    result?;
+    let Some(subjects) = subjects else {
+        return Err(failure(plugin, format!("plugin exited ({status}) without finishing the analysis"), &stderr));
+    };
+    Ok(AnalysisEnd { findings, subjects })
+}
+
 /// Syncs a configured source into `graph`, then records the outcome in the
 /// source's settings. The plugin's declared permissions must be approved.
 pub fn sync_source(
@@ -634,12 +727,7 @@ pub fn sync_source(
     } else {
         mode
     };
-    if !plugin.builtin && !settings::is_approved(plugin.id(), &plugin.manifest.version, &plugin.manifest.permissions) {
-        return Err(PluginError::NotApproved {
-            plugin: plugin.id().to_string(),
-            permissions: plugin.manifest.permissions.clone(),
-        });
-    }
+    require_approved(&plugin)?;
     let request = request_for(source, mode)?;
     let started = std::time::Instant::now();
     let synced_at = next_sync_stamp(graph, &source.id, util::unix_now() as i64)?;
