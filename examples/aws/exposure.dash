@@ -1,4 +1,5 @@
-# What the internet can reach in an AWS account, from the official AWS plugin.
+# What an AWS account's configuration opens to the internet, from the official
+# AWS plugin. For explained findings, run `khonsu plugin analyze aws exposure`.
 # Build the graph from the saved responses in plugins/aws/tests/fixture, or
 # from a real account with a read-only profile (see examples/README.md).
 plot "intro" {

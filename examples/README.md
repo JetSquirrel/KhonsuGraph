@@ -23,8 +23,8 @@ khonsu plugin sync --source infra
 khonsu check examples/infra/blast_radius.dash --db graphs/infra
 ```
 
-`aws/exposure.dash` shows what the internet can reach in an AWS account. Try
-it on the saved responses that ship with the AWS plugin:
+`aws/exposure.dash` shows what an AWS account's configuration opens to the
+internet. Try it on the saved responses that ship with the AWS plugin:
 
 ```sh
 khonsu init graphs/aws
@@ -39,6 +39,9 @@ profile; the plugin only calls `describe`, `list` and `get` operations.
 `aws/golden.json` holds the answers this walkthrough should give. See
 [the investigation gates](../docs/investigation-gates.md) for what is tested and
 what a result does not prove.
+
+For findings that explain themselves, with the rule, fields and unknowns behind
+each, follow the walkthrough in [the exposure rules](../docs/exposure-rules.md).
 
 ## Build a story graph
 

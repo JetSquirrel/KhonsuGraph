@@ -9,6 +9,8 @@
 //! (Instance)-[ASSUMES]->(Role)          through its instance profile
 //! (LoadBalancer)-[IN_VPC]->(Vpc), (LoadBalancer)-[PROTECTED_BY]->(SecurityGroup)
 //! (LoadBalancer)-[FORWARDS_TO]->(TargetGroup)-[ROUTES_TO]->(Instance)
+//! (RouteTable)-[IN_VPC]->(Vpc), (Subnet)-[USES_ROUTE_TABLE]->(RouteTable)
+//! (RouteTable)-[ROUTES_VIA {destination, state}]->(InternetGateway)
 //! ```
 //!
 //! `0.0.0.0/0` and `::/0` are one `Cidr` node named Internet, so "what can the
@@ -22,13 +24,15 @@
 //! and `<dir>/iam-list-roles.json`, `<dir>/iam-list-instance-profiles.json`,
 //! `<dir>/sts-get-caller-identity.json`.
 
+mod exposure;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::{Command, ExitCode};
 
 use khonsu_plugin_protocol::{
-    read_request, ConfigField, Describe, EdgeRecord, Emitter, FieldKind, Message, NodeRecord, Permissions, Request,
+    read_analyze_request, read_request, ConfigField, Describe, EdgeRecord, Emitter, FieldKind, Message, NodeRecord, Permissions, Request,
 };
 use serde_json::{json, Map, Value};
 
@@ -66,13 +70,14 @@ fn describe() -> Describe {
             commands: vec!["aws".into()],
             notes: vec!["Read-only: ec2:Describe*, elasticloadbalancing:Describe*, iam:List*, sts:GetCallerIdentity".into()],
         },
-        labels: ["Account", "Region", "Vpc", "Subnet", "SecurityGroup", "Cidr", "Instance", "InternetGateway", "LoadBalancer", "TargetGroup", "Role"]
+        labels: ["Account", "Region", "Vpc", "Subnet", "SecurityGroup", "Cidr", "Instance", "InternetGateway", "RouteTable", "LoadBalancer", "TargetGroup", "Role"]
             .map(String::from)
             .to_vec(),
-        relationship_types: ["IN_REGION", "IN_VPC", "IN_SUBNET", "PROTECTED_BY", "ALLOWS", "ATTACHED_TO", "ASSUMES", "FORWARDS_TO", "ROUTES_TO", "OWNS"]
+        relationship_types: ["IN_REGION", "IN_VPC", "IN_SUBNET", "PROTECTED_BY", "ALLOWS", "ATTACHED_TO", "ASSUMES", "FORWARDS_TO", "ROUTES_TO", "USES_ROUTE_TABLE", "ROUTES_VIA", "OWNS"]
             .map(String::from)
             .to_vec(),
         supports_incremental: false,
+        analyses: vec![exposure::info()],
     }
 }
 
@@ -232,6 +237,15 @@ impl Graph {
         });
     }
 
+    /// Subnets are keyed by ARN when AWS gave one, so find one by its ID.
+    fn subnet_key(&self, subnet_id: &str, scoped: String) -> String {
+        self.nodes
+            .values()
+            .find(|n| n.label == "Subnet" && n.properties.get("subnet_id") == Some(&json!(subnet_id)))
+            .map(|n| n.id.clone())
+            .unwrap_or(scoped)
+    }
+
     fn emit<W: Write>(self, out: &mut Emitter<W>) -> std::io::Result<(u64, u64)> {
         let mut nodes = 0;
         for node in self.nodes.values() {
@@ -258,6 +272,50 @@ fn port_range(permission: &Value) -> String {
         (Some(a), Some(b)) if a == b => a.to_string(),
         (Some(a), Some(b)) => format!("{a}-{b}"),
         _ => "all".into(),
+    }
+}
+
+/// What a route sends its traffic to, under whichever field AWS used.
+fn route_target(route: &Value) -> Option<&str> {
+    ["GatewayId", "NatGatewayId", "TransitGatewayId", "VpcPeeringConnectionId", "NetworkInterfaceId", "EgressOnlyInternetGatewayId", "InstanceId"]
+        .iter()
+        .find_map(|key| s(route, key))
+}
+
+/// A route table, the subnets it names, and its routes to internet gateways.
+/// Other routes stay out of the graph, apart from where the default routes go.
+fn route_table(g: &mut Graph, table: &Value, scoped: &dyn Fn(&str) -> String) {
+    let Some(table_id) = s(table, "RouteTableId") else { return };
+    let default_target = |destination: &str, key: &str| items(table, "Routes").find(|route| s(route, key) == Some(destination)).and_then(route_target).map(|target| json!(target));
+    let is_main = items(table, "Associations").any(|a| a.get("Main").and_then(Value::as_bool) == Some(true));
+    let id = g.node(
+        scoped(table_id),
+        "RouteTable",
+        props(&[
+            ("name", Some(json!(name_tag(table).unwrap_or_else(|| table_id.to_string())))),
+            ("route_table_id", Some(json!(table_id))),
+            ("is_main", Some(json!(is_main))),
+            ("ipv4_default_target", default_target("0.0.0.0/0", "DestinationCidrBlock")),
+            ("ipv6_default_target", default_target("::/0", "DestinationIpv6CidrBlock")),
+        ]),
+    );
+    if let Some(vpc_id) = s(table, "VpcId") {
+        g.edge(&id, "IN_VPC", &scoped(vpc_id), Map::new());
+    }
+    for association in items(table, "Associations") {
+        if let Some(subnet_id) = s(association, "SubnetId") {
+            let subnet = g.subnet_key(subnet_id, scoped(subnet_id));
+            g.edge(&subnet, "USES_ROUTE_TABLE", &id, Map::new());
+        }
+    }
+    for route in items(table, "Routes") {
+        let Some(gateway) = s(route, "GatewayId").filter(|gateway| gateway.starts_with("igw-")) else { continue };
+        let Some(destination) = s(route, "DestinationCidrBlock").or_else(|| s(route, "DestinationIpv6CidrBlock")) else { continue };
+        // The route is the fact that matters, so it needs a gateway to point
+        // at even when the response describing gateways is missing.
+        let gateway_id = g.node(scoped(gateway), "InternetGateway", props(&[("name", Some(json!(gateway)))]));
+        let properties = props(&[("destination", Some(json!(destination))), ("state", s(route, "State").map(|v| json!(v))), ("rule", Some(json!(destination)))]);
+        g.edge(&id, "ROUTES_VIA", &gateway_id, properties);
     }
 }
 
@@ -317,6 +375,9 @@ fn collect<W: Write>(source: &Source, regions: &[String], out: &mut Emitter<W>) 
                 }
             }
         }
+        for table in items(&source.call(Some(region), "ec2", "describe-route-tables", &[])?, "RouteTables") {
+            route_table(&mut g, table, &scoped);
+        }
         let groups = source.call(Some(region), "ec2", "describe-security-groups", &[])?;
         for sg in items(&groups, "SecurityGroups") {
             let Some(group_id) = s(sg, "GroupId") else { continue };
@@ -366,18 +427,13 @@ fn collect<W: Write>(source: &Source, regions: &[String], out: &mut Emitter<W>) 
                         ("state", instance.pointer("/State/Name").cloned()),
                         ("private_ip", s(instance, "PrivateIpAddress").map(|v| json!(v))),
                         ("public_ip", s(instance, "PublicIpAddress").map(|v| json!(v))),
+                        ("ipv6_address", s(instance, "Ipv6Address").map(|v| json!(v))),
                         ("image_id", s(instance, "ImageId").map(|v| json!(v))),
                         ("launched_at", s(instance, "LaunchTime").map(|v| json!(v))),
                     ]),
                 );
                 if let Some(subnet_id) = s(instance, "SubnetId") {
-                    // Subnets are keyed by ARN when AWS gave one; find it by its ID.
-                    let subnet = g
-                        .nodes
-                        .values()
-                        .find(|n| n.label == "Subnet" && n.properties.get("subnet_id") == Some(&json!(subnet_id)))
-                        .map(|n| n.id.clone())
-                        .unwrap_or_else(|| scoped(subnet_id));
+                    let subnet = g.subnet_key(subnet_id, scoped(subnet_id));
                     g.edge(&id, "IN_SUBNET", &subnet, Map::new());
                 }
                 for group in items(instance, "SecurityGroups") {
@@ -466,14 +522,25 @@ fn run<W: Write>(command: &str, out: &mut Emitter<W>, request: Option<Request>) 
             let (nodes, edges) = graph.emit(out).map_err(io)?;
             out.emit(&Message::Done { nodes, edges }).map_err(io)
         }
-        other => Err(format!("unknown command {other:?}; expected describe, test or sync")),
+        "analyze" => {
+            let request = read_analyze_request().map_err(|e| format!("cannot read the analysis request: {e}"))?;
+            if request.analysis != exposure::ANALYSIS {
+                return Err(format!("no analysis {:?}", request.analysis));
+            }
+            let (findings, subjects) = exposure::evaluate(&request);
+            for finding in findings {
+                out.emit(&Message::Finding(Box::new(finding))).map_err(io)?;
+            }
+            out.emit(&Message::AnalysisDone { subjects }).map_err(io)
+        }
+        other => Err(format!("unknown command {other:?}; expected describe, test, sync or analyze")),
     }
 }
 
 fn main() -> ExitCode {
     let mut out = Emitter::stdout();
     let command = std::env::args().nth(1).unwrap_or_default();
-    let request = if command == "describe" { None } else { read_request().ok() };
+    let request = if matches!(command.as_str(), "describe" | "analyze") { None } else { read_request().ok() };
     match run(&command, &mut out, request) {
         Ok(()) => ExitCode::SUCCESS,
         Err(message) => {
@@ -552,6 +619,42 @@ mod tests {
         // Every edge's ends exist.
         let ids: BTreeSet<&str> = nodes.iter().map(|n| n.id.as_str()).collect();
         assert!(edges.iter().all(|e| ids.contains(e.source.as_str()) && ids.contains(e.target.as_str())));
+    }
+
+    #[test]
+    fn route_tables_record_subnets_gateways_and_where_a_default_route_goes() {
+        let mut g = Graph::default();
+        let scoped = |id: &str| format!("a:r:{id}");
+        g.node("arn:subnet-1", "Subnet", props(&[("subnet_id", Some(json!("subnet-1")))]));
+        let public = json!({
+            "RouteTableId": "rtb-1", "VpcId": "vpc-1",
+            "Associations": [{"SubnetId": "subnet-1", "Main": false}],
+            "Routes": [
+                {"DestinationCidrBlock": "10.0.0.0/16", "GatewayId": "local", "State": "active"},
+                {"DestinationCidrBlock": "0.0.0.0/0", "GatewayId": "igw-1", "State": "active"},
+                {"DestinationIpv6CidrBlock": "::/0", "GatewayId": "igw-1", "State": "blackhole"},
+            ],
+        });
+        route_table(&mut g, &public, &scoped);
+        let table = &g.nodes["a:r:rtb-1"];
+        assert_eq!(table.properties["is_main"], json!(false));
+        assert_eq!(table.properties["ipv4_default_target"], json!("igw-1"));
+        assert!(g.nodes.contains_key("a:r:igw-1"), "a route names its gateway even when no response described it");
+        assert!(g.edges.values().any(|e| e.rel_type == "USES_ROUTE_TABLE" && e.source == "arn:subnet-1"), "subnets are found by ID: {:?}", g.edges.keys());
+        let routes: Vec<_> = g.edges.values().filter(|e| e.rel_type == "ROUTES_VIA").collect();
+        assert_eq!(routes.len(), 2, "both families are kept, with their states");
+        assert!(routes.iter().any(|e| e.properties["destination"] == json!("::/0") && e.properties["state"] == json!("blackhole")));
+
+        let private = json!({
+            "RouteTableId": "rtb-2", "VpcId": "vpc-1",
+            "Associations": [{"Main": true}],
+            "Routes": [{"DestinationCidrBlock": "0.0.0.0/0", "NatGatewayId": "nat-1", "State": "active"}],
+        });
+        route_table(&mut g, &private, &scoped);
+        let table = &g.nodes["a:r:rtb-2"];
+        assert_eq!(table.properties["is_main"], json!(true));
+        assert_eq!(table.properties["ipv4_default_target"], json!("nat-1"));
+        assert_eq!(g.edges.values().filter(|e| e.rel_type == "ROUTES_VIA" && e.source == "a:r:rtb-2").count(), 0);
     }
 
     #[test]

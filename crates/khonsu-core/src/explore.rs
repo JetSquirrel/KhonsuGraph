@@ -79,7 +79,7 @@ impl ExploreRequest {
     }
 }
 
-fn is_identifier(name: &str) -> bool {
+pub(crate) fn is_identifier(name: &str) -> bool {
     let mut chars = name.chars();
     chars.next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_') && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
@@ -157,19 +157,22 @@ impl Exploration {
     /// One hop in words, in the direction it was walked:
     /// `Internet -[ROUTES_TO]-> shop`, `web-1 <-[ROUTES_TO]- web`.
     pub fn explain(&self, hop: &Hop) -> String {
-        let name = |id: i64| {
-            self.graph.nodes.iter().find(|node| node.id == id).map(node_name).unwrap_or_else(|| format!("#{id}"))
-        };
-        let (from, to, rel) = (name(hop.from), name(hop.to), &hop.rel_type);
-        if hop.along {
-            format!("{from} -[{rel}]-> {to}")
-        } else {
-            format!("{from} <-[{rel}]- {to}")
-        }
+        explain_hop(&self.graph.nodes, hop)
     }
 }
 
-fn node_name(node: &GraphNode) -> String {
+/// One hop in words, with names from `nodes`.
+pub(crate) fn explain_hop(nodes: &[GraphNode], hop: &Hop) -> String {
+    let name = |id: i64| nodes.iter().find(|node| node.id == id).map(node_name).unwrap_or_else(|| format!("#{id}"));
+    let (from, to, rel) = (name(hop.from), name(hop.to), &hop.rel_type);
+    if hop.along {
+        format!("{from} -[{rel}]-> {to}")
+    } else {
+        format!("{from} <-[{rel}]- {to}")
+    }
+}
+
+pub(crate) fn node_name(node: &GraphNode) -> String {
     for key in ["name", "title", "khonsu_id", "id"] {
         match node.properties.get(key) {
             Some(Json::String(text)) if !text.is_empty() => return text.clone(),

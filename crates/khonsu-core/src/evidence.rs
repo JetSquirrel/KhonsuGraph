@@ -5,9 +5,9 @@
 //! meant to be copied out of the app, so they hold no source configuration, and
 //! anything that looks like a secret is left out and named in `redacted`.
 
-use crate::explore::Exploration;
+use crate::explore::{explain_hop, Exploration, Hop};
 use crate::merge::{ID_PROPERTY, PLUGIN_PROPERTY, SOURCE_PROPERTY, SYNCED_AT_PROPERTY};
-use crate::result::{GraphEdge, GraphNode};
+use crate::result::{GraphData, GraphEdge, GraphNode};
 use crate::settings::Source;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value as Json};
@@ -123,13 +123,20 @@ pub struct PathEvidence {
 
 pub const PATH_CLAIM: &str = "These records connect in the data. This is not proof that anything can reach anything.";
 
+pub(crate) fn node_evidence_id(node: &GraphNode) -> String {
+    text(&node.properties, ID_PROPERTY).map_or_else(|| format!("node-internal:{}", node.id), |id| format!("node:{id}"))
+}
+
+pub(crate) fn edge_evidence_id(edge: &GraphEdge) -> String {
+    text(&edge.properties, ID_PROPERTY).map_or_else(|| format!("rel-internal:{}", edge.id), |id| format!("rel:{id}"))
+}
+
 pub fn for_node(node: &GraphNode, sources: &[Source]) -> Evidence {
-    let stable_id = text(&node.properties, ID_PROPERTY);
     let (properties, redacted) = own_properties(&node.properties);
     let source = text(&node.properties, SOURCE_PROPERTY);
     Evidence {
-        stable: stable_id.is_some(),
-        evidence_id: stable_id.map_or_else(|| format!("node-internal:{}", node.id), |id| format!("node:{id}")),
+        stable: text(&node.properties, ID_PROPERTY).is_some(),
+        evidence_id: node_evidence_id(node),
         kind: Kind::Node,
         internal_id: node.id,
         types: node.labels.clone(),
@@ -142,15 +149,12 @@ pub fn for_node(node: &GraphNode, sources: &[Source]) -> Evidence {
 /// `nodes` are looked in for the relationship's ends; an end not among them
 /// is unknown.
 pub fn for_edge(edge: &GraphEdge, nodes: &[GraphNode], sources: &[Source]) -> Evidence {
-    let stable_id = text(&edge.properties, ID_PROPERTY);
     let (properties, redacted) = own_properties(&edge.properties);
     let source = text(&edge.properties, SOURCE_PROPERTY);
-    let end = |id: i64| {
-        Field::from(nodes.iter().find(|node| node.id == id).map(|node| for_node(node, sources).evidence_id))
-    };
+    let end = |id: i64| Field::from(nodes.iter().find(|node| node.id == id).map(node_evidence_id));
     Evidence {
-        stable: stable_id.is_some(),
-        evidence_id: stable_id.map_or_else(|| format!("rel-internal:{}", edge.id), |id| format!("rel:{id}")),
+        stable: text(&edge.properties, ID_PROPERTY).is_some(),
+        evidence_id: edge_evidence_id(edge),
         kind: Kind::Relationship,
         internal_id: edge.id,
         types: vec![edge.rel_type.clone()],
@@ -164,32 +168,43 @@ pub fn for_edge(edge: &GraphEdge, nodes: &[GraphNode], sources: &[Source]) -> Ev
 /// no hops at all.
 pub fn for_path(walk: &Exploration, target: i64, sources: &[Source]) -> Option<PathEvidence> {
     let path = walk.path_to(target).filter(|path| !path.is_empty())?;
-    let mut evidence = Vec::new();
-    let first = path[0].from;
-    if let Some(start) = walk.graph.nodes.iter().find(|node| node.id == first) {
-        evidence.push(for_node(start, sources));
-    }
-    for hop in &path {
-        if let Some(edge) = walk.graph.edges.iter().find(|edge| edge.id == hop.edge) {
-            evidence.push(for_edge(edge, &walk.graph.nodes, sources));
+    let hops: Vec<Hop> = path.into_iter().cloned().collect();
+    Some(for_hops(&hops, &walk.graph, sources, "fewest hops in a bounded walk", Field::Unknown))
+}
+
+/// The evidence for `hops`, which must not be empty, read from `graph`. A hop
+/// that crosses a record twice lists that record once, where it first appears.
+pub(crate) fn for_hops(hops: &[Hop], graph: &GraphData, sources: &[Source], derivation: &str, rule_id: Field<String>) -> PathEvidence {
+    let mut evidence: Vec<Evidence> = Vec::new();
+    let mut add = |record: Evidence| {
+        if !evidence.iter().any(|seen| seen.evidence_id == record.evidence_id) {
+            evidence.push(record);
         }
-        if let Some(node) = walk.graph.nodes.iter().find(|node| node.id == hop.to) {
-            evidence.push(for_node(node, sources));
+    };
+    if let Some(start) = graph.nodes.iter().find(|node| node.id == hops[0].from) {
+        add(for_node(start, sources));
+    }
+    for hop in hops {
+        if let Some(edge) = graph.edges.iter().find(|edge| edge.id == hop.edge) {
+            add(for_edge(edge, &graph.nodes, sources));
+        }
+        if let Some(node) = graph.nodes.iter().find(|node| node.id == hop.to) {
+            add(for_node(node, sources));
         }
     }
     let supporting: Vec<String> = evidence.iter().map(|record| record.evidence_id.clone()).collect();
-    Some(PathEvidence {
+    PathEvidence {
         evidence_id: format!("path:{:016x}", fnv1a(&supporting.join("\n"))),
         stable: evidence.iter().all(|record| record.stable),
         kind: Kind::Path,
         assertion: Assertion::Derived,
-        derivation: "fewest hops in a bounded walk".into(),
-        rule_id: Field::Unknown,
+        derivation: derivation.into(),
+        rule_id,
         claim: PATH_CLAIM.into(),
-        hops: path.iter().map(|hop| walk.explain(hop)).collect(),
+        hops: hops.iter().map(|hop| explain_hop(&graph.nodes, hop)).collect(),
         supporting,
         evidence,
-    })
+    }
 }
 
 /// The fields a node and a relationship share.
@@ -226,7 +241,7 @@ fn text(properties: &Map<String, Json>, key: &str) -> Option<String> {
 
 /// `properties` without KhonsuGraph's bookkeeping, and with secrets masked,
 /// along with the names of those masked.
-fn own_properties(properties: &Map<String, Json>) -> (Map<String, Json>, Vec<String>) {
+pub(crate) fn own_properties(properties: &Map<String, Json>) -> (Map<String, Json>, Vec<String>) {
     let mut redacted = Vec::new();
     let own = properties
         .iter()
@@ -287,16 +302,11 @@ fn looks_like_a_secret(text: &str) -> bool {
     aws_key || text.contains("-----BEGIN")
 }
 
-/// A hash that stays the same across platforms and Rust versions.
-fn fnv1a(text: &str) -> u64 {
-    text.bytes().fold(0xcbf2_9ce4_8422_2325, |hash, byte| (hash ^ u64::from(byte)).wrapping_mul(0x0000_0100_0000_01b3))
-}
+pub(crate) use khonsu_plugin_protocol::fnv1a;
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::explore::Hop;
-    use crate::result::GraphData;
     use crate::settings::LastSync;
     use serde_json::json;
 

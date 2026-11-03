@@ -10,6 +10,7 @@ pub mod explore;
 pub mod lock;
 pub mod merge;
 pub mod plugin;
+pub mod plugin_analysis;
 pub mod rebuild;
 pub mod result;
 pub mod schema;

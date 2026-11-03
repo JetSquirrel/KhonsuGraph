@@ -1,0 +1,14 @@
+{"RouteTables": [
+ {"RouteTableId": "rtb-public", "VpcId": "vpc-shop", "Tags": [{"Key": "Name", "Value": "public"}],
+  "Associations": [{"RouteTableAssociationId": "rtbassoc-1", "SubnetId": "subnet-public", "Main": false}],
+  "Routes": [
+   {"DestinationCidrBlock": "10.0.0.0/16", "GatewayId": "local", "State": "active"},
+   {"DestinationCidrBlock": "0.0.0.0/0", "GatewayId": "igw-shop", "State": "active"}
+  ]},
+ {"RouteTableId": "rtb-main", "VpcId": "vpc-shop", "Tags": [{"Key": "Name", "Value": "main"}],
+  "Associations": [{"RouteTableAssociationId": "rtbassoc-2", "Main": true}],
+  "Routes": [
+   {"DestinationCidrBlock": "10.0.0.0/16", "GatewayId": "local", "State": "active"},
+   {"DestinationCidrBlock": "0.0.0.0/0", "NatGatewayId": "nat-shop", "State": "active"}
+  ]}
+]}

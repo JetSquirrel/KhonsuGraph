@@ -1,0 +1,4 @@
+{"InternetGateways": [
+ {"InternetGatewayId": "igw-shop", "Attachments": [{"State": "available", "VpcId": "vpc-shop"}], "Tags": []},
+ {"InternetGatewayId": "igw-legacy", "Attachments": [{"State": "available", "VpcId": "vpc-legacy"}], "Tags": []}
+]}
