@@ -6,7 +6,7 @@
 //! not met gives [`NOT_INDICATED`], otherwise anything unknown gives
 //! [`INSUFFICIENT_DATA`], otherwise [`POTENTIAL_EXPOSURE`]. There is no score,
 //! and no verdict says "reachable": the graph holds configuration, and nothing
-//! here sends traffic. See `docs/exposure-rules.md`.
+//! here sends traffic. See `plugins/aws/README.md`.
 //!
 //! A record missing from the graph is not read as a fact about the account: a
 //! saved response that was absent reads as empty, so an instance with no

@@ -41,7 +41,7 @@ profile; the plugin only calls `describe`, `list` and `get` operations.
 what a result does not prove.
 
 For findings that explain themselves, with the rule, fields and unknowns behind
-each, follow the walkthrough in [the exposure rules](../docs/exposure-rules.md).
+each, follow the walkthrough in [the exposure rules](../plugins/aws/README.md).
 
 ## Build a story graph
 

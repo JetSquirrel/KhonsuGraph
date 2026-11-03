@@ -39,7 +39,7 @@ impl KhonsuApp {
         let state = cx.new(AppState::new);
         let workspace = cx.new(|cx| Workspace::new(state.clone(), window, cx));
         let sidebar = cx.new(|cx| Sidebar::new(state.clone(), workspace.clone(), window, cx));
-        let title_bar = cx.new(|cx| TitleBarView::new(state.clone(), cx));
+        let title_bar = cx.new(|cx| TitleBarView::new(state.clone(), workspace.clone(), cx));
         let status_bar = cx.new(|cx| StatusBarView::new(state.clone(), cx));
         cx.subscribe(&state, |_, _, _: &state::SidebarToggled, cx| cx.notify()).detach();
         cx.subscribe(&state, |_, _, _: &state::GraphChanged, cx| cx.notify()).detach();

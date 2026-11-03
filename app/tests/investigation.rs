@@ -171,7 +171,7 @@ fn fixture() -> PathBuf {
 }
 
 /// The saved responses with a positive, a negative and an undecided case, and
-/// route tables. See `docs/exposure-rules.md`.
+/// route tables. See `plugins/aws/README.md`.
 fn exposure_fixture() -> PathBuf {
     repo().join("plugins/aws/tests/fixture-exposure")
 }

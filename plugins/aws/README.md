@@ -1,4 +1,10 @@
-# AWS exposure rules
+# AWS plugin
+
+An example of what a plugin can do: it syncs an AWS account into a graph, and offers
+one analysis, the exposure rules below. It is maintained, and no new rules or
+resource types are planned. KhonsuGraph's core and window don't depend on it.
+
+## Exposure rules
 
 `khonsu plugin analyze aws exposure` says which instances an account's
 configuration leaves potentially open to the internet, and shows how it decided.
@@ -8,13 +14,13 @@ graph is synced.
 These rules belong to the AWS plugin, in `plugins/aws/src/exposure.rs`. KhonsuGraph
 itself knows nothing about AWS: it sends the plugin records from the graph, checks
 the findings that come back against them, and looks up their values and paths. See
-[offering an analysis](plugins.md#offering-an-analysis).
+[offering an analysis](../../docs/plugins.md#offering-an-analysis).
 
 A finding is **potential exposure worked out from configuration**. It does not
 show that anything is reachable, and no finding does not show that a resource is
 safe. No verdict says "reachable".
 
-## Verdicts
+### Verdicts
 
 Each rule is a list of conditions, each `met`, `not_met` or `unknown`. There is
 no score.
@@ -28,9 +34,9 @@ no score.
 Findings are ordered by verdict, then rule ID, then resource ID, so the same
 graph always gives the same order.
 
-## Rules
+### Rules
 
-### `aws.exposure.direct-instance`
+#### `aws.exposure.direct-instance`
 
 Every instance gets one finding.
 
@@ -45,7 +51,7 @@ A subnet with no route table of its own uses its VPC's main table. A route count
 when it is active, goes to an internet gateway, and matches the family of the
 instance's address.
 
-### `aws.exposure.public-load-balancer`
+#### `aws.exposure.public-load-balancer`
 
 Each target gets one finding per load balancer and target group that sends
 traffic to it.
@@ -61,14 +67,14 @@ traffic to it.
 A `TCP_UDP` or `TCP_QUIC` target group carries both, so a rule for either protocol
 counts. `UDP`, `QUIC` and `GENEVE` need a UDP rule, and anything else a TCP one.
 
-### `aws.exposure.security-group-lateral`
+#### `aws.exposure.security-group-lateral`
 
 One finding for each instance whose security group allows the
 group of an instance with a `potential_exposure` or `insufficient_data` finding.
 It follows one step. `depends_on` names the finding it rests on, and its verdict
 can be no stronger than that one's.
 
-## What the rules do not read
+### What the rules do not read
 
 Each finding lists its assumptions, and they include these:
 
@@ -82,7 +88,7 @@ Each finding lists its assumptions, and they include these:
 Only `0.0.0.0/0` and `::/0` count as the internet. Rules that together cover the
 address space, such as `0.0.0.0/1` and `128.0.0.0/1`, are not recognized.
 
-## A missing response is not a clear result
+### A missing response is not a clear result
 
 A record that should exist and doesn't makes a condition `unknown`, not `not_met`.
 A graph synced before route tables were read gives `insufficient_data` on the direct
@@ -104,7 +110,7 @@ still there.
 `complete` is also false when the graph held more than 50,000 records of one type. A
 missing finding then means nothing.
 
-## Walkthrough
+### Walkthrough
 
 This uses the saved responses in `plugins/aws/tests/fixture-exposure`, with no AWS
 access. It holds one case for each verdict. Run it from the repository root. In
@@ -173,7 +179,7 @@ khonsu plugin analyze aws exposure --db graphs/exposure --pretty --resource shop
 The commands above need the graph free. They fail with kind `locked` while the
 window has it open.
 
-## In the window
+### In the window
 
 Select an instance on a graph canvas, then choose **Run analysis** under Exposure in
 the inspector. The window offers it because the AWS plugin says it can speak about

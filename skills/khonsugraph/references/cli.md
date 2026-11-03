@@ -100,7 +100,7 @@ khonsu plugin analyze aws exposure --db graphs/aws --verdict potential-exposure 
 | `incomplete_sources` | Sources behind it whose last sync wasn't complete. A verdict that would be `not_indicated` becomes `insufficient_data` |
 | `contributing`, `evidence` | Evidence IDs of every record used, and those records |
 
-See `docs/exposure-rules.md` for the rules and a walkthrough.
+See `plugins/aws/README.md` for the rules and a walkthrough.
 
 ## Saved investigations
 
