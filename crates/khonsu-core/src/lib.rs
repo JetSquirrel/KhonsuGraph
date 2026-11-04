@@ -8,6 +8,7 @@ pub mod engine;
 pub mod evidence;
 pub mod explore;
 pub mod investigation;
+pub mod location;
 pub mod lock;
 pub mod merge;
 pub mod plugin;

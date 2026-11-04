@@ -5,6 +5,7 @@ pub mod canvas;
 pub mod chart;
 pub mod explorer;
 pub mod geo;
+pub mod graph_dialog;
 pub mod grid;
 pub mod palette;
 pub mod results;
@@ -205,11 +206,13 @@ pub fn set_menus(cx: &mut App) {
 }
 
 /// How opening a graph can go wrong, said for a person.
-fn open_error_message(err: &OpenError) -> String {
+pub fn open_error_message(err: &OpenError) -> String {
     let mut message = match err {
         OpenError::Locked(_) => trf("notify.open.locked", &[&err.to_string()]),
         OpenError::NotAGraph(path) => trf("notify.open.not_a_graph", &[&path.display().to_string()]),
         OpenError::NotEmpty(path) => trf("notify.open.not_empty", &[&path.display().to_string()]),
+        // The engine's words are kept for a bug report, after what they mean.
+        OpenError::Engine { message, hint: None } => trf("notify.open.unreadable", &[message]),
         _ => trf("notify.open.failed", &[&err.to_string()]),
     };
     if let OpenError::Engine { hint: Some(hint), .. } = err {
@@ -242,6 +245,41 @@ fn open_graph_then(
     window: &mut Window,
     cx: &mut App,
 ) {
+    let opened = state.clone();
+    open_graph_with(
+        opened,
+        path,
+        create,
+        read_only,
+        move |result, window, cx| match result {
+            Ok(()) => then(window, cx),
+            // Written by an older HawDB: offer to make it again rather than
+            // show the engine's integrity error.
+            Err(OpenError::OldFormat(path)) => crate::ui::sources::offer_rebuild(state, path, window, cx),
+            Err(err) => {
+                let title = match err {
+                    OpenError::Locked(_) => tr("notify.open.locked_title"),
+                    _ => tr("notify.open.failed_title"),
+                };
+                window.push_notification(Notification::error(open_error_message(&err)).title(title), cx);
+            }
+        },
+        window,
+        cx,
+    );
+}
+
+/// Opens or creates a graph and hands the outcome to `done`, for a caller that
+/// says what went wrong in its own way. Ignored while another open is running.
+pub fn open_graph_with(
+    state: Entity<AppState>,
+    path: PathBuf,
+    create: bool,
+    read_only: bool,
+    done: impl FnOnce(Result<(), OpenError>, &mut Window, &mut App) + 'static,
+    window: &mut Window,
+    cx: &mut App,
+) {
     if state.read(cx).is_opening() {
         return;
     }
@@ -262,21 +300,9 @@ fn open_graph_then(
                     Ok(info) => {
                         state.update(cx, |state, cx| state.set_graph(Some(info), cx));
                         reload_schema(state, window, cx);
-                        then(window, cx);
+                        done(Ok(()), window, cx);
                     }
-                    // Written by an older HawDB: offer to make it again
-                        // rather than show the engine's integrity error.
-                        Err(OpenError::OldFormat(path)) => crate::ui::sources::offer_rebuild(state, path, window, cx),
-                    Err(err) => {
-                        let title = match err {
-                            OpenError::Locked(_) => tr("notify.open.locked_title"),
-                            _ => tr("notify.open.failed_title"),
-                        };
-                        window.push_notification(
-                            Notification::error(open_error_message(&err)).title(title),
-                            cx,
-                        );
-                    }
+                    Err(err) => done(Err(err), window, cx),
                 }
             })
             .ok();
@@ -355,29 +381,13 @@ fn show_reopened(workspace: Entity<workspace::Workspace>, saved: Investigation, 
         .detach();
 }
 
-/// Ask for a folder and open it as a graph, or create one there.
+/// Ask which graph to open, or what to call a new one and where to put it.
 pub fn pick_graph(state: Entity<AppState>, create: bool, window: &mut Window, cx: &mut App) {
     if state.read(cx).is_opening() {
         return;
     }
-    let rx = cx.prompt_for_paths(PathPromptOptions {
-        files: false,
-        directories: true,
-        multiple: false,
-        prompt: Some(tr(if create { "title_bar.new_graph" } else { "title_bar.open_graph" }).into()),
-    });
-    window
-        .spawn(cx, async move |cx| {
-            let Ok(Ok(Some(paths))) = rx.await else {
-                return;
-            };
-            let Some(path) = paths.into_iter().next() else {
-                return;
-            };
-            cx.update(move |window, cx| open_graph_at(state, path, create, false, window, cx))
-                .ok();
-        })
-        .detach();
+    let purpose = if create { graph_dialog::Purpose::New } else { graph_dialog::Purpose::Open };
+    graph_dialog::show(state, purpose, window, cx);
 }
 
 pub fn close_graph(state: Entity<AppState>, cx: &mut App) {

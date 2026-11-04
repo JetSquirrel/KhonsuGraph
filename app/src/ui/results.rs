@@ -252,6 +252,13 @@ impl ResultsPanel {
         }
     }
 
+    /// The view the next result opens in. A result with nothing to draw still
+    /// falls back to the table.
+    pub fn prefer_view(&mut self, view: View, cx: &mut Context<Self>) {
+        self.view = view;
+        cx.notify();
+    }
+
     pub fn set_running(&mut self, cx: &mut Context<Self>) {
         self.content = Content::Running;
         cx.notify();

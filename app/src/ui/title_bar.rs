@@ -159,6 +159,14 @@ impl Render for TitleBarView {
                                     this.state.update(cx, |state, cx| state.toggle_sidebar(cx));
                                 })),
                         )
+                        .child(
+                            Button::new("go-home")
+                                .label(tr("home.title"))
+                                .occlude()
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    this.state.update(cx, |state, cx| state.set_home(true, cx));
+                                })),
+                        )
                         .content(caption_exempt(self.render_graph_menu(opening, graph.is_some(), read_only))),
                 )
                 .content(div().flex_1())

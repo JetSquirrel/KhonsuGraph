@@ -35,6 +35,8 @@ pub struct AppState {
     pub syncing: Option<String>,
     opening: bool,
     sidebar_collapsed: bool,
+    /// The home page instead of the tabs. The tabs stay as they are behind it.
+    home: bool,
 }
 
 impl EventEmitter<GraphChanged> for AppState {}
@@ -58,6 +60,7 @@ impl AppState {
             syncing: None,
             opening: false,
             sidebar_collapsed: false,
+            home: true,
         }
     }
 
@@ -75,6 +78,18 @@ impl AppState {
         self.opening = false;
         cx.emit(OpenStateChanged);
         cx.notify();
+    }
+
+    /// With no graph open there are no tabs, so home is all there is.
+    pub fn showing_home(&self) -> bool {
+        self.home || self.graph.is_none()
+    }
+
+    pub fn set_home(&mut self, home: bool, cx: &mut Context<Self>) {
+        if self.home != home {
+            self.home = home;
+            cx.notify();
+        }
     }
 
     pub fn is_sidebar_collapsed(&self) -> bool {
