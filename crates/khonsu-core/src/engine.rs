@@ -258,6 +258,7 @@ impl Graph {
                 AccessMode::ReadWrite => RecoveryMode::default(),
             },
             max_read_result_rows: Some(MAX_READ_RESULT_ROWS),
+            namespace_durability_anchor: if cfg!(windows) { durability_anchor(&path, dirs::home_dir().as_deref()) } else { None },
             ..DatabaseConfig::default()
         };
         let db = Database::open_with_config(&path, config).map_err(|err| open_failure(&path, err))?;
@@ -542,6 +543,17 @@ pub fn normalize_path(path: &Path) -> PathBuf {
     }
 }
 
+/// Where HawDB can stop flushing parent folders when it opens the graph at the
+/// canonical `path`: the home folder, for a graph inside it. Windows provides
+/// that folder and keeps it in place, so we vouch for it being durable. Ordinary
+/// users can't open `C:\Users` for writing, so without this no graph there opens.
+/// Everything from the graph up to and including the home folder is still flushed.
+/// This depends only on the path, as HawDB requires every open to agree.
+fn durability_anchor(path: &Path, home: Option<&Path>) -> Option<PathBuf> {
+    let home = normalize_path(home?);
+    (path != home && path.starts_with(&home)).then_some(home)
+}
+
 fn open_failure(path: &Path, err: HawDBError) -> OpenError {
     let message = err.to_string();
     let lower = message.to_ascii_lowercase();
@@ -550,9 +562,9 @@ fn open_failure(path: &Path, err: HawDBError) -> OpenError {
     }
     let hint = if cfg!(windows) && (lower.contains("os error 5") || message.contains("拒绝访问")) {
         Some(
-            "HawDB flushes every parent directory up to the drive root when opening a graph for writing. \
-             On Windows this needs write access to those directories; a graph under a drive root you can \
-             write to (e.g. D:\\graphs) works, or open read-only."
+            "Outside your user folder, HawDB needs write access to every parent folder up to the drive root \
+             to open a graph for writing. Keep the graph in your user folder or on a drive whose root you can \
+             write to (e.g. D:\\graphs), or open it read-only."
                 .to_string(),
         )
     } else {
@@ -582,5 +594,55 @@ mod tests {
     fn explain_keyword_needs_a_word_boundary() {
         assert!(starts_with_keyword("explain MATCH (n) RETURN n", "EXPLAIN"));
         assert!(!starts_with_keyword("EXPLAINED", "EXPLAIN"));
+    }
+
+    #[test]
+    fn only_a_graph_inside_the_home_folder_gets_an_anchor() {
+        let base = std::env::var_os("KHONSU_TEST_DIR").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
+        fs::create_dir_all(&base).unwrap();
+        let dir = tempfile::tempdir_in(base).unwrap();
+        let home = dir.path().join("home");
+        let elsewhere = dir.path().join("elsewhere").join("graph");
+        let inside = home.join("Documents").join("graph");
+        // Only the folder name is shared, which doesn't make it inside.
+        let sibling = dir.path().join("home2").join("graph");
+        for path in [&inside, &elsewhere, &sibling] {
+            fs::create_dir_all(path).unwrap();
+        }
+        let canonical_home = normalize_path(&home);
+
+        assert_eq!(durability_anchor(&normalize_path(&inside), Some(&home)), Some(canonical_home.clone()));
+        assert_eq!(durability_anchor(&normalize_path(&elsewhere), Some(&home)), None);
+        assert_eq!(durability_anchor(&normalize_path(&sibling), Some(&home)), None);
+        // HawDB wants an ancestor, so a graph can't anchor at itself.
+        assert_eq!(durability_anchor(&canonical_home, Some(&home)), None);
+        assert_eq!(durability_anchor(&normalize_path(&inside), None), None);
+    }
+
+    /// The temp folder is under the home folder on a normal Windows machine, and
+    /// on drive C, where a graph couldn't be created before the anchor.
+    #[cfg(windows)]
+    #[test]
+    fn a_graph_in_the_home_folder_can_be_created_and_reopened() {
+        let temp = normalize_path(&std::env::temp_dir());
+        if !dirs::home_dir().is_some_and(|home| temp.starts_with(normalize_path(&home))) {
+            return;
+        }
+        let dir = tempfile::tempdir_in(&temp).unwrap();
+        let path = dir.path().join("new").join("graph");
+        let params = Map::new();
+
+        let mut graph = Graph::create(&path, "test").unwrap();
+        graph.run(Language::Cypher, "CREATE (:Person {name: 'Ada'})", &params, QueryOptions::default()).unwrap();
+        drop(graph);
+
+        let mut graph = Graph::open(&path, AccessMode::ReadWrite, "test").unwrap();
+        let found = graph.run(Language::Cypher, "MATCH (p:Person) RETURN p.name", &params, QueryOptions::default()).unwrap();
+        assert_eq!(found.rows.len(), 1);
+        drop(graph);
+
+        let mut graph = Graph::open(&path, AccessMode::ReadOnly, "test").unwrap();
+        let found = graph.run(Language::Cypher, "MATCH (p:Person) RETURN p.name", &params, QueryOptions::default()).unwrap();
+        assert_eq!(found.rows.len(), 1);
     }
 }

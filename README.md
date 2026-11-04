@@ -78,10 +78,12 @@ for earlier database compatibility checks.
 
 - One process per graph directory, readers included. While the app has a
   graph open, `khonsu query` and `khonsu check` run through the app.
-- On Windows, opening a graph for writing flushes every directory up to the
-  drive root, which needs write access to the root itself. Ordinary users
-  cannot write to `C:\`, so keep graphs on a drive whose root you can write
-  to (for example `D:\graphs`); graphs anywhere can still be opened read-only.
+- On Windows, a graph can go anywhere in your user folder. Elsewhere, opening
+  one for writing flushes every directory up to the drive root, which needs
+  write access to the root itself. Ordinary users cannot write to `C:\`, so a
+  path like `C:\graphs` fails; use your user folder or a drive whose root you
+  can write to (for example `D:\graphs`). Graphs anywhere can still be opened
+  read-only.
 - `OPTIONAL MATCH`, scalar `IN` expressions and `json_value()` on JSON text
   are supported. Relationship properties can now be updated with `SET`;
   the importer retains its existing delete/recreate strategy.
