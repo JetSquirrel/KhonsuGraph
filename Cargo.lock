@@ -4490,6 +4490,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "khonsu-plugin-neo4j"
+version = "0.2.0"
+dependencies = [
+ "base64 0.22.1",
+ "khonsu-plugin-protocol",
+ "serde",
+ "serde_json",
+ "ureq",
+]
+
+[[package]]
 name = "khonsu-plugin-protocol"
 version = "0.2.0"
 dependencies = [

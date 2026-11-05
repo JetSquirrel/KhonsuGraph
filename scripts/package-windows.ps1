@@ -12,7 +12,7 @@ if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
 New-Item -ItemType Directory $dir | Out-Null
 Copy-Item "$Bin/khonsugraph.exe", LICENSE, README.md $dir
 Copy-Item "$Bin/khonsugraph.exe" "$dir/khonsu.exe"
-foreach ($id in "csv", "aws") {
+foreach ($id in "csv", "aws", "neo4j") {
   $target = "$dir/plugins/$id"
   New-Item -ItemType Directory $target | Out-Null
   Copy-Item "$Bin/khonsu-plugin-$id.exe", "plugins/$id/khonsu-plugin.json" $target

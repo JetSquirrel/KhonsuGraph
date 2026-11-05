@@ -226,6 +226,16 @@ fn normalize(value: &Value) -> Value {
     }
 }
 
+/// Without `khonsu_hash`, for graphs kept from before nodes had one: they gain it
+/// on their next sync, and it says nothing the other properties don't.
+fn without_hash(value: &Value) -> Value {
+    match value {
+        Value::Object(map) => Value::Object(map.iter().filter(|(key, _)| key.as_str() != "khonsu_hash").map(|(key, value)| (key.clone(), without_hash(value))).collect()),
+        Value::Array(items) => Value::Array(items.iter().filter(|item| item.as_str() != Some("khonsu_hash")).map(without_hash).collect()),
+        other => other.clone(),
+    }
+}
+
 fn copy_dir(from: &Path, to: &Path) {
     std::fs::create_dir_all(to).unwrap();
     for entry in std::fs::read_dir(from).unwrap().flatten() {
@@ -1581,9 +1591,9 @@ fn graphs_written_by_earlier_hawdb_versions_keep_their_meaning() {
         zip::ZipArchive::new(file).unwrap().extract(&db).unwrap();
 
         let name = zip_path.file_name().unwrap().to_string_lossy().into_owned();
-        assert_same(&format!("{name}: answers"), &normalize(&env.answers(&db)), &expected["answers"]);
-        assert_same(&format!("{name}: schema"), &normalize(&env.ok(&["schema", "-d", text(&db)])), &expected["schema"]);
-        assert_same(&format!("{name}: exposure"), &normalize(&exposure_brief(&env.ok(&["plugin", "analyze", "aws", "exposure", "-d", text(&db)]))), &expected["exposure"]["shop_fixture"]);
+        assert_same(&format!("{name}: answers"), &without_hash(&normalize(&env.answers(&db))), &without_hash(&expected["answers"]));
+        assert_same(&format!("{name}: schema"), &without_hash(&normalize(&env.ok(&["schema", "-d", text(&db)]))), &without_hash(&expected["schema"]));
+        assert_same(&format!("{name}: exposure"), &without_hash(&normalize(&exposure_brief(&env.ok(&["plugin", "analyze", "aws", "exposure", "-d", text(&db)])))), &without_hash(&expected["exposure"]["shop_fixture"]));
         // An upgrade must not make every saved investigation read as changed.
         let saved = env.ok(&investigation_save(&db, &env.path("saved.investigation")));
         assert_same(&format!("{name}: fingerprint"), &normalize(&saved["investigation"]["fingerprint"]), &expected["investigation"]["fingerprint"]);

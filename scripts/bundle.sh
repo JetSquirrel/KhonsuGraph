@@ -9,7 +9,7 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
-cargo build --release --locked -p khonsugraph -p khonsu-plugin-csv -p khonsu-plugin-aws
+cargo build --release --locked -p khonsugraph -p khonsu-plugin-csv -p khonsu-plugin-aws -p khonsu-plugin-neo4j
 
 APP="target/release/KhonsuGraph.app"
 scripts/assemble-app.sh target/release "$APP"

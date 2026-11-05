@@ -74,7 +74,8 @@ These are written down so that nobody reads an empty result as proof:
   still finishes first.
 
 - **`record_written_at` is when a record last changed.** A sync does not rewrite
-  an unchanged relationship, so this can be older than the sync that last saw it.
+  an unchanged node or relationship, so this can be older than the sync that last
+  saw it.
   `source_last_successful_sync` is the source's last complete sync, and
   `source_coverage` says how its latest one ended.
 - **Evidence shows what is stored, not the raw response.** The AWS plugin stores

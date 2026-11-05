@@ -14,7 +14,7 @@ set -euo pipefail
 BIN="$1"
 APP="$2"
 VERSION="${3:-}"
-PLUGINS="csv aws"
+PLUGINS="csv aws neo4j"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"

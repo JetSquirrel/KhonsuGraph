@@ -24,6 +24,8 @@ const MAX_READ_RESULT_ROWS: usize = 100_000;
 /// to set whether it was created or found.
 pub(crate) struct NodeUpsert {
     pub label: String,
+    /// Its internal ID, if it's known to exist.
+    pub id: Option<i64>,
     pub key: (String, Value),
     pub set: BTreeMap<String, Value>,
 }
@@ -429,19 +431,31 @@ impl Graph {
         for chunk in nodes.chunks(KERNEL_BATCH) {
             let graph = chunk
                 .iter()
-                .map(|node| GraphMutation::MergeNode {
-                    label: node.label.clone(),
-                    match_properties: BTreeMap::from([(node.key.0.clone(), node.key.1.clone())]),
-                    on_create_properties: BTreeMap::new(),
-                    on_match_assignments: Vec::new(),
-                    post_merge_assignments: node
+                .map(|node| {
+                    let assignments = node
                         .set
                         .iter()
                         .map(|(property, value)| NodeSetAssignment {
                             property: property.clone(),
                             value: NodeSetValue::Value(value.clone()),
                         })
-                        .collect(),
+                        .collect();
+                    // By ID where it's known. A MERGE on a graph of 100,000 nodes has
+                    // been seen not to find the node it was updating, and to add another.
+                    match node.id {
+                        Some(id) => GraphMutation::SetNodeProperties {
+                            label: node.label.clone(),
+                            filter: Some(PropertyFilter::IdEq { value: Value::Int(id) }),
+                            assignments,
+                        },
+                        None => GraphMutation::MergeNode {
+                            label: node.label.clone(),
+                            match_properties: BTreeMap::from([(node.key.0.clone(), node.key.1.clone())]),
+                            on_create_properties: BTreeMap::new(),
+                            on_match_assignments: Vec::new(),
+                            post_merge_assignments: assignments,
+                        },
+                    }
                 })
                 .collect();
             self.db.commit_kernel_write_batch(KernelWriteBatch {
@@ -474,6 +488,51 @@ impl Graph {
                 ..KernelWriteBatch::default()
             })?;
         }
+        Ok(())
+    }
+
+    /// Deletes nodes of `label` by internal ID, with their relationships. Matching
+    /// them any other way counts the whole label against HawDB's 100,000-row limit.
+    pub(crate) fn delete_nodes(&mut self, label: &str, ids: &[i64]) -> Result<(), QueryError> {
+        self.ensure_writable()?;
+        for chunk in ids.chunks(KERNEL_BATCH) {
+            self.db.commit_kernel_write_batch(KernelWriteBatch {
+                graph: vec![GraphMutation::DeleteNode {
+                    label: label.to_string(),
+                    filter: Some(PropertyFilter::IdIn { values: chunk.iter().map(|id| Value::Int(*id)).collect() }),
+                    detach: true,
+                }],
+                ..KernelWriteBatch::default()
+            })?;
+        }
+        Ok(())
+    }
+
+    /// Deletes relationships of one pattern, given as (relationship, source node)
+    /// internal IDs. The source IDs are what keep the source label out of the limit.
+    pub(crate) fn delete_relationships(&mut self, source_label: &str, rel_type: &str, target_label: &str, ids: &[(i64, i64)]) -> Result<(), QueryError> {
+        self.ensure_writable()?;
+        for chunk in ids.chunks(KERNEL_BATCH) {
+            self.db.commit_kernel_write_batch(KernelWriteBatch {
+                graph: vec![GraphMutation::DeleteRelationship {
+                    source_label: source_label.to_string(),
+                    filter: Some(PropertyFilter::IdIn { values: chunk.iter().map(|(_, source)| Value::Int(*source)).collect() }),
+                    rel_type: rel_type.to_string(),
+                    target_label: target_label.to_string(),
+                    target_filter: None,
+                    rel_filter: Some(PropertyFilter::IdIn { values: chunk.iter().map(|(id, _)| Value::Int(*id)).collect() }),
+                }],
+                ..KernelWriteBatch::default()
+            })?;
+        }
+        Ok(())
+    }
+
+    /// Publishes what has been written. Left to itself, HawDB does this during the
+    /// next read, which took 14 minutes on a graph of 250,000 relationships.
+    pub(crate) fn checkpoint(&mut self) -> Result<(), QueryError> {
+        self.ensure_writable()?;
+        self.db.checkpoint()?;
         Ok(())
     }
 
