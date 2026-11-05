@@ -10,7 +10,7 @@
 use crate::engine::{Graph, QueryError};
 use crate::evidence::{self, Field, PathEvidence, SourceCoverage};
 use crate::explore::{Direction, Exploration, ExploreRequest, Hop, DEFAULT_MAX_EDGES, DEFAULT_MAX_NODES};
-use crate::merge::{ID_PROPERTY, PLUGIN_PROPERTY, SOURCE_PROPERTY, SYNCED_AT_PROPERTY};
+use crate::merge::{HASH_PROPERTY, ID_PROPERTY, PLUGIN_PROPERTY, SOURCE_PROPERTY, SYNCED_AT_PROPERTY};
 use crate::protocol::HopRef;
 use crate::result::{value_to_json, GraphCollector, GraphData, GraphNode};
 use crate::settings::{RunStatus, Source};
@@ -555,7 +555,10 @@ pub(crate) fn content_hash(data: &GraphData) -> (String, Vec<String>) {
 fn node_line(node: &GraphNode) -> String {
     let mut labels = node.labels.clone();
     labels.sort_unstable();
-    format!("{}|{}", labels.join(":"), canonical(&node.properties))
+    // Nodes only got a hash later: a graph must not read as changed for gaining one.
+    let mut properties = node.properties.clone();
+    properties.remove(HASH_PROPERTY);
+    format!("{}|{}", labels.join(":"), canonical(&properties))
 }
 
 /// Properties as text with keys in order, without what changes on a re-sync.

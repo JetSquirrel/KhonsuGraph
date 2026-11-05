@@ -13,6 +13,7 @@
       "stale_nodes_removed": 0,
       "stale_edges_removed": 0,
       "unchanged_edges": 0,
+      "unchanged_nodes": 0,
       "warnings": []
     },
     "run": {
@@ -32,7 +33,7 @@
     "received_nodes": 16,
     "received_edges": 24,
     "merge": {
-      "nodes_written": 16,
+      "nodes_written": 0,
       "edges_written": 0,
       "duplicate_nodes": 0,
       "duplicate_edges": 0,
@@ -40,6 +41,7 @@
       "stale_nodes_removed": 0,
       "stale_edges_removed": 0,
       "unchanged_edges": 24,
+      "unchanged_nodes": 16,
       "warnings": []
     },
     "run": {
@@ -62,6 +64,7 @@
         "count": 1,
         "properties": [
           "account_id",
+          "khonsu_hash",
           "khonsu_id",
           "khonsu_plugin",
           "khonsu_source",
@@ -73,6 +76,7 @@
         "count": 2,
         "properties": [
           "cidr",
+          "khonsu_hash",
           "khonsu_id",
           "khonsu_plugin",
           "khonsu_source",
@@ -86,6 +90,7 @@
         "properties": [
           "image_id",
           "instance_id",
+          "khonsu_hash",
           "khonsu_id",
           "khonsu_plugin",
           "khonsu_source",
@@ -102,6 +107,7 @@
         "name": "InternetGateway",
         "count": 1,
         "properties": [
+          "khonsu_hash",
           "khonsu_id",
           "khonsu_plugin",
           "khonsu_source",
@@ -114,6 +120,7 @@
         "count": 1,
         "properties": [
           "dns_name",
+          "khonsu_hash",
           "khonsu_id",
           "khonsu_plugin",
           "khonsu_source",
@@ -127,6 +134,7 @@
         "name": "Region",
         "count": 1,
         "properties": [
+          "khonsu_hash",
           "khonsu_id",
           "khonsu_plugin",
           "khonsu_source",
@@ -139,6 +147,7 @@
         "count": 2,
         "properties": [
           "arn",
+          "khonsu_hash",
           "khonsu_id",
           "khonsu_plugin",
           "khonsu_source",
@@ -154,6 +163,7 @@
         "properties": [
           "description",
           "group_id",
+          "khonsu_hash",
           "khonsu_id",
           "khonsu_plugin",
           "khonsu_source",
@@ -167,6 +177,7 @@
         "properties": [
           "availability_zone",
           "cidr",
+          "khonsu_hash",
           "khonsu_id",
           "khonsu_plugin",
           "khonsu_source",
@@ -180,6 +191,7 @@
         "name": "TargetGroup",
         "count": 1,
         "properties": [
+          "khonsu_hash",
           "khonsu_id",
           "khonsu_plugin",
           "khonsu_source",
@@ -195,6 +207,7 @@
         "properties": [
           "cidr",
           "is_default",
+          "khonsu_hash",
           "khonsu_id",
           "khonsu_plugin",
           "khonsu_source",
@@ -1210,6 +1223,7 @@
             "properties": {
               "image_id": "ami-web",
               "instance_id": "i-web1",
+              "khonsu_hash": "b4233834f5f2e2a5",
               "khonsu_id": "shop/123456789012:us-east-1:i-web1",
               "khonsu_source": "shop",
               "launched_at": "2026-09-01T08:00:00+00:00",
@@ -1226,6 +1240,7 @@
               "InternetGateway"
             ],
             "properties": {
+              "khonsu_hash": "4e09814f6a075a3a",
               "khonsu_id": "shop/123456789012:us-east-1:igw-shop",
               "khonsu_source": "shop",
               "name": "igw-shop"
@@ -1238,6 +1253,7 @@
             ],
             "properties": {
               "dns_name": "shop-123.us-east-1.elb.amazonaws.com",
+              "khonsu_hash": "010f1113ac7b980a",
               "khonsu_id": "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
               "khonsu_source": "shop",
               "name": "shop",
@@ -1251,6 +1267,7 @@
               "TargetGroup"
             ],
             "properties": {
+              "khonsu_hash": "3acb1d6343183feb",
               "khonsu_id": "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/def",
               "khonsu_source": "shop",
               "name": "web",
@@ -1265,6 +1282,7 @@
             ],
             "properties": {
               "cidr": "0.0.0.0/0",
+              "khonsu_hash": "e266825b5407a2d6",
               "khonsu_id": "shop/cidr:internet",
               "khonsu_source": "shop",
               "name": "Internet"
@@ -1661,6 +1679,7 @@
             "properties": {
               "image_id": "ami-web",
               "instance_id": "i-web1",
+              "khonsu_hash": "b4233834f5f2e2a5",
               "khonsu_id": "shop/123456789012:us-east-1:i-web1",
               "khonsu_source": "shop",
               "launched_at": "2026-09-01T08:00:00+00:00",
@@ -1677,6 +1696,7 @@
               "TargetGroup"
             ],
             "properties": {
+              "khonsu_hash": "3acb1d6343183feb",
               "khonsu_id": "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/def",
               "khonsu_source": "shop",
               "name": "web",
@@ -1767,6 +1787,7 @@
             "properties": {
               "image_id": "ami-web",
               "instance_id": "i-web1",
+              "khonsu_hash": "b4233834f5f2e2a5",
               "khonsu_id": "shop/123456789012:us-east-1:i-web1",
               "khonsu_source": "shop",
               "launched_at": "2026-09-01T08:00:00+00:00",
@@ -1783,6 +1804,7 @@
               "InternetGateway"
             ],
             "properties": {
+              "khonsu_hash": "4e09814f6a075a3a",
               "khonsu_id": "shop/123456789012:us-east-1:igw-shop",
               "khonsu_source": "shop",
               "name": "igw-shop"
@@ -1795,6 +1817,7 @@
             ],
             "properties": {
               "dns_name": "shop-123.us-east-1.elb.amazonaws.com",
+              "khonsu_hash": "010f1113ac7b980a",
               "khonsu_id": "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
               "khonsu_source": "shop",
               "name": "shop",
@@ -1808,6 +1831,7 @@
               "TargetGroup"
             ],
             "properties": {
+              "khonsu_hash": "3acb1d6343183feb",
               "khonsu_id": "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/def",
               "khonsu_source": "shop",
               "name": "web",
@@ -1822,6 +1846,7 @@
             ],
             "properties": {
               "cidr": "0.0.0.0/0",
+              "khonsu_hash": "e266825b5407a2d6",
               "khonsu_id": "shop/cidr:internet",
               "khonsu_source": "shop",
               "name": "Internet"
