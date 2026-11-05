@@ -17,13 +17,14 @@ HawDB product.
 | `crates/khonsu-plugin-protocol` | The data-source plugin protocol (JSON lines over stdio); see [docs/plugins.md](docs/plugins.md) to write a plugin in any language |
 | `plugins/csv` | The built-in CSV plugin |
 | `plugins/aws` | The official AWS plugin: VPCs, subnets, security groups, instances, load balancers and IAM roles, read through the `aws` CLI |
+| `plugins/neo4j` | The official Neo4j plugin: copies a Neo4j database, such as one [Cartography](https://github.com/cartography-cncf/cartography) fills, over its HTTP API |
 | `skills/khonsugraph` | The agent skill: how to query, author dashboards and review them with a person |
 | `examples/` | Five user-story dashboards on public datasets, the scripts that build their graphs, an AWS exposure dashboard and a Python plugin |
 
 ## Build
 
 ```sh
-cargo build --workspace            # app, CLI, CSV and AWS plugins
+cargo build --workspace            # app, CLI, CSV, AWS and Neo4j plugins
 cargo test --workspace
 ```
 

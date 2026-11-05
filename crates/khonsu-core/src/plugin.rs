@@ -43,7 +43,7 @@ const MAX_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_ARCHIVE_ENTRIES: usize = 10_000;
 
 /// IDs of plugins shipped with KhonsuGraph.
-pub const BUILTIN_PLUGINS: &[&str] = &["csv", "aws"];
+pub const BUILTIN_PLUGINS: &[&str] = &["csv", "aws", "neo4j"];
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PluginInfo {

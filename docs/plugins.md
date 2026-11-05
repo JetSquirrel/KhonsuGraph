@@ -5,8 +5,9 @@ runs it as a separate program, talks to it in JSON lines over stdin/stdout,
 and writes what it reports into the graph. A plugin never opens the graph
 itself, so it can be written in any language and cannot corrupt a graph.
 
-The two official plugins are worked examples: `plugins/csv` (local files) and
-`plugins/aws` (a cloud account through the `aws` CLI). The smallest complete
+The official plugins are worked examples: `plugins/csv` (local files),
+`plugins/aws` (a cloud account through the `aws` CLI) and
+[`plugins/neo4j`](../plugins/neo4j/README.md) (another graph database). The smallest complete
 plugin is `examples/plugins/folders`, about a hundred lines of Python with no
 dependencies.
 
@@ -261,7 +262,8 @@ The host stores each element under `khonsu_id = "<source id>/<your id>"`,
 together with `khonsu_source`, `khonsu_plugin` and `khonsu_synced_at`, so two
 sources that use the same plugin never collide. On a sync:
 
-- a node with a known ID is updated in place; a new ID adds a node;
+- a node that did not change is left alone, one that changed is updated in
+  place, and a new ID adds a node;
 - a relationship that did not change is left alone, and a changed one is
   replaced;
 - after a **full** sync, nodes and relationships this source wrote before but

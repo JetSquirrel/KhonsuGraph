@@ -1,0 +1,12 @@
+{
+  "id": "neo4j",
+  "name": "Neo4j",
+  "version": "0.1.0",
+  "protocol": 1,
+  "entry": ["khonsu-plugin-neo4j"],
+  "description": "Copies the nodes and relationships of a Neo4j database, such as one Cartography fills",
+  "permissions": {
+    "network": ["The Neo4j server you configure"],
+    "notes": ["Sends only read queries, in read access mode"]
+  }
+}
