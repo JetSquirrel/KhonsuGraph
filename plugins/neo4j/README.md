@@ -73,7 +73,7 @@ MATCH (p) WHERE 'AWSPrincipal' IN p.neo4j_labels RETURN p.id
 **`=~` finds a match anywhere in the text.** In Neo4j it has to match the whole text, so
 `r.name =~ 'r1'` also finds `r10` here. Write `r.name =~ '^r1$'`.
 
-The rest fail with an error you can see. These are limits of HawDB's Cypher as of 0.24:
+The rest fail with an error you can see. These are limits of HawDB's Cypher as of 0.27:
 
 | In Neo4j | What to do here |
 |---|---|
