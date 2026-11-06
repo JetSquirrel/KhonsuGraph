@@ -215,6 +215,18 @@ fn temporal_properties_read_back_as_iso_strings_after_reopen() {
     assert_eq!(result.graph.unwrap().nodes[0].properties["day"], json!("2026-10-30"));
 }
 
+/// Since 0.25 SQL numbers are exact decimals; a dashboard still needs numbers
+/// to chart them.
+#[test]
+fn sql_decimals_come_back_as_numbers() {
+    let dir = TestDir::new();
+    let mut graph = Graph::create(dir.graph(), "test").unwrap();
+    run(&mut graph, Language::Sql, "CREATE TABLE price (id INT PRIMARY KEY, amount DECIMAL(10,2))");
+    run(&mut graph, Language::Sql, "INSERT INTO price VALUES (1, 19.99), (2, 5.01)");
+    let result = run(&mut graph, Language::Sql, "SELECT sum(amount) AS total, 1.5 AS literal FROM price");
+    assert_eq!(result.rows, vec![vec![json!(25.0), json!(1.5)]]);
+}
+
 #[test]
 fn a_shortest_path_comes_back_as_graph_elements() {
     let dir = TestDir::new();

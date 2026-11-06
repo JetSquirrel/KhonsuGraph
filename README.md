@@ -67,15 +67,16 @@ khonsu analyze pagerank --db graphs/audit --type TRUSTS --top 10
 khonsu analyze communities --db graphs/investigation
 ```
 
-## HawDB 0.24.0 notes
+## HawDB 0.27.0 notes
 
-KhonsuGraph pins HawDB to 0.24.0. See [upgrade validation](docs/hawdb-0.24-upgrade.md)
-for compatibility checks and their scope, and the [0.22](docs/hawdb-0.22-upgrade.md), [0.19](docs/hawdb-0.19-upgrade.md), [0.15](docs/hawdb-0.15-upgrade.md), [0.12](docs/hawdb-0.12-upgrade.md) and [0.11 validation](docs/hawdb-0.11-upgrade.md)
+KhonsuGraph pins HawDB to 0.27.0. See [upgrade validation](docs/hawdb-0.27-upgrade.md)
+for compatibility checks, performance and their scope, and the [0.24](docs/hawdb-0.24-upgrade.md), [0.22](docs/hawdb-0.22-upgrade.md), [0.19](docs/hawdb-0.19-upgrade.md), [0.15](docs/hawdb-0.15-upgrade.md), [0.12](docs/hawdb-0.12-upgrade.md) and [0.11 validation](docs/hawdb-0.11-upgrade.md)
 for earlier database compatibility checks.
 
-- Graphs written by HawDB 0.8–0.15, including the first v0.1.0 build, cannot
-  be read and report `old_format`; `khonsu rebuild` makes them again from
-  their data sources. Graphs written by 0.19 or 0.22 open in 0.24 as they are.
+- Graphs written before HawDB 0.25, by every KhonsuGraph build up to v0.2.0,
+  cannot be read and report `old_format`: 0.25 changed the storage format and
+  reads no older graph. `khonsu rebuild` makes them again from their data
+  sources.
 
 - One process per graph directory, readers included. While the app has a
   graph open, `khonsu query` and `khonsu check` run through the app.
@@ -96,6 +97,10 @@ for earlier database compatibility checks.
   filters remove an unpicked condition instead.
 - HawDB's `LOAD CSV` stays off, so a query or a dashboard cannot read files
   from disk; CSV files come in through a data source.
+- SQL numbers are exact decimals since 0.25 (`SELECT 1.5`, `DECIMAL`
+  columns and their `sum`); they come back as JSON numbers, or as exact text
+  when a double would lose digits. SQL syntax errors give a line and column
+  again, worked out from the byte span the new parser reports.
 - KhonsuGraph explicitly limits reads to 100,000 result rows, preserving
   its previous behavior after HawDB removed the default row limit in 0.10.
   The result display limit is separate and does not lower execution cost.

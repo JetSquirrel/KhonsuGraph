@@ -154,7 +154,7 @@ pub fn placeholders(sql: &str) -> Vec<Placeholder> {
 /// `text` with each `$name` replaced by the picked value's predicate when
 /// `picks` has one for that name. An unpicked one is taken out with the
 /// `AND` that joins it, and a `WHERE` left with no condition goes too: HawDB's
-/// SQL accepts no `TRUE` in a predicate (its Cypher does as of 0.24).
+/// SQL accepts no `TRUE` in a predicate (still so in 0.27; its Cypher does).
 pub fn apply(text: &str, language: Language, picks: &HashMap<String, Pick>) -> String {
     // Work from the last placeholder back, so earlier ranges stay valid.
     let mut out = text.to_string();
