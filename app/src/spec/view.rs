@@ -56,7 +56,7 @@ use gpui_kit::component::spinner::Spinner;
 use gpui_kit::component::table::{
     Column, ColumnSort, DataTable, TableDelegate, TableEvent, TableState,
 };
-use gpui_kit::component::{h_flex, v_flex, ActiveTheme, Icon, IconName, Sizable, StyledExt};
+use gpui_kit::component::{h_flex, v_flex, ActiveTheme, Icon, IconName, Sizable, StyledExt, TITLE_BAR_HEIGHT};
 use gpui_kit::prelude::FluentBuilder;
 
 use super::wheel::WheelLatch;
@@ -1154,25 +1154,34 @@ impl Dashboard {
         self.plots.iter().position(|plot| plot.name == name)
     }
 
-    /// The blown-up plot alone, as a panel filling the dashboard.
+    /// The blown-up plot alone, drawn over the whole window below the title
+    /// bar — as the query canvas fills it — so the sidebar, the tabs and the
+    /// rest of the dashboard step aside. The dashboard keeps a note where
+    /// the plots were; the title bar stays, so the window's buttons do too.
     fn render_maximized(
         &mut self,
         ix: usize,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let viewport = window.viewport_size();
         if self.plots[ix].kind == "card" {
-            let room = self
-                .wheel
-                .viewport()
-                .get()
-                .map(|viewport| viewport.size.width.as_f32() - CARD_PADDING - PAGE_GAP);
+            let room = Some(viewport.width.as_f32() - CARD_PADDING - PAGE_GAP * 2.);
             let size = card_value_size(self.plots[ix].card.as_deref().unwrap_or_default(), room);
             self.card_sizes.insert(ix, size);
         }
         let boxed = self.plots[ix].kind != "text";
-        div()
-            .size_full()
+        let theme = cx.theme();
+        let (border, muted) = (theme.border, theme.muted_foreground);
+        let overlay = div()
+            .id(format!("dashboard-maximized-{}", self.id))
+            .occlude()
+            .w(viewport.width)
+            .h(viewport.height - TITLE_BAR_HEIGHT)
+            .bg(crate::ui::palette::page(cx))
+            .text_color(cx.theme().foreground)
+            .border_t_1()
+            .border_color(border)
             .p(px(PAGE_GAP))
             .child(
                 div()
@@ -1182,11 +1191,23 @@ impl Dashboard {
                     .when(boxed, |this| {
                         this.bg(crate::ui::palette::panel(cx))
                             .border_1()
-                            .border_color(cx.theme().border)
+                            .border_color(border)
                             .rounded(px(PANEL_RADIUS))
                     })
                     .child(self.render_plot(ix, window, cx))
                     .children(self.render_plot_presence(ix, cx)),
+            );
+        div()
+            .size_full()
+            .flex()
+            .items_center()
+            .justify_center()
+            .text_sm()
+            .text_color(muted)
+            .child(tr("dashboard.maximized_note"))
+            .child(
+                deferred(anchored().position(point(px(0.), TITLE_BAR_HEIGHT)).child(overlay))
+                    .with_priority(1),
             )
             .into_any_element()
     }
