@@ -317,7 +317,9 @@ impl Dashboard {
                         "plot": filter.plot,
                         "column": filter.column,
                         "picked": pick.is_some(),
-                        "value": pick.map(|pick| pick.value.clone()),
+                        "multiple": filter.multiple,
+                        "value": pick.and_then(|pick| (pick.values.len() == 1).then(|| pick.values[0].clone())),
+                        "values": pick.map(|pick| pick.values.clone()),
                     })
                 })
                 .collect()
@@ -805,13 +807,48 @@ impl Dashboard {
 
     /// The band a bar plot shows as picked: the value of a filter that picks
     /// the plot's own x.
-    fn picked_band(&self, plot: &PreparedPlot) -> Option<SharedString> {
-        let spec = self.spec.as_ref()?;
+    fn picked_bands(&self, plot: &PreparedPlot) -> Vec<SharedString> {
+        let Some(spec) = self.spec.as_ref() else {
+            return Vec::new();
+        };
         spec.filters
             .iter()
             .filter(|f| f.plot == plot.name && f.column.eq_ignore_ascii_case(&plot.label_name))
             .find_map(|f| self.picks.get(&f.name))
-            .map(|pick| SharedString::from(pick_text(&pick.value)))
+            .map(|pick| pick.values.iter().map(|value| SharedString::from(pick_text(value))).collect())
+            .unwrap_or_default()
+    }
+
+    /// Pick `value` for `filter`: one that takes several adds it, or takes it
+    /// out when it is in already; another replaces its pick, or with `toggle`
+    /// clears it when `value` is what it has. Whether anything changed.
+    fn pick(&mut self, filter: &model::Filter, value: serde_json::Value, toggle: bool) -> bool {
+        if filter.multiple {
+            let pick = self.picks.entry(filter.name.clone()).or_insert_with(|| Pick {
+                column: filter.column.clone(),
+                expr: filter.match_expr.clone(),
+                values: Vec::new(),
+            });
+            pick.toggle(value);
+            if pick.values.is_empty() {
+                self.picks.remove(&filter.name);
+            }
+            return true;
+        }
+        let pick = Pick {
+            column: filter.column.clone(),
+            expr: filter.match_expr.clone(),
+            values: vec![value],
+        };
+        if self.picks.get(&filter.name) == Some(&pick) {
+            if toggle {
+                self.picks.remove(&filter.name);
+            }
+            toggle
+        } else {
+            self.picks.insert(filter.name.clone(), pick);
+            true
+        }
     }
 
     /// A click on a pickable bar plot: the band under it becomes the pick —
@@ -872,20 +909,7 @@ impl Dashboard {
                 continue;
             };
             let numeric = result.columns[column].kind == ColumnKind::Numeric;
-            let pick = Pick {
-                column: filter.column.clone(),
-                expr: filter.match_expr.clone(),
-                value: pick_value(cell, numeric),
-            };
-            if self.picks.get(&filter.name) == Some(&pick) {
-                if toggle {
-                    self.picks.remove(&filter.name);
-                    changed = true;
-                }
-            } else {
-                self.picks.insert(filter.name.clone(), pick);
-                changed = true;
-            }
+            changed |= self.pick(filter, pick_value(cell, numeric), toggle);
         }
         if changed {
             self.refilter(cx);
@@ -905,17 +929,7 @@ impl Dashboard {
             let Some(value) = node.properties.get(&filter.column) else {
                 continue;
             };
-            let pick = Pick {
-                column: filter.column.clone(),
-                expr: filter.match_expr.clone(),
-                value: value.clone(),
-            };
-            if self.picks.get(&filter.name) == Some(&pick) {
-                self.picks.remove(&filter.name);
-            } else {
-                self.picks.insert(filter.name.clone(), pick);
-            }
-            changed = true;
+            changed |= self.pick(filter, value.clone(), true);
         }
         if changed {
             self.refilter(cx);
@@ -1001,7 +1015,7 @@ impl Dashboard {
             .enumerate()
             .map(|(ix, (filter, pick))| {
                 let name = filter.name.clone();
-                let value = pick_text(&pick.value);
+                let value = pick.values.iter().map(pick_text).collect::<Vec<_>>().join(", ");
                 Button::new(("dashboard-pick", ix))
                     .outline()
                     .xsmall()
@@ -1551,7 +1565,7 @@ impl Dashboard {
                 None => empty_chart(cx),
             }
         } else if self.plots[ix].kind == "bar" && self.is_pickable(&self.plots[ix].name) {
-            let picked = self.picked_band(&self.plots[ix]);
+            let picked = self.picked_bands(&self.plots[ix]);
             let chart = GroupedBars::new(
                 (
                     ElementId::from("dashboard-chart"),
@@ -2722,7 +2736,7 @@ fn picks_for(
                 Pick {
                     column: filter.column.clone(),
                     expr: filter.match_expr.clone(),
-                    value: pick.value.clone(),
+                    values: pick.values.clone(),
                 },
             ))
         })
@@ -3381,7 +3395,7 @@ filter "channel" {
             Pick {
                 column: "channel".into(),
                 expr: Some("o.channel".into()),
-                value: serde_json::json!("web"),
+                values: vec![serde_json::json!("web")],
             },
         );
         let narrowed = load(&path, &picks, &fresh.outcomes);
@@ -3397,7 +3411,7 @@ filter "channel" {
         assert_eq!(narrowed.results["by_channel"].rows.len(), 3);
 
         // The grid's NULL picks the orders with no channel.
-        picks.get_mut("channel").unwrap().value = serde_json::Value::Null;
+        picks.get_mut("channel").unwrap().values = vec![serde_json::Value::Null];
         assert_eq!(total(&load(&path, &picks, &narrowed.outcomes)), "1");
 
         // A reload reuses nothing: every query runs.

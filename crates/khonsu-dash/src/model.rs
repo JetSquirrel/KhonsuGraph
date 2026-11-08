@@ -251,6 +251,9 @@ pub struct Filter {
     /// The Cypher expression a Cypher query compares the pick with, such as
     /// `h.name`. SQL queries compare `column` itself.
     pub match_expr: Option<String>,
+    /// Each click adds its value to the pick or takes it out, and a query
+    /// reads any of them: `$name` is `IN [...]`.
+    pub multiple: bool,
     pub line: usize,
     pub col: usize,
     pub span: (usize, usize),
@@ -687,6 +690,7 @@ fn filter(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Filter {
     let mut plot = None;
     let mut column_name = None;
     let mut match_expr = None;
+    let mut multiple = false;
     let mut seen: HashSet<&str> = HashSet::new();
     for attr in &block.attrs {
         if !seen.insert(attr.name.as_str()) {
@@ -715,9 +719,13 @@ fn filter(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Filter {
                 )),
                 None => {}
             },
+            "multiple" => match &attr.value {
+                Value::Bool(value) => multiple = *value,
+                _ => diagnostics.push(Diagnostic::at_attr(attr, "multiple is true or false")),
+            },
             other => diagnostics.push(Diagnostic::at_attr(
                 attr,
-                format!("A filter block holds plot, column and match; unknown attribute: {other}"),
+                format!("A filter block holds plot, column, match and multiple; unknown attribute: {other}"),
             )),
         }
     }
@@ -732,6 +740,7 @@ fn filter(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Filter {
         plot: plot.unwrap_or_default(),
         column: column_name.unwrap_or_default(),
         match_expr,
+        multiple,
         line: block.line,
         col: block.col,
         span: block.kind_span,

@@ -172,10 +172,13 @@ pub fn check_source(path: &str, source: &str, graph: &mut Graph, summary: bool) 
         let Some(value) = sample_pick(&spec, filter, &results) else {
             continue;
         };
+        // A filter that takes several values is checked with a list, the
+        // statement a second click makes.
+        let values = if filter.multiple { vec![value.clone(), value] } else { vec![value] };
         let pick = Pick {
             column: filter.column.clone(),
             expr: filter.match_expr.clone(),
-            value,
+            values,
         };
         let picking_query = spec.plots.iter().find(|p| p.name == filter.plot).map(|p| p.query.clone());
         for query in spec.queries.iter().filter(|q| spec.filters_of(q).iter().any(|f| f.name == filter.name)) {
