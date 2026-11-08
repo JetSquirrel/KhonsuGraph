@@ -366,6 +366,7 @@ static STRINGS: &[(&str, &str, &str)] = &[
     ("canvas.maximize", "铺满窗口", "Fill the window"),
     ("canvas.restore", "退出铺满（Esc）", "Back in place (Esc)"),
     ("canvas.maximized_note", "图已铺满窗口，按 Esc 返回", "The graph fills the window; press Esc to return"),
+    ("dashboard.maximized_note", "面板已铺满窗口，按 Esc 返回", "The panel fills the window; press Esc to return"),
     ("canvas.group_by", "分组：{}", "Group: {}"),
     ("canvas.group", "分组", "Group"),
     ("canvas.group_none", "不分组", "No groups"),
