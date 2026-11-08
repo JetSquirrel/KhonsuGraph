@@ -25,6 +25,10 @@
 //!   `tooltip`, a list of the columns its tooltip shows;
 //! * a `card` shows one number: its `value` column (the first column when left
 //!   out) from the query's first row, and takes no `x`, `y` or `series`;
+//! * a `timeline` places one event per row along `x`, a time column, at its
+//!   distance in time from the others, in a swim lane per value of an
+//!   optional `series`; `caption` names the column that says what happened,
+//!   and `tooltip` the columns shown on hover;
 //! * `width` is how many of the dashboard's twelve columns a plot spans —
 //!   plots fill a row left to right and wrap; 12 unless a card, which is 3;
 //! * a `filter` block names a plot a click picks a value on — a `bar` (its
@@ -55,8 +59,11 @@ use super::syntax::{self, Attr, Block, File, RefSite, Value};
 /// coordinates for `map`, nodes and relationships for `graph`, words and no
 /// query at all for `text`.
 pub const PLOT_TYPES: &[&str] = &[
-    "line", "bar", "area", "scatter", "pie", "map", "table", "card", "text", "graph",
+    "line", "bar", "area", "scatter", "pie", "map", "table", "card", "text", "graph", "timeline",
 ];
+
+/// The attributes a `timeline` takes besides type, query, title and width.
+const TIMELINE_ATTRS: &[&str] = &["x", "series", "caption", "tooltip"];
 
 /// The attributes only a `map` takes.
 const MAP_ATTRS: &[&str] = &["lat", "lng", "color", "size", "size_scale", "tooltip"];
@@ -953,7 +960,7 @@ fn plot(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Option<Plot> {
             other => diagnostics.push(Diagnostic::at_attr(
                 attr,
                 format!(
-                    "A plot block holds type, query, x, y, series, title, width, for a map lat, lng, color, size, size_scale, tooltip, for a card value, note, tone, for a graph caption, group, labels, highlight, color, colors and size, and for a text panel text; unknown attribute: {other}"
+                    "A plot block holds type, query, x, y, series, title, width, for a map lat, lng, color, size, size_scale, tooltip, for a card value, note, tone, for a graph caption, group, labels, highlight, color, colors and size, for a timeline caption, and for a text panel text; unknown attribute: {other}"
                 ),
             )),
         }
@@ -963,6 +970,7 @@ fn plot(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Option<Plot> {
     let is_card = kind_name == "card";
     let is_text = kind_name == "text";
     let is_graph = kind_name == "graph";
+    let is_timeline = kind_name == "timeline";
     // Attributes the type has no use for are mistakes, not no-ops: a map's
     // `x` or a line's `lat` says the author expects something that will not
     // happen.
@@ -978,6 +986,10 @@ fn plot(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Option<Plot> {
             Some(format!(
                 "text is for text panels; this plot is a {kind_name} (its label is title)"
             ))
+        } else if is_timeline {
+            (!matches!(name, "type" | "query" | "title" | "width") && !TIMELINE_ATTRS.contains(&name)).then(|| {
+                format!("A timeline places events by x (a time column), in lanes by series, captioned by caption, with tooltip columns; it takes no {name}")
+            })
         } else if is_graph {
             (matches!(name, "x" | "y" | "series")
                 || (MAP_ATTRS.contains(&name) && !GRAPH_MAP_ATTRS.contains(&name))
@@ -1053,7 +1065,7 @@ fn plot(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Option<Plot> {
     // known to need one.
     let kind = kind.unwrap_or_default();
     if !kind.is_empty()
-        && !matches!(kind.as_str(), "table" | "map" | "card" | "text" | "graph")
+        && !matches!(kind.as_str(), "table" | "map" | "card" | "text" | "graph" | "timeline")
         && y.is_none()
     {
         diagnostics.push(Diagnostic::at_block(
@@ -1332,6 +1344,7 @@ pub fn check_columns(spec: &Spec, columns: &ColumnLookup) -> Vec<Diagnostic> {
             ("color", plot.color.as_deref().filter(|_| !node_property)),
             ("size", plot.size.as_deref().filter(|_| !node_property)),
             ("value", plot.value.as_deref()),
+            ("caption", plot.caption.as_deref().filter(|_| plot.kind == "timeline")),
             (
                 "note",
                 match &plot.note {
@@ -1668,6 +1681,29 @@ plot "web" {
         assert!(misplaced.iter().any(|d| d.message.contains("colors is for graph plots")), "{misplaced:?}");
         let scale = validate_err(&source.replace("  size   = requests\n", "  size   = requests\n  size_scale = \"log\"\n"));
         assert!(scale.iter().any(|d| d.message.contains("it takes no size_scale")), "{scale:?}");
+    }
+
+    #[test]
+    fn a_timeline_takes_a_time_lanes_a_caption_and_a_tooltip() {
+        let source = r#"
+query "steps" { cypher = "MATCH (s:Step) RETURN s.at AS at, s.actor AS actor, s.what AS what, s.amount AS amount" }
+plot "flow" {
+  type    = "timeline"
+  query   = query.steps
+  x       = at
+  series  = actor
+  caption = what
+  tooltip = [amount]
+}
+"#;
+        let spec = validate_ok(source);
+        let plot = &spec.plots[0];
+        assert_eq!((plot.x.as_str(), plot.series.as_deref(), plot.caption.as_deref()), ("at", Some("actor"), Some("what")));
+        assert_eq!(plot.tooltip.as_deref(), Some(&["amount".to_string()][..]));
+        let no_x = validate_err(&source.replace("  x       = at\n", ""));
+        assert!(no_x.iter().any(|d| d.message.contains("requires x")), "{no_x:?}");
+        let y = validate_err(&source.replace("  x       = at\n", "  x       = at\n  y       = amount\n"));
+        assert!(y.iter().any(|d| d.message.contains("A timeline places events")), "{y:?}");
     }
 
     #[test]

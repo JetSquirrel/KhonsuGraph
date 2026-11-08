@@ -11,6 +11,7 @@ pub mod plot;
 pub mod prepare;
 pub mod presence;
 pub mod tabs;
+pub mod timeline;
 pub mod view;
 pub mod watch;
 mod wheel;

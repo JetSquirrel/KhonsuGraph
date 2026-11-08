@@ -86,6 +86,8 @@ pub struct PreparedPlot {
     pub highlight: Option<String>,
     /// A `graph`'s `color`, `colors` and `size`.
     pub style: crate::ui::canvas::NodeStyle,
+    /// A `timeline`'s events.
+    pub timeline: Option<Arc<super::timeline::Timeline>>,
     /// Grid columns the plot spans, default applied.
     pub width: u8,
     /// Whether `x` is a date or time column: its bands are points in time,
@@ -229,6 +231,7 @@ pub(crate) fn prepare<R: std::borrow::Borrow<QueryResult>>(
         } else {
             Default::default()
         },
+        timeline: None,
         width: plot.width(),
         time_axis: false,
         x_values: None,
@@ -268,6 +271,25 @@ pub(crate) fn prepare<R: std::borrow::Borrow<QueryResult>>(
             .iter()
             .position(|column| column.name.eq_ignore_ascii_case(name))
     };
+    if plot.kind == "timeline" {
+        let find = |name: &str| column(name).ok_or_else(|| missing_column(name, result));
+        let lookup = || -> Result<_, String> {
+            let time = find(&plot.x)?;
+            let lane = plot.series.as_deref().map(find).transpose()?;
+            let caption = plot.caption.as_deref().map(find).transpose()?;
+            let tooltip = plot.tooltip.iter().flatten().map(|name| find(name)).collect::<Result<Vec<_>, _>>()?;
+            Ok((time, lane, caption, tooltip))
+        };
+        return match lookup() {
+            Ok((time, lane, caption, tooltip)) => PreparedPlot {
+                label_name: result.columns[time].name.clone(),
+                series_names: lane.map(|ix| vec![result.columns[ix].name.clone()]).unwrap_or_default(),
+                timeline: Some(Arc::new(super::timeline::build(result, time, lane, caption, &tooltip))),
+                ..base(None)
+            },
+            Err(message) => base(Some(message)),
+        };
+    }
     if plot.kind == "card" {
         let ix = match plot.value.as_deref() {
             Some(name) => match column(name) {
@@ -623,6 +645,7 @@ pub(crate) fn prepare<R: std::borrow::Borrow<QueryResult>>(
         labels: None,
         highlight: None,
         style: Default::default(),
+        timeline: None,
         width: plot.width(),
         time_axis,
         x_values: None,

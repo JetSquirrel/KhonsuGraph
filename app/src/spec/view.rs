@@ -1465,6 +1465,7 @@ impl Dashboard {
             let is_empty = match plot.kind.as_str() {
                 "map" => plot.geo.as_ref().is_none_or(|geo| geo.point_count() == 0),
                 "graph" => plot.graph.as_ref().is_none_or(|g| g.is_empty()),
+                "timeline" => plot.timeline.as_ref().is_none_or(|t| t.events.is_empty()),
                 "pie" => plot.pie.is_empty(),
                 _ => plot.points.is_empty(),
             };
@@ -1512,6 +1513,13 @@ impl Dashboard {
                             &graph.map_or(0, |g| g.edges.len()).to_string(),
                         ],
                     )
+                }
+                "timeline" => {
+                    let events = plot.timeline.as_ref().map_or(0, |t| t.events.len());
+                    match plot.series_names.first() {
+                        Some(lanes) => trf("timeline.title_lanes", &[&events.to_string(), &plot.label_name, lanes]),
+                        None => trf("timeline.title", &[&events.to_string(), &plot.label_name]),
+                    }
                 }
                 "pie" => {
                     legend = pie_parts(&plot.pie, series.clone().into(), "dashboard-pie-key", cx).1;
@@ -2814,6 +2822,10 @@ fn chart_element(plot_ix: usize, plot: &PreparedPlot, cx: &App) -> AnyElement {
 
     match plot.kind.as_str() {
         "pie" => pie_parts(&plot.pie, name.into(), named_id(), cx).0,
+        "timeline" => match &plot.timeline {
+            Some(timeline) => super::timeline::render(&plot.name, timeline, cx),
+            None => empty_chart(cx),
+        },
         "map" => match &plot.geo {
             Some(geo) => GeoPlot::new(named_id(), geo.clone()).into_any_element(),
             None => empty_chart(cx),
