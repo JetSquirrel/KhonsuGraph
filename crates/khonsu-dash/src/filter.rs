@@ -26,6 +26,10 @@
 //! nothing left to click next. This is the cross-filter of Mosaic and
 //! crossfilter.js.
 //!
+//! A filter with `multiple = true` collects values click by click; its
+//! predicate is `(h.name IN ['a', 'b'])`, or `("name" IN ('a', 'b'))` in SQL,
+//! with `OR … IS NULL` when NULL is one of them.
+//!
 //! A picked number goes in as a number; anything else as a string literal,
 //! quotes doubled (and backslashes doubled for Cypher), so nothing the data
 //! holds can end the literal early and a read-only query stays read-only.
@@ -56,8 +60,10 @@ pub struct Pick {
     pub column: String,
     /// The Cypher expression compared, from the filter's `match`.
     pub expr: Option<String>,
-    /// The picked value; `Json::Null` for a cell holding NULL.
-    pub value: Json,
+    /// The picked values, in the order picked, none repeated; `Json::Null`
+    /// for a cell holding NULL. One unless the filter takes `multiple`; a
+    /// pick with none is no pick and is not kept.
+    pub values: Vec<Json>,
 }
 
 fn literal(value: &Json, language: Language) -> String {
@@ -83,9 +89,28 @@ impl Pick {
             Language::Sql => format!("\"{}\"", self.column.replace('"', "\"\"")),
             Language::Cypher => self.expr.clone().unwrap_or_else(|| self.column.clone()),
         };
-        match &self.value {
-            Json::Null => format!("({target} IS NULL)"),
-            value => format!("({target} = {})", literal(value, language)),
+        let null = self.values.iter().any(Json::is_null);
+        let values: Vec<String> = self.values.iter().filter(|v| !v.is_null()).map(|v| literal(v, language)).collect();
+        let listed = match (values.as_slice(), language) {
+            ([], _) => None,
+            ([one], _) => Some(format!("{target} = {one}")),
+            (many, Language::Cypher) => Some(format!("{target} IN [{}]", many.join(", "))),
+            (many, Language::Sql) => Some(format!("{target} IN ({})", many.join(", "))),
+        };
+        match (listed, null) {
+            (Some(listed), true) => format!("({listed} OR {target} IS NULL)"),
+            (Some(listed), false) => format!("({listed})"),
+            (None, _) => format!("({target} IS NULL)"),
+        }
+    }
+
+    /// `value` taken out of the pick when it is in it, otherwise added.
+    pub fn toggle(&mut self, value: Json) {
+        match self.values.iter().position(|v| *v == value) {
+            Some(at) => {
+                self.values.remove(at);
+            }
+            None => self.values.push(value),
         }
     }
 }
@@ -283,10 +308,10 @@ mod tests {
         let mut picks = HashMap::new();
         picks.insert(
             "channel".to_string(),
-            Pick { column: "Sales \"Channel\"".into(), expr: None, value: json!("it's") },
+            Pick { column: "Sales \"Channel\"".into(), expr: None, values: vec![json!("it's")] },
         );
-        picks.insert("day".to_string(), Pick { column: "day".into(), expr: None, value: Json::Null });
-        picks.insert("n".to_string(), Pick { column: "n".into(), expr: None, value: json!(3) });
+        picks.insert("day".to_string(), Pick { column: "day".into(), expr: None, values: vec![Json::Null] });
+        picks.insert("n".to_string(), Pick { column: "n".into(), expr: None, values: vec![json!(3)] });
         assert_eq!(
             apply(sql, Language::Sql, &picks),
             "FROM t WHERE (\"Sales \"\"Channel\"\"\" = 'it''s') AND (\"day\" IS NULL) AND (\"n\" = 3)"
@@ -310,12 +335,30 @@ mod tests {
         let mut picks = HashMap::new();
         picks.insert(
             "host".to_string(),
-            Pick { column: "name".into(), expr: Some("h.name".into()), value: json!("o'brien\\x") },
+            Pick { column: "name".into(), expr: Some("h.name".into()), values: vec![json!("o'brien\\x")] },
         );
         assert_eq!(
             apply("MATCH (h:Host) WHERE $host AND $other RETURN h", Language::Cypher, &picks),
             "MATCH (h:Host) WHERE (h.name = 'o\\'brien\\\\x') RETURN h"
         );
+    }
+
+    #[test]
+    fn a_pick_of_several_values_reads_any_of_them() {
+        let mut pick = Pick { column: "kind".into(), expr: Some("s.kind".into()), values: vec![json!("api")] };
+        pick.toggle(json!("web"));
+        pick.toggle(json!(3));
+        let picks = HashMap::from([("kind".to_string(), pick.clone())]);
+        assert_eq!(
+            apply("MATCH (s) WHERE $kind RETURN s", Language::Cypher, &picks),
+            "MATCH (s) WHERE (s.kind IN ['api', 'web', 3]) RETURN s"
+        );
+        assert_eq!(apply("FROM t WHERE $kind", Language::Sql, &picks), "FROM t WHERE (\"kind\" IN ('api', 'web', 3))");
+        pick.toggle(Json::Null);
+        pick.toggle(json!(3));
+        pick.toggle(json!("api"));
+        assert_eq!(pick.values, [json!("web"), Json::Null], "a value toggled twice is out again");
+        assert_eq!(pick.predicate(Language::Cypher), "(s.kind = 'web' OR s.kind IS NULL)");
     }
 
     #[test]

@@ -24,7 +24,7 @@ use gpui_kit::component::{Disableable, WindowExt};
 
 use crate::i18n::{tr, trf};
 use crate::spec::view::{Dashboard, DashboardEvent};
-use crate::state::{AppState, GraphChanged, QueryStats};
+use crate::state::{AppState, GraphChanged, GraphWritten, QueryStats};
 use crate::ui::results::{ResultsPanel, View};
 use crate::ui::{ExplainQuery, RunQuery, SaveSpec, WORKSPACE_KEY_CONTEXT};
 
@@ -143,6 +143,12 @@ impl Workspace {
         let subscriptions = vec![
             cx.subscribe_in(&state, _window, |this, _, _: &GraphChanged, window, cx| {
                 this.restore_tabs(window, cx);
+            }),
+            // A sync changed the graph: dashboards show it as it now is.
+            cx.subscribe(&state, |this, _, _: &GraphWritten, cx| {
+                for tab in this.tabs.iter().filter_map(WorkspaceTab::as_dashboard) {
+                    tab.host.update(cx, |dashboard, cx| dashboard.graph_written(cx));
+                }
             }),
             cx.observe(&state, |_, _, cx| cx.notify()),
         ];

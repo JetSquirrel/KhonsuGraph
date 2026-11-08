@@ -14,6 +14,8 @@ pub struct HistoryChanged;
 pub struct OpenStateChanged;
 pub struct QueryStatsChanged;
 pub struct SidebarToggled;
+/// The open graph's records changed: a sync wrote to it.
+pub struct GraphWritten;
 
 #[derive(Clone, Debug)]
 pub struct QueryStats {
@@ -46,6 +48,7 @@ impl EventEmitter<HistoryChanged> for AppState {}
 impl EventEmitter<OpenStateChanged> for AppState {}
 impl EventEmitter<QueryStatsChanged> for AppState {}
 impl EventEmitter<SidebarToggled> for AppState {}
+impl EventEmitter<GraphWritten> for AppState {}
 
 impl AppState {
     pub fn new(_cx: &mut Context<Self>) -> Self {
@@ -100,6 +103,11 @@ impl AppState {
         self.sidebar_collapsed = !self.sidebar_collapsed;
         cx.emit(SidebarToggled);
         cx.notify();
+    }
+
+    /// A sync wrote to the open graph: what shows it should read it again.
+    pub fn graph_written(&mut self, cx: &mut Context<Self>) {
+        cx.emit(GraphWritten);
     }
 
     pub fn read_only(&self) -> bool {

@@ -15,6 +15,9 @@
 //!   optional `caption` names the node property shown under each node, and
 //!   `group` a node property whose values gather nodes into outlined groups
 //!   that collapse into one node (a community id, a country, an owner);
+//!   `color` names a node property whose values color the nodes, `colors`
+//!   fixes the color of some values (`["confirmed=good", "open=#d03b3b"]`),
+//!   and `size` names a numeric node property that sizes them;
 //! * a `pie` takes `x` (the slices) and `y` (their sizes), and no `series`;
 //! * a `map` takes `lat` and `lng` instead of `x` and `y` — either may be left
 //!   out when a column's name says what it is (`geo_lat`, `longitude`) — and
@@ -22,6 +25,10 @@
 //!   `tooltip`, a list of the columns its tooltip shows;
 //! * a `card` shows one number: its `value` column (the first column when left
 //!   out) from the query's first row, and takes no `x`, `y` or `series`;
+//! * a `timeline` places one event per row along `x`, a time column, at its
+//!   distance in time from the others, in a swim lane per value of an
+//!   optional `series`; `caption` names the column that says what happened,
+//!   and `tooltip` the columns shown on hover;
 //! * `width` is how many of the dashboard's twelve columns a plot spans —
 //!   plots fill a row left to right and wrap; 12 unless a card, which is 3;
 //! * a `filter` block names a plot a click picks a value on — a `bar` (its
@@ -31,6 +38,9 @@
 //!   a predicate (see `filter.rs`). A Cypher query compares the expression
 //!   the filter's `match` names (`match = "h.name"`);
 //! * `query = query.latency` names a query block that exists;
+//! * one optional `dashboard` block holds settings for the whole file:
+//!   `timezone`, the zone every time with an offset is shown in (see
+//!   `zone.rs`);
 //! * `x`, `y`, `series` name result columns — as bare identifiers when the
 //!   column allows it, as strings when it does not (`"Revenue (USD)"`).
 //!
@@ -49,8 +59,11 @@ use super::syntax::{self, Attr, Block, File, RefSite, Value};
 /// coordinates for `map`, nodes and relationships for `graph`, words and no
 /// query at all for `text`.
 pub const PLOT_TYPES: &[&str] = &[
-    "line", "bar", "area", "scatter", "pie", "map", "table", "card", "text", "graph",
+    "line", "bar", "area", "scatter", "pie", "map", "table", "card", "text", "graph", "timeline",
 ];
+
+/// The attributes a `timeline` takes besides type, query, title and width.
+const TIMELINE_ATTRS: &[&str] = &["x", "series", "caption", "tooltip"];
 
 /// The attributes only a `map` takes.
 const MAP_ATTRS: &[&str] = &["lat", "lng", "color", "size", "size_scale", "tooltip"];
@@ -59,7 +72,14 @@ const MAP_ATTRS: &[&str] = &["lat", "lng", "color", "size", "size_scale", "toolt
 const CARD_ATTRS: &[&str] = &["value", "note", "tone"];
 
 /// The attributes only a `graph` takes.
-const GRAPH_ATTRS: &[&str] = &["caption", "group", "labels", "highlight"];
+const GRAPH_ATTRS: &[&str] = &["caption", "group", "labels", "highlight", "colors"];
+
+/// The attributes a `graph` shares with a `map`, read as node properties.
+const GRAPH_MAP_ATTRS: &[&str] = &["color", "size"];
+
+/// The named colors a `graph`'s `colors` may give a value, besides `#rrggbb`:
+/// the card tones, and `muted` for what should recede.
+pub const GRAPH_COLORS: &[&str] = &["accent", "good", "warning", "critical", "muted"];
 
 /// Which node captions a `graph` draws: `auto` as many as fit, best
 /// connected first; `all` every one, overlapping or not; `focus` only around
@@ -149,6 +169,8 @@ pub struct Spec {
     pub queries: Vec<Query>,
     pub plots: Vec<Plot>,
     pub filters: Vec<Filter>,
+    /// The `dashboard` block's `timezone`, as written and known to parse.
+    pub timezone: Option<String>,
     /// Where every block and attribute sits in the source, in source order,
     /// for `Spec::locate`.
     sites: Vec<Site>,
@@ -207,6 +229,9 @@ pub struct Plot {
     pub labels: Option<String>,
     /// A `graph`'s focus, one of [`HIGHLIGHTS`]; `None` is `neighbors`.
     pub highlight: Option<String>,
+    /// A `graph`'s fixed colors for values of its `color` property: each a
+    /// value and one of [`GRAPH_COLORS`] or `#rrggbb`. Empty when not set.
+    pub colors: Vec<(String, String)>,
     /// Grid columns spanned as written; `Plot::width` applies the default.
     pub width: Option<u8>,
     /// Line and column of the block's kind keyword.
@@ -238,6 +263,9 @@ pub struct Filter {
     /// The Cypher expression a Cypher query compares the pick with, such as
     /// `h.name`. SQL queries compare `column` itself.
     pub match_expr: Option<String>,
+    /// Each click adds its value to the pick or takes it out, and a query
+    /// reads any of them: `$name` is `IN [...]`.
+    pub multiple: bool,
     pub line: usize,
     pub col: usize,
     pub span: (usize, usize),
@@ -428,9 +456,17 @@ pub fn validate_partial(file: &File) -> (Spec, Vec<Diagnostic>) {
     let mut plot_names: HashSet<String> = HashSet::new();
     let mut filters = Vec::new();
     let mut filter_names: HashSet<String> = HashSet::new();
+    let mut timezone = None;
+    let mut dashboard_seen = false;
 
     for block in &file.blocks {
         match block.kind.as_str() {
+            "dashboard" => {
+                if std::mem::replace(&mut dashboard_seen, true) {
+                    diagnostics.push(Diagnostic::at_block(block, "A file holds one dashboard block"));
+                }
+                timezone = dashboard(block, &mut diagnostics);
+            }
             // DuckLocal reads data files through `source` blocks; a KhonsuGraph
             // dashboard reads the graph, which data sources fill.
             "source" => diagnostics.push(Diagnostic::at_block(
@@ -483,7 +519,7 @@ pub fn validate_partial(file: &File) -> (Spec, Vec<Diagnostic>) {
             other => diagnostics.push(Diagnostic::at_block(
                 block,
                 format!(
-                    "Unknown block: {other:?}; the file holds query, plot and filter blocks"
+                    "Unknown block: {other:?}; the file holds query, plot and filter blocks, and one dashboard block"
                 ),
             )),
         }
@@ -627,6 +663,7 @@ pub fn validate_partial(file: &File) -> (Spec, Vec<Diagnostic>) {
             queries,
             plots,
             filters,
+            timezone,
             sites,
         },
         diagnostics,
@@ -674,6 +711,7 @@ fn filter(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Filter {
     let mut plot = None;
     let mut column_name = None;
     let mut match_expr = None;
+    let mut multiple = false;
     let mut seen: HashSet<&str> = HashSet::new();
     for attr in &block.attrs {
         if !seen.insert(attr.name.as_str()) {
@@ -702,9 +740,13 @@ fn filter(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Filter {
                 )),
                 None => {}
             },
+            "multiple" => match &attr.value {
+                Value::Bool(value) => multiple = *value,
+                _ => diagnostics.push(Diagnostic::at_attr(attr, "multiple is true or false")),
+            },
             other => diagnostics.push(Diagnostic::at_attr(
                 attr,
-                format!("A filter block holds plot, column and match; unknown attribute: {other}"),
+                format!("A filter block holds plot, column, match and multiple; unknown attribute: {other}"),
             )),
         }
     }
@@ -719,11 +761,35 @@ fn filter(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Filter {
         plot: plot.unwrap_or_default(),
         column: column_name.unwrap_or_default(),
         match_expr,
+        multiple,
         line: block.line,
         col: block.col,
         span: block.kind_span,
         name_span: block.name_span,
     }
+}
+
+/// The `dashboard` block: settings for the whole file. Its name is a title for
+/// whoever reads the file. Returns the `timezone`.
+fn dashboard(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Option<String> {
+    let mut timezone = None;
+    for attr in &block.attrs {
+        match attr.name.as_str() {
+            "timezone" => match string(attr, diagnostics) {
+                Some(zone) if crate::zone::Zone::parse(&zone).is_some() => timezone = Some(zone),
+                Some(zone) => diagnostics.push(Diagnostic::at_attr(
+                    attr,
+                    format!("Unknown timezone {zone:?}: an IANA name (\"Asia/Hong_Kong\"), \"UTC\", \"local\" or an offset (\"+08:00\")"),
+                )),
+                None => {}
+            },
+            other => diagnostics.push(Diagnostic::at_attr(
+                attr,
+                format!("A dashboard block holds timezone; unknown attribute: {other}"),
+            )),
+        }
+    }
+    timezone
 }
 
 fn query(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Option<Query> {
@@ -812,6 +878,7 @@ fn plot(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Option<Plot> {
     let mut group = None;
     let mut labels = None;
     let mut highlight = None;
+    let mut colors = Vec::new();
     let mut width = None;
     let mut seen: HashSet<&str> = HashSet::new();
     for attr in &block.attrs {
@@ -889,10 +956,11 @@ fn plot(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Option<Plot> {
             "group" => group = column(attr, diagnostics),
             "labels" => labels = one_of(attr, LABELS, "labels", diagnostics),
             "highlight" => highlight = one_of(attr, HIGHLIGHTS, "highlight", diagnostics),
+            "colors" => colors = color_map(attr, diagnostics),
             other => diagnostics.push(Diagnostic::at_attr(
                 attr,
                 format!(
-                    "A plot block holds type, query, x, y, series, title, width, for a map lat, lng, color, size, size_scale, tooltip, for a card value, note, tone, for a graph caption, group, labels and highlight, and for a text panel text; unknown attribute: {other}"
+                    "A plot block holds type, query, x, y, series, title, width, for a map lat, lng, color, size, size_scale, tooltip, for a card value, note, tone, for a graph caption, group, labels, highlight, color, colors and size, for a timeline caption, and for a text panel text; unknown attribute: {other}"
                 ),
             )),
         }
@@ -902,6 +970,7 @@ fn plot(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Option<Plot> {
     let is_card = kind_name == "card";
     let is_text = kind_name == "text";
     let is_graph = kind_name == "graph";
+    let is_timeline = kind_name == "timeline";
     // Attributes the type has no use for are mistakes, not no-ops: a map's
     // `x` or a line's `lat` says the author expects something that will not
     // happen.
@@ -917,8 +986,15 @@ fn plot(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Option<Plot> {
             Some(format!(
                 "text is for text panels; this plot is a {kind_name} (its label is title)"
             ))
+        } else if is_timeline {
+            (!matches!(name, "type" | "query" | "title" | "width") && !TIMELINE_ATTRS.contains(&name)).then(|| {
+                format!("A timeline places events by x (a time column), in lanes by series, captioned by caption, with tooltip columns; it takes no {name}")
+            })
         } else if is_graph {
-            (matches!(name, "x" | "y" | "series") || MAP_ATTRS.contains(&name) || CARD_ATTRS.contains(&name)).then(|| {
+            (matches!(name, "x" | "y" | "series")
+                || (MAP_ATTRS.contains(&name) && !GRAPH_MAP_ATTRS.contains(&name))
+                || CARD_ATTRS.contains(&name))
+            .then(|| {
                 format!("A graph draws the nodes and relationships its query returns; it takes no {name}")
             })
         } else if !kind_name.is_empty() && GRAPH_ATTRS.contains(&name) {
@@ -945,6 +1021,12 @@ fn plot(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Option<Plot> {
         };
         if let Some(message) = misplaced {
             diagnostics.push(Diagnostic::at_attr(attr, message));
+        }
+        if name == "colors" && color.is_none() && is_graph {
+            diagnostics.push(Diagnostic::at_attr(
+                attr,
+                "colors fixes the color of values of color; set color to a node property too",
+            ));
         }
         if name == "size_scale" && size.is_none() && is_map {
             diagnostics.push(Diagnostic::at_attr(
@@ -983,7 +1065,7 @@ fn plot(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Option<Plot> {
     // known to need one.
     let kind = kind.unwrap_or_default();
     if !kind.is_empty()
-        && !matches!(kind.as_str(), "table" | "map" | "card" | "text" | "graph")
+        && !matches!(kind.as_str(), "table" | "map" | "card" | "text" | "graph" | "timeline")
         && y.is_none()
     {
         diagnostics.push(Diagnostic::at_block(
@@ -1013,6 +1095,7 @@ fn plot(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Option<Plot> {
         group,
         labels,
         highlight,
+        colors,
         width,
         line: block.line,
         col: block.col,
@@ -1039,6 +1122,44 @@ fn grid_width(attr: &Attr, diagnostics: &mut Vec<Diagnostic>) -> Option<u8> {
             None
         }
     }
+}
+
+/// A `graph`'s `colors`: `["confirmed=good", "open=#d03b3b"]`, each a value,
+/// `=`, and a color from [`GRAPH_COLORS`] or `#rrggbb`. The last `=` splits,
+/// so a value may hold one.
+fn color_map(attr: &Attr, diagnostics: &mut Vec<Diagnostic>) -> Vec<(String, String)> {
+    let shape = "colors is a list of \"value=color\": [\"confirmed=good\", \"open=#d03b3b\"]";
+    let Value::List(items) = &attr.value else {
+        diagnostics.push(Diagnostic::at_attr(attr, shape));
+        return Vec::new();
+    };
+    let mut map = Vec::with_capacity(items.len());
+    for item in items {
+        let Value::Str(text) = item else {
+            diagnostics.push(Diagnostic::at_attr(attr, shape));
+            return Vec::new();
+        };
+        let Some((value, color)) = text.rsplit_once('=') else {
+            diagnostics.push(Diagnostic::at_attr(attr, format!("{text:?} has no '='; {shape}")));
+            continue;
+        };
+        let color = color.trim();
+        if !is_graph_color(color) {
+            diagnostics.push(Diagnostic::at_attr(
+                attr,
+                format!("Unknown color {color:?} for {value:?}; one of {} or #rrggbb", GRAPH_COLORS.join(", ")),
+            ));
+            continue;
+        }
+        map.push((value.trim().to_string(), color.to_string()));
+    }
+    map
+}
+
+/// One of [`GRAPH_COLORS`], or `#rrggbb`.
+pub fn is_graph_color(color: &str) -> bool {
+    GRAPH_COLORS.contains(&color)
+        || color.strip_prefix('#').is_some_and(|hex| hex.len() == 6 && hex.chars().all(|c| c.is_ascii_hexdigit()))
 }
 
 /// A list of column names: `[place, requests, "Unique IPs"]`, not empty.
@@ -1212,15 +1333,18 @@ pub fn check_columns(spec: &Spec, columns: &ColumnLookup) -> Vec<Diagnostic> {
         }
         let x = !matches!(plot.kind.as_str(), "map" | "card") && !plot.x.is_empty();
         let x = x.then_some(plot.x.as_str());
+        // A graph's color and size are node properties, not result columns.
+        let node_property = plot.kind == "graph";
         for (name, column) in [
             ("x", x),
             ("y", plot.y.as_deref()),
             ("series", plot.series.as_deref()),
             ("lat", plot.lat.as_deref()),
             ("lng", plot.lng.as_deref()),
-            ("color", plot.color.as_deref()),
-            ("size", plot.size.as_deref()),
+            ("color", plot.color.as_deref().filter(|_| !node_property)),
+            ("size", plot.size.as_deref().filter(|_| !node_property)),
             ("value", plot.value.as_deref()),
+            ("caption", plot.caption.as_deref().filter(|_| plot.kind == "timeline")),
             (
                 "note",
                 match &plot.note {
@@ -1521,6 +1645,82 @@ plot "web" {
         assert_eq!(spec.plots[0].group.as_deref(), Some("community"));
         let wrong = validate_err(&source.replace("\"graph\"", "\"table\""));
         assert!(wrong.iter().any(|d| d.message.contains("group is for graph plots")), "{wrong:?}");
+    }
+
+    #[test]
+    fn a_graph_colors_and_sizes_its_nodes_by_property() {
+        let source = r#"
+query "hosts" { cypher = "MATCH (a:Host)-[r:CALLS]->(b:Host) RETURN a, r, b" }
+plot "web" {
+  type   = "graph"
+  query  = query.hosts
+  group  = team
+  color  = status
+  colors = ["rotated=good", "exposed=critical", "a=b=#0ca30c"]
+  size   = requests
+}
+"#;
+        let spec = validate_ok(source);
+        let plot = &spec.plots[0];
+        assert_eq!(plot.color.as_deref(), Some("status"));
+        assert_eq!(plot.size.as_deref(), Some("requests"));
+        assert_eq!(
+            plot.colors,
+            vec![
+                ("rotated".to_string(), "good".to_string()),
+                ("exposed".to_string(), "critical".to_string()),
+                ("a=b".to_string(), "#0ca30c".to_string()),
+            ]
+        );
+
+        let unknown = validate_err(&source.replace("exposed=critical", "exposed=red"));
+        assert!(unknown.iter().any(|d| d.message.contains("Unknown color \"red\"")), "{unknown:?}");
+        let alone = validate_err(&source.replace("  color  = status\n", ""));
+        assert!(alone.iter().any(|d| d.message.contains("set color to a node property")), "{alone:?}");
+        let misplaced = validate_err(&source.replace("\"graph\"", "\"table\""));
+        assert!(misplaced.iter().any(|d| d.message.contains("colors is for graph plots")), "{misplaced:?}");
+        let scale = validate_err(&source.replace("  size   = requests\n", "  size   = requests\n  size_scale = \"log\"\n"));
+        assert!(scale.iter().any(|d| d.message.contains("it takes no size_scale")), "{scale:?}");
+    }
+
+    #[test]
+    fn a_timeline_takes_a_time_lanes_a_caption_and_a_tooltip() {
+        let source = r#"
+query "steps" { cypher = "MATCH (s:Step) RETURN s.at AS at, s.actor AS actor, s.what AS what, s.amount AS amount" }
+plot "flow" {
+  type    = "timeline"
+  query   = query.steps
+  x       = at
+  series  = actor
+  caption = what
+  tooltip = [amount]
+}
+"#;
+        let spec = validate_ok(source);
+        let plot = &spec.plots[0];
+        assert_eq!((plot.x.as_str(), plot.series.as_deref(), plot.caption.as_deref()), ("at", Some("actor"), Some("what")));
+        assert_eq!(plot.tooltip.as_deref(), Some(&["amount".to_string()][..]));
+        let no_x = validate_err(&source.replace("  x       = at\n", ""));
+        assert!(no_x.iter().any(|d| d.message.contains("requires x")), "{no_x:?}");
+        let y = validate_err(&source.replace("  x       = at\n", "  x       = at\n  y       = amount\n"));
+        assert!(y.iter().any(|d| d.message.contains("A timeline places events")), "{y:?}");
+    }
+
+    #[test]
+    fn a_dashboard_block_sets_the_time_zone() {
+        let source = r#"
+dashboard "Operations" { timezone = "Asia/Hong_Kong" }
+query "q" { cypher = "MATCH (n) RETURN n.at AS at" }
+plot "t" {
+  type  = "table"
+  query = query.q
+}
+"#;
+        assert_eq!(validate_ok(source).timezone.as_deref(), Some("Asia/Hong_Kong"));
+        let unknown = validate_err(&source.replace("Asia/Hong_Kong", "HKT"));
+        assert!(unknown.iter().any(|d| d.message.contains("Unknown timezone \"HKT\"")), "{unknown:?}");
+        let twice = validate_err(&format!("{source}\ndashboard \"again\" {{ timezone = \"UTC\" }}"));
+        assert!(twice.iter().any(|d| d.message.contains("one dashboard block")), "{twice:?}");
     }
 
     #[test]

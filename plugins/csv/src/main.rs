@@ -5,12 +5,19 @@
 //! repeat a stable ID). Columns other than the mapped ones become properties,
 //! or only those a table lists in `columns`. Cells such as `NA` or `NULL`
 //! (`null_values`) are missing values: the property is left out.
+//!
+//! An edge table can make its own endpoint nodes, so one wide table — a row
+//! per (host, path, count, status) — is a source without a node table: give
+//! an end a label (`source_label` or `source_label_column`) and the columns
+//! its node keeps (`source_columns`). A node a node table also has keeps the
+//! node table's label and properties.
 
 use khonsu_plugin_protocol::{
     read_request, ConfigField, Describe, EdgeRecord, Emitter, FieldKind, Message, NodeRecord, Permissions, Request,
 };
 use serde::Deserialize;
 use serde_json::{Map, Value};
+use std::collections::{HashMap, HashSet};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
@@ -62,13 +69,63 @@ struct EdgeTable {
     type_column: Option<String>,
     source_column: Columns,
     target_column: Columns,
-    /// Stable ID column(s); defaults to `<file name>:<row number>`.
+    /// Stable ID column(s). By default the row's ends and type,
+    /// `<file name>:<source>-[<type>]-><target>`, with `#2`, `#3`... on
+    /// repeats: a row keeps its ID when rows are added or removed around it.
     #[serde(default)]
     id_column: Option<Columns>,
-    /// Columns kept as properties; all but the endpoint and type columns
-    /// when unset.
+    /// Columns kept as properties; all but the endpoint and type columns,
+    /// and the columns an endpoint node takes, when unset.
     #[serde(default)]
     columns: Option<Vec<String>>,
+    /// Make the nodes at an end from this table too: a fixed label or a label
+    /// column, and the columns the node keeps besides its key.
+    #[serde(default)]
+    source_label: Option<String>,
+    #[serde(default)]
+    source_label_column: Option<String>,
+    #[serde(default)]
+    source_columns: Option<Vec<String>>,
+    #[serde(default)]
+    target_label: Option<String>,
+    #[serde(default)]
+    target_label_column: Option<String>,
+    #[serde(default)]
+    target_columns: Option<Vec<String>>,
+}
+
+/// One end's node mapping, whichever end.
+#[derive(Clone, Copy)]
+struct End<'a> {
+    name: &'static str,
+    label: Option<&'a str>,
+    label_column: Option<&'a str>,
+    columns: Option<&'a [String]>,
+}
+
+impl End<'_> {
+    fn makes_nodes(&self) -> bool {
+        self.label.is_some() || self.label_column.is_some()
+    }
+}
+
+impl EdgeTable {
+    fn ends(&self) -> [End<'_>; 2] {
+        [
+            End {
+                name: "source",
+                label: self.source_label.as_deref(),
+                label_column: self.source_label_column.as_deref(),
+                columns: self.source_columns.as_deref(),
+            },
+            End {
+                name: "target",
+                label: self.target_label.as_deref(),
+                label_column: self.target_label_column.as_deref(),
+                columns: self.target_columns.as_deref(),
+            },
+        ]
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -113,7 +170,7 @@ fn describe() -> Describe {
                 "edges",
                 "Edge tables (advanced)",
                 FieldKind::Json,
-                r#"[{"path", "rel_type" | "type_column", "source_column", "target_column", "id_column", "columns"}]"#,
+                r#"[{"path", "rel_type" | "type_column", "source_column", "target_column", "id_column", "columns", "source_label" | "source_label_column", "source_columns", "target_label" | "target_label_column", "target_columns"}]; an end with a label makes its nodes from this table, so no node table is needed"#,
             ),
             ConfigField {
                 default: Some(Value::String(",".into())),
@@ -191,6 +248,12 @@ fn parse_config(request: &Request) -> Result<Config, String> {
             target_column: Columns::One(text(c, "edge_target_column").unwrap_or_else(|| "target".into())),
             id_column: None,
             columns: None,
+            source_label: None,
+            source_label_column: None,
+            source_columns: None,
+            target_label: None,
+            target_label_column: None,
+            target_columns: None,
         });
     }
     if nodes.is_empty() && edges.is_empty() {
@@ -204,6 +267,15 @@ fn parse_config(request: &Request) -> Result<Config, String> {
     for table in &edges {
         if table.rel_type.is_none() && table.type_column.is_none() {
             return Err(format!("{}: set a relationship type or a type column", table.path));
+        }
+        for end in table.ends() {
+            let name = end.name;
+            if end.label.is_some() && end.label_column.is_some() {
+                return Err(format!("{}: set {name}_label or {name}_label_column, not both", table.path));
+            }
+            if end.columns.is_some() && !end.makes_nodes() {
+                return Err(format!("{}: {name}_columns needs {name}_label or {name}_label_column", table.path));
+            }
         }
     }
     Ok(Config {
@@ -350,6 +422,12 @@ fn sync<W: Write>(config: &Config, out: &mut Emitter<W>) -> Result<(u64, u64), S
         total += count_rows(config, &table.path)?;
     }
     let (mut nodes, mut edges, mut done) = (0u64, 0u64, 0u64);
+    // Nodes a node table made: an edge table's endpoint nodes leave them be.
+    // Kept only when some edge table makes nodes.
+    let makes_ends = config.edges.iter().any(|t| t.ends().iter().any(End::makes_nodes));
+    let mut from_node_tables: HashSet<String> = HashSet::new();
+    // Endpoint nodes made so far, so a repeated end is sent once per change.
+    let mut endpoints: HashMap<String, (String, Map<String, Value>)> = HashMap::new();
 
     for table in &config.nodes {
         let (mut reader, headers) = config.reader(&table.path)?;
@@ -379,6 +457,9 @@ fn sync<W: Write>(config: &Config, out: &mut Emitter<W>) -> Result<(u64, u64), S
                 return Err(format!("{} line {line}: empty label", table.path));
             }
             let properties = config.properties(&row, &headers, &property_cols);
+            if makes_ends {
+                from_node_tables.insert(id.clone());
+            }
             out.node(NodeRecord {
                 id,
                 label,
@@ -407,9 +488,19 @@ fn sync<W: Write>(config: &Config, out: &mut Emitter<W>) -> Result<(u64, u64), S
             .as_deref()
             .map(|name| column(&headers, name, &table.path))
             .transpose()?;
-        let mapped: Vec<usize> = source_cols.iter().chain(&target_cols).chain(&type_col).copied().collect();
+        let [source_end, target_end] = table.ends();
+        let ends = [
+            EndColumns::new(&headers, source_end, &source_cols, &table.path)?,
+            EndColumns::new(&headers, target_end, &target_cols, &table.path)?,
+        ];
+        let mut mapped: Vec<usize> = source_cols.iter().chain(&target_cols).chain(&type_col).copied().collect();
+        for end in ends.iter().flatten() {
+            mapped.extend(end.label_col);
+            mapped.extend(&end.property_cols);
+        }
         let property_cols = property_columns(&headers, table.columns.as_deref(), &mapped, &table.path)?;
         let file_name = Path::new(&table.path).file_name().and_then(|s| s.to_str()).unwrap_or(&table.path).to_string();
+        let mut repeats: HashMap<String, u32> = HashMap::new();
         for (i, row) in reader.records().enumerate() {
             let row = row.map_err(|e| format!("{}: {e}", table.path))?;
             let line = i + 2;
@@ -418,16 +509,47 @@ fn sync<W: Write>(config: &Config, out: &mut Emitter<W>) -> Result<(u64, u64), S
             if source.is_empty() || target.is_empty() {
                 return Err(format!("{} line {line}: empty source or target", table.path));
             }
-            let id = match id_cols.as_deref().map(|cols| key(&row, cols)) {
-                Some(id) if !id.is_empty() => id,
-                _ => format!("{file_name}:{line}"),
-            };
             let rel_type = match type_col {
                 Some(col) => get(col),
                 None => table.rel_type.clone().unwrap_or_default(),
             };
             if rel_type.is_empty() {
                 return Err(format!("{} line {line}: empty relationship type", table.path));
+            }
+            let id = match id_cols.as_deref().map(|cols| key(&row, cols)) {
+                Some(id) if !id.is_empty() => id,
+                _ => {
+                    let id = format!("{file_name}:{source}-[{rel_type}]->{target}");
+                    let seen = repeats.entry(id.clone()).or_insert(0);
+                    *seen += 1;
+                    if *seen == 1 { id } else { format!("{id}#{seen}") }
+                }
+            };
+            for (end, key) in ends.iter().zip([&source, &target]) {
+                let Some(end) = end else { continue };
+                if from_node_tables.contains(key) {
+                    continue;
+                }
+                let label = match (end.label_col, &end.label) {
+                    (Some(col), _) => get(col),
+                    (None, label) => label.clone(),
+                };
+                if label.is_empty() {
+                    return Err(format!("{} line {line}: empty label for node {key}", table.path));
+                }
+                let properties = config.properties(&row, &headers, &end.property_cols);
+                let node = (label, properties);
+                if endpoints.get(key) == Some(&node) {
+                    continue;
+                }
+                endpoints.insert(key.clone(), node.clone());
+                out.node(NodeRecord {
+                    id: key.clone(),
+                    label: node.0,
+                    properties: node.1,
+                })
+                .map_err(io)?;
+                nodes += 1;
             }
             let properties = config.properties(&row, &headers, &property_cols);
             out.edge(EdgeRecord {
@@ -447,6 +569,36 @@ fn sync<W: Write>(config: &Config, out: &mut Emitter<W>) -> Result<(u64, u64), S
     }
     out.progress("done", Some(done), Some(total)).map_err(io)?;
     Ok((nodes, edges))
+}
+
+/// Where one end of an edge table finds its node's label and properties.
+struct EndColumns {
+    label: String,
+    label_col: Option<usize>,
+    /// The key columns, then the columns listed.
+    property_cols: Vec<usize>,
+}
+
+impl EndColumns {
+    /// `None` when this end makes no nodes.
+    fn new(headers: &[String], end: End, key_cols: &[usize], path: &str) -> Result<Option<Self>, String> {
+        if !end.makes_nodes() {
+            return Ok(None);
+        }
+        let label_col = end.label_column.map(|name| column(headers, name, path)).transpose()?;
+        let mut property_cols = key_cols.to_vec();
+        for name in end.columns.unwrap_or_default() {
+            let col = column(headers, name, path)?;
+            if !property_cols.contains(&col) {
+                property_cols.push(col);
+            }
+        }
+        Ok(Some(Self {
+            label: end.label.unwrap_or_default().to_string(),
+            label_col,
+            property_cols,
+        }))
+    }
 }
 
 fn test(config: &Config) -> Result<String, String> {
@@ -536,7 +688,8 @@ mod tests {
         assert_eq!(nodes[0].properties["zip"], "02139");
         assert_eq!(nodes[0].properties["up"], true);
         assert!(!nodes[1].properties.contains_key("cpu"));
-        assert_eq!(edges[0].id, "deps.csv:2");
+        assert_eq!(edges[0].id, "deps.csv:h1-[DEPENDS_ON]->h2");
+        assert_eq!(edges[1].id, "deps.csv:h1-[DEPENDS_ON]->h2#2");
         assert_eq!(edges[1].properties["weight"], 1.5);
         assert_ne!(edges[0].id, edges[1].id);
     }
@@ -591,6 +744,46 @@ mod tests {
         assert_eq!(edges[1].id, "p2:2023:56");
         assert_eq!(edges[1].target, "2023:56");
         assert_eq!(edges[1].properties.keys().collect::<Vec<_>>(), ["tackle"]);
+    }
+
+    #[test]
+    fn a_wide_table_makes_its_own_endpoint_nodes() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("hits.csv"),
+            "host,zone,path,kind,count,status\nh1,dmz,/v1/items,Endpoint,200,ok\nh1,dmz,/admin,Endpoint,50,denied\nh2,core,/v1/items,Endpoint,7,ok\nh9,lab,/v1/items,Endpoint,1,ok\n",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("hosts.csv"), "id,owner\nh9,lab-team\n").unwrap();
+        let messages = run(
+            dir.path(),
+            serde_json::json!({
+                "nodes": [{"path": "hosts.csv", "label": "Lab"}],
+                "edges": [{
+                    "path": "hits.csv", "rel_type": "REQUESTED", "source_column": "host", "target_column": "path",
+                    "source_label": "Host", "source_columns": ["zone"], "target_label_column": "kind"
+                }]
+            }),
+        )
+        .unwrap();
+        let nodes: Vec<&NodeRecord> = messages.iter().filter_map(|m| if let Message::Node(n) = m { Some(n) } else { None }).collect();
+        let edges: Vec<&EdgeRecord> = messages.iter().filter_map(|m| if let Message::Edge(e) = m { Some(e) } else { None }).collect();
+        let ids: Vec<(&str, &str)> = nodes.iter().map(|n| (n.id.as_str(), n.label.as_str())).collect();
+        // Each end once; h9 is the node table's, not the edge table's.
+        assert_eq!(ids, [("h9", "Lab"), ("h1", "Host"), ("/v1/items", "Endpoint"), ("/admin", "Endpoint"), ("h2", "Host")]);
+        assert_eq!(nodes[1].properties["host"], "h1");
+        assert_eq!(nodes[1].properties["zone"], "dmz");
+        assert_eq!(nodes[2].properties.keys().collect::<Vec<_>>(), ["path"]);
+        assert_eq!(edges.len(), 4);
+        // The columns an end takes are not the relationship's.
+        assert_eq!(edges[0].properties.keys().collect::<Vec<_>>(), ["count", "status"]);
+
+        let both = run(
+            dir.path(),
+            serde_json::json!({"edges": [{"path": "hits.csv", "rel_type": "R", "source_column": "host", "target_column": "path", "target_columns": ["zone"]}]}),
+        )
+        .unwrap_err();
+        assert!(both.contains("target_columns needs target_label"), "{both}");
     }
 
     #[test]

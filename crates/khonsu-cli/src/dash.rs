@@ -7,7 +7,7 @@ use clap::Args;
 use khonsu_core::{normalize_path, AccessMode, Graph, Language, OpenError};
 use khonsu_dash::comments::{self, Author};
 use khonsu_dash::presence::{self, Activity};
-use khonsu_dash::remote::{self, CheckRequest, Message, OpenRequest, QueryRequest, StateRequest};
+use khonsu_dash::remote::{self, CheckRequest, Message, OpenRequest, QueryRequest, StateRequest, SyncRequest};
 use serde_json::{json, Value};
 
 use crate::{resolve_db, CliError, DbArg, PROGRAM};
@@ -144,6 +144,25 @@ pub fn query_via_window(db: &Path, language: Language, text: &str, max_rows: usi
         language,
         text: text.to_string(),
         max_rows,
+    }))?;
+    Some(window_answer(Some(answer)).map(|mut value| {
+        value["via_window"] = json!(true);
+        value
+    }))
+}
+
+/// A sync into the window's graph, for when the window holds the lease. `None`
+/// when no window is running. The plugin's progress stays in the window.
+pub fn sync_via_window(source: &khonsu_core::settings::Source, incremental: bool, append: bool) -> Option<Result<Value, CliError>> {
+    if !remote::window_running() {
+        return None;
+    }
+    eprintln!("{}", json!({"kind": "progress", "message": "the KhonsuGraph window has the graph open; syncing there"}));
+    let answer = remote::request(&Message::Sync(SyncRequest {
+        graph: normalize_path(&source.graph).display().to_string(),
+        source: source.id.clone(),
+        incremental,
+        append,
     }))?;
     Some(window_answer(Some(answer)).map(|mut value| {
         value["via_window"] = json!(true);

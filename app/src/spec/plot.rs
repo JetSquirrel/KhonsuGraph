@@ -245,9 +245,9 @@ pub(crate) struct GroupedBars {
     series: Vec<SharedString>,
     /// Whether the bands are points in time: always upright, labels thinned.
     time_axis: bool,
-    /// The band a filter has picked: it keeps its colour and the rest fade,
-    /// so the plot says what the dashboard is narrowed to.
-    selected: Option<SharedString>,
+    /// The bands a filter has picked: they keep their colour and the rest
+    /// fade, so the plot says what the dashboard is narrowed to.
+    selected: Vec<SharedString>,
 }
 
 /// How much of its opacity a bar outside the picked band keeps.
@@ -295,7 +295,7 @@ impl GroupedBars {
             points,
             series: series_names.iter().map(SharedString::from).collect(),
             time_axis: false,
-            selected: None,
+            selected: Vec::new(),
         }
     }
 
@@ -304,8 +304,8 @@ impl GroupedBars {
         self
     }
 
-    pub(crate) fn selected(mut self, band: Option<SharedString>) -> Self {
-        self.selected = band;
+    pub(crate) fn selected(mut self, bands: Vec<SharedString>) -> Self {
+        self.selected = bands;
         self
     }
 
@@ -448,9 +448,10 @@ impl Plot for GroupedBars {
         let selected = self.selected.clone();
         let fill = move |d: &(Arc<PlotPoint>, usize), _: Bounds<f32>, _: BarAlignment| {
             let color = palette[d.1 % palette.len()];
-            match &selected {
-                Some(band) if *band != d.0.band => color.opacity(UNPICKED_OPACITY),
-                _ => color,
+            if selected.is_empty() || selected.contains(&d.0.band) {
+                color
+            } else {
+                color.opacity(UNPICKED_OPACITY)
             }
         };
         let (bar_width, _) = group_slot(band_width, n, 0);

@@ -80,11 +80,21 @@ impl KhonsuApp {
         cx.spawn_in(window, async move |this, cx| loop {
             smol::Timer::after(std::time::Duration::from_millis(200)).await;
             let pending = crate::remote::take_pending();
-            if pending.is_empty() {
+            let syncs = crate::remote::take_syncs();
+            if pending.is_empty() && syncs.is_empty() {
                 continue;
             }
             if this
                 .update_in(cx, |this, window, cx| {
+                    for notice in syncs {
+                        let state = this.state.clone();
+                        match notice {
+                            crate::remote::SyncNotice::Started { name, progress } => {
+                                crate::ui::sources::show_progress(state, name, progress, window, cx)
+                            }
+                            crate::remote::SyncNotice::Ended(result) => crate::ui::sources::finish(state, *result, window, cx),
+                        }
+                    }
                     for (message, answer) in pending {
                         let reply = this.answer(message, window, cx);
                         let _ = answer.send(reply);
@@ -156,7 +166,7 @@ impl KhonsuApp {
                 }
                 json!({"delivered": true, "opened": opened})
             }
-            Message::Query(_) | Message::Check(_) => json!({"error": {"kind": "internal", "message": "answered by the listener"}}),
+            Message::Query(_) | Message::Check(_) | Message::Sync(_) => json!({"error": {"kind": "internal", "message": "answered by the listener"}}),
         }
     }
 }

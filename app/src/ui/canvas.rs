@@ -101,15 +101,88 @@ fn group_keys<'a>(nodes: impl Iterator<Item = &'a GraphNode>) -> Vec<String> {
         .collect()
 }
 
-/// The component's node for `node`, colored like its label in the sidebar,
-/// or by its group when grouping by `group` and it has a value for it.
-fn to_node(node: &GraphNode, preferred: Option<&str>, group: Option<&str>, cx: &App) -> Node {
-    let label = first_label(node);
-    let converted = Node::new(node.id.to_string(), caption(node, preferred), label.to_string());
-    match group.and_then(|key| group_value(node, key)) {
-        Some(value) => converted.group(value),
-        None => converted.color(palette::label_color(label, cx)),
+/// A dashboard `graph`'s data-driven look: the node property that colors the
+/// nodes, fixed colors for some of its values, and the numeric property that
+/// sizes them.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct NodeStyle {
+    pub color: Option<String>,
+    /// Value and color: a name from `khonsu_dash::model::GRAPH_COLORS` or
+    /// `#rrggbb`.
+    pub colors: Vec<(String, String)>,
+    pub size: Option<String>,
+}
+
+/// How nodes are drawn: what [`to_node`] needs beside the node.
+struct Look<'a> {
+    caption: Option<&'a str>,
+    group: Option<&'a str>,
+    style: &'a NodeStyle,
+    /// Values of the color property in the order they were first seen; a
+    /// value's palette slot is its place here.
+    color_slots: &'a [String],
+    /// The smallest and largest value of the size property on the canvas.
+    size_range: Option<(f64, f64)>,
+}
+
+/// Radii a sized node takes, in world units: the smallest value gets the
+/// first, the largest the second, and area follows the value between them.
+const SIZED_RADIUS: (f32, f32) = (6., 26.);
+
+/// A named or `#rrggbb` color from a `graph`'s `colors`.
+fn named_color(name: &str, cx: &App) -> Option<Hsla> {
+    match name {
+        "muted" => Some(cx.theme().muted_foreground),
+        hex if hex.starts_with('#') => u32::from_str_radix(&hex[1..], 16).ok().map(|v| rgb(v).into()),
+        tone => palette::tone(tone, cx).map(|(rule, _)| rule),
     }
+}
+
+fn number(node: &GraphNode, key: &str) -> Option<f64> {
+    match node.properties.get(key)? {
+        Json::Number(n) => n.as_f64(),
+        Json::String(s) => s.trim().parse().ok(),
+        _ => None,
+    }
+}
+
+/// The component's node for `node`, colored like its label in the sidebar,
+/// or by its group when grouping and it has a value for it. A color property
+/// wins over both: the group still gathers the node, the color says its state.
+/// A node without a value for the color property is muted.
+fn to_node(node: &GraphNode, look: &Look, cx: &App) -> Node {
+    let label = first_label(node);
+    let mut converted = Node::new(node.id.to_string(), caption(node, look.caption), label.to_string());
+    let grouped = look.group.and_then(|key| group_value(node, key));
+    let has_group = grouped.is_some();
+    if let Some(value) = grouped {
+        converted = converted.group(value);
+    }
+    if let Some(key) = look.style.color.as_deref() {
+        let color = match group_value(node, key) {
+            Some(value) => look
+                .style
+                .colors
+                .iter()
+                .find(|(fixed, _)| *fixed == value)
+                .and_then(|(_, name)| named_color(name, cx))
+                .unwrap_or_else(|| {
+                    let slot = look.color_slots.iter().position(|v| *v == value).unwrap_or(0);
+                    palette::color(slot, cx)
+                }),
+            None => cx.theme().muted_foreground,
+        };
+        converted = converted.color(color);
+    } else if !has_group {
+        converted = converted.color(palette::label_color(label, cx));
+    }
+    if let (Some(key), Some((low, high))) = (look.style.size.as_deref(), look.size_range) {
+        if let Some(value) = number(node, key).filter(|_| high > low) {
+            let share = ((value - low) / (high - low)).clamp(0., 1.).sqrt() as f32;
+            converted = converted.size(SIZED_RADIUS.0 + share * (SIZED_RADIUS.1 - SIZED_RADIUS.0));
+        }
+    }
+    converted
 }
 
 fn to_edge(edge: &GraphEdge) -> Edge {
@@ -149,6 +222,11 @@ pub struct GraphCanvas {
     caption_key: Option<String>,
     /// The node property nodes are grouped by, if any.
     group_key: Option<String>,
+    /// A dashboard `graph`'s `color`, `colors` and `size`.
+    style: NodeStyle,
+    /// See [`Look::color_slots`]; kept while the canvas shows one result.
+    color_slots: Vec<String>,
+    size_range: Option<(f64, f64)>,
     /// Which captions are drawn, and whether a hovered or picked node fades
     /// the rest: a dashboard `graph`'s `labels` and `highlight`.
     label_mode: LabelMode,
@@ -190,6 +268,9 @@ impl GraphCanvas {
             query: None,
             caption_key: None,
             group_key: None,
+            style: NodeStyle::default(),
+            color_slots: Vec::new(),
+            size_range: None,
             label_mode: LabelMode::Auto,
             focus_dimming: true,
             compact: false,
@@ -223,9 +304,46 @@ impl GraphCanvas {
     pub fn configure(&mut self, caption_key: Option<String>, group_key: Option<String>, compact: bool, cx: &mut Context<Self>) {
         self.caption_key = caption_key;
         self.group_key = group_key;
+        self.style = NodeStyle::default();
         self.compact = compact;
         self.can_fill_window = !compact;
         cx.notify();
+    }
+
+    /// Color and size the nodes by their properties, for a dashboard `graph`.
+    /// Takes effect with the next `set_data`; call after `configure`.
+    pub fn set_style(&mut self, style: NodeStyle) {
+        self.style = style;
+    }
+
+    fn look(&self) -> Look<'_> {
+        Look {
+            caption: self.caption_key.as_deref(),
+            group: self.group_key.as_deref(),
+            style: &self.style,
+            color_slots: &self.color_slots,
+            size_range: self.size_range,
+        }
+    }
+
+    /// Give new values of the color property their slots, and widen the size
+    /// range to take in `nodes`.
+    fn note_styled(&mut self, nodes: &[GraphNode]) {
+        if let Some(key) = self.style.color.clone() {
+            for value in nodes.iter().filter_map(|n| group_value(n, &key)) {
+                if !self.color_slots.contains(&value) {
+                    self.color_slots.push(value);
+                }
+            }
+        }
+        if let Some(key) = self.style.size.clone() {
+            for value in nodes.iter().filter_map(|n| number(n, &key)) {
+                self.size_range = Some(match self.size_range {
+                    Some((low, high)) => (low.min(value), high.max(value)),
+                    None => (value, value),
+                });
+            }
+        }
     }
 
     /// Group the nodes on the canvas by `key`, or stop grouping. The layout
@@ -236,11 +354,8 @@ impl GraphCanvas {
         }
         self.group_key = key;
         self.selected = None;
-        let nodes: Vec<Node> = self
-            .nodes
-            .values()
-            .map(|n| to_node(n, self.caption_key.as_deref(), self.group_key.as_deref(), cx))
-            .collect();
+        let look = self.look();
+        let nodes: Vec<Node> = self.nodes.values().map(|n| to_node(n, &look, cx)).collect();
         let edges: Vec<Edge> = self.edges.values().map(to_edge).collect();
         let color_by = self.color_by();
         self.graph.update(cx, |graph, cx| {
@@ -302,6 +417,8 @@ impl GraphCanvas {
         self.set_path_view(false, cx);
         self.nodes.clear();
         self.edges.clear();
+        self.color_slots.clear();
+        self.size_range = None;
         self.selected = None;
         self.hidden = data.nodes.len().saturating_sub(NODE_LIMIT);
         let missing = data.dangling_endpoints();
@@ -343,10 +460,11 @@ impl GraphCanvas {
     /// Edges whose endpoints are missing are dropped.
     fn admit(&mut self, nodes: Vec<GraphNode>, edges: Vec<GraphEdge>, cx: &App) -> Graph {
         palette::register_labels(nodes.iter().map(first_label).filter(|l| !l.is_empty()));
+        self.note_styled(&nodes);
         let mut fresh_nodes = Vec::new();
         for node in nodes {
             if !self.nodes.contains_key(&node.id) {
-                fresh_nodes.push(to_node(&node, self.caption_key.as_deref(), self.group_key.as_deref(), cx));
+                fresh_nodes.push(to_node(&node, &self.look(), cx));
                 self.nodes.insert(node.id, node);
             }
         }
@@ -1164,9 +1282,45 @@ impl Render for GraphCanvas {
         let warning = theme.warning;
         let border = theme.border;
 
-        let mut legend: BTreeMap<String, usize> = BTreeMap::new();
-        for label in self.nodes.values().map(first_label).filter(|l| !l.is_empty()) {
-            *legend.entry(label.to_string()).or_default() += 1;
+        // The legend says what the colors mean: labels, or the color
+        // property's values in slot order.
+        let mut legend: Vec<(String, Hsla, usize)> = Vec::new();
+        match self.style.color.as_deref() {
+            Some(key) => {
+                let look = self.look();
+                let mut counts: HashMap<String, usize> = HashMap::new();
+                let mut none = 0;
+                for node in self.nodes.values() {
+                    match group_value(node, key) {
+                        Some(value) => *counts.entry(value).or_default() += 1,
+                        None => none += 1,
+                    }
+                }
+                for value in &self.color_slots {
+                    if let Some(&count) = counts.get(value) {
+                        let probe = GraphNode {
+                            id: 0,
+                            labels: Vec::new(),
+                            properties: [(key.to_string(), Json::String(value.clone()))].into_iter().collect(),
+                        };
+                        let color = to_node(&probe, &look, cx).color.unwrap_or(muted);
+                        legend.push((value.clone(), color, count));
+                    }
+                }
+                if none > 0 {
+                    legend.push((trf("canvas.no_value", &[key]), muted, none));
+                }
+            }
+            None => {
+                let mut counts: BTreeMap<String, usize> = BTreeMap::new();
+                for label in self.nodes.values().map(first_label).filter(|l| !l.is_empty()) {
+                    *counts.entry(label.to_string()).or_default() += 1;
+                }
+                legend.extend(counts.into_iter().map(|(label, count)| {
+                    let color = palette::label_color(&label, cx);
+                    (label, color, count)
+                }));
+            }
         }
 
         let group_keys = group_keys(self.nodes.values());
@@ -1314,11 +1468,11 @@ impl Render for GraphCanvas {
                                         .border_color(border)
                                         .bg(halo)
                                         .text_xs()
-                                        .children(legend.into_iter().map(|(label, count)| {
+                                        .children(legend.into_iter().map(|(label, color, count)| {
                                             h_flex()
                                                 .gap_1p5()
                                                 .items_center()
-                                                .child(div().size_2p5().rounded_full().bg(palette::label_color(&label, cx)))
+                                                .child(div().size_2p5().rounded_full().bg(color))
                                                 .child(div().flex_1().child(label))
                                                 .child(div().pl_3().text_color(muted).child(count.to_string()))
                                         })),

@@ -1003,6 +1003,20 @@ pub fn sync_source(
     cancel: &AtomicBool,
     on_event: impl FnMut(SyncEvent),
 ) -> Result<SyncReport, PluginError> {
+    sync_source_with(graph, source, mode, false, cancel, on_event)
+}
+
+/// [`sync_source`], and with `append` nothing the source no longer has is
+/// removed: what it sends is added to or updates what it sent before. For a
+/// source whose files hold only what is new since the last sync.
+pub fn sync_source_with(
+    graph: &mut Graph,
+    source: &Source,
+    mode: SyncMode,
+    append: bool,
+    cancel: &AtomicBool,
+    on_event: impl FnMut(SyncEvent),
+) -> Result<SyncReport, PluginError> {
     let plugin = find(&source.plugin)?;
     let describe = describe(&plugin)?;
     let mode = if mode == SyncMode::Incremental && !describe.supports_incremental {
@@ -1035,7 +1049,7 @@ pub fn sync_source(
     })
     .and_then(|end| {
         // Only a source enumerated whole can say that something has gone.
-        let (merge, patterns) = merger.finish(mode == SyncMode::Full && end.complete, &source.patterns)?;
+        let (merge, patterns) = merger.finish(!append && mode == SyncMode::Full && end.complete, &source.patterns)?;
         Ok((end, merge, patterns))
     });
 
@@ -1078,7 +1092,7 @@ pub fn sync_source(
                 edges: merge.edges_written,
                 message: gaps.join("; "),
             });
-            let this_run = run(status, mode == SyncMode::Full && end.complete, advanced, gaps, String::new());
+            let this_run = run(status, !append && mode == SyncMode::Full && end.complete, advanced, gaps, String::new());
             updated.push_run(this_run.clone());
             Ok(SyncReport {
                 source: source.id.clone(),

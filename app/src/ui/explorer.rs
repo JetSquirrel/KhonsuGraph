@@ -286,7 +286,20 @@ pub fn evidence_rows(record: &Evidence) -> Vec<(&'static str, String)> {
         ("evidence.coverage", record.source_coverage.known().map_or_else(unknown, coverage_text)),
         ("evidence.snapshot", text(&record.source_snapshot)),
         ("evidence.assertion", assertion.to_string()),
+        ("evidence.confidence", record.confidence.known().map_or_else(unknown, |c| confidence_text(*c))),
+        ("evidence.what_showed", text(&record.evidence)),
     ]
+}
+
+/// A confidence in the window's language.
+pub fn confidence_text(confidence: khonsu_core::evidence::Confidence) -> String {
+    use khonsu_core::evidence::Confidence;
+    tr(match confidence {
+        Confidence::Confirmed => "evidence.confirmed",
+        Confidence::Inferred => "evidence.inferred",
+        Confidence::Unconfirmed => "evidence.unconfirmed",
+    })
+    .to_string()
 }
 
 /// The findings about `node`, in the report's order.

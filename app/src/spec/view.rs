@@ -180,6 +180,8 @@ pub struct Dashboard {
     outcomes: Outcomes,
     /// A pick changed while a run was in flight: run again when it lands.
     refilter_pending: bool,
+    /// The graph changed while a run was in flight: reload when it lands.
+    reload_pending: bool,
     /// Where each pickable plot was last laid out, by plot name, for a click
     /// to find its bar.
     plot_bounds: HashMap<String, Rc<Cell<Option<Bounds<Pixels>>>>>,
@@ -270,6 +272,7 @@ impl Dashboard {
             picks: HashMap::new(),
             outcomes: HashMap::new(),
             refilter_pending: false,
+            reload_pending: false,
             plot_bounds: HashMap::new(),
             graph_canvases: HashMap::new(),
             table_subscriptions: Vec::new(),
@@ -314,7 +317,9 @@ impl Dashboard {
                         "plot": filter.plot,
                         "column": filter.column,
                         "picked": pick.is_some(),
-                        "value": pick.map(|pick| pick.value.clone()),
+                        "multiple": filter.multiple,
+                        "value": pick.and_then(|pick| (pick.values.len() == 1).then(|| pick.values[0].clone())),
+                        "values": pick.map(|pick| pick.values.clone()),
                     })
                 })
                 .collect()
@@ -636,6 +641,20 @@ impl Dashboard {
         if self.running {
             return;
         }
+        self.reload_now(cx);
+    }
+
+    /// The graph changed under the dashboard: re-run everything, now or, with
+    /// a run in flight that read the graph as it was, as soon as it lands.
+    pub fn graph_written(&mut self, cx: &mut Context<Self>) {
+        if self.running {
+            self.reload_pending = true;
+        } else {
+            self.reload_now(cx);
+        }
+    }
+
+    fn reload_now(&mut self, cx: &mut Context<Self>) {
         if self.showing_source && !self.is_dirty(cx) {
             // The source view shows the file as it is now, not as it was when
             // toggled open — but a dirty buffer is the user's work, and a
@@ -766,7 +785,10 @@ impl Dashboard {
                         });
                     }
                 }
-                if std::mem::take(&mut this.refilter_pending) {
+                if std::mem::take(&mut this.reload_pending) {
+                    this.refilter_pending = false;
+                    this.reload_now(cx);
+                } else if std::mem::take(&mut this.refilter_pending) {
                     this.refilter(cx);
                 }
                 cx.notify();
@@ -785,13 +807,48 @@ impl Dashboard {
 
     /// The band a bar plot shows as picked: the value of a filter that picks
     /// the plot's own x.
-    fn picked_band(&self, plot: &PreparedPlot) -> Option<SharedString> {
-        let spec = self.spec.as_ref()?;
+    fn picked_bands(&self, plot: &PreparedPlot) -> Vec<SharedString> {
+        let Some(spec) = self.spec.as_ref() else {
+            return Vec::new();
+        };
         spec.filters
             .iter()
             .filter(|f| f.plot == plot.name && f.column.eq_ignore_ascii_case(&plot.label_name))
             .find_map(|f| self.picks.get(&f.name))
-            .map(|pick| SharedString::from(pick_text(&pick.value)))
+            .map(|pick| pick.values.iter().map(|value| SharedString::from(pick_text(value))).collect())
+            .unwrap_or_default()
+    }
+
+    /// Pick `value` for `filter`: one that takes several adds it, or takes it
+    /// out when it is in already; another replaces its pick, or with `toggle`
+    /// clears it when `value` is what it has. Whether anything changed.
+    fn pick(&mut self, filter: &model::Filter, value: serde_json::Value, toggle: bool) -> bool {
+        if filter.multiple {
+            let pick = self.picks.entry(filter.name.clone()).or_insert_with(|| Pick {
+                column: filter.column.clone(),
+                expr: filter.match_expr.clone(),
+                values: Vec::new(),
+            });
+            pick.toggle(value);
+            if pick.values.is_empty() {
+                self.picks.remove(&filter.name);
+            }
+            return true;
+        }
+        let pick = Pick {
+            column: filter.column.clone(),
+            expr: filter.match_expr.clone(),
+            values: vec![value],
+        };
+        if self.picks.get(&filter.name) == Some(&pick) {
+            if toggle {
+                self.picks.remove(&filter.name);
+            }
+            toggle
+        } else {
+            self.picks.insert(filter.name.clone(), pick);
+            true
+        }
     }
 
     /// A click on a pickable bar plot: the band under it becomes the pick —
@@ -852,20 +909,7 @@ impl Dashboard {
                 continue;
             };
             let numeric = result.columns[column].kind == ColumnKind::Numeric;
-            let pick = Pick {
-                column: filter.column.clone(),
-                expr: filter.match_expr.clone(),
-                value: pick_value(cell, numeric),
-            };
-            if self.picks.get(&filter.name) == Some(&pick) {
-                if toggle {
-                    self.picks.remove(&filter.name);
-                    changed = true;
-                }
-            } else {
-                self.picks.insert(filter.name.clone(), pick);
-                changed = true;
-            }
+            changed |= self.pick(filter, pick_value(cell, numeric), toggle);
         }
         if changed {
             self.refilter(cx);
@@ -885,17 +929,7 @@ impl Dashboard {
             let Some(value) = node.properties.get(&filter.column) else {
                 continue;
             };
-            let pick = Pick {
-                column: filter.column.clone(),
-                expr: filter.match_expr.clone(),
-                value: value.clone(),
-            };
-            if self.picks.get(&filter.name) == Some(&pick) {
-                self.picks.remove(&filter.name);
-            } else {
-                self.picks.insert(filter.name.clone(), pick);
-            }
-            changed = true;
+            changed |= self.pick(filter, value.clone(), true);
         }
         if changed {
             self.refilter(cx);
@@ -912,6 +946,7 @@ impl Dashboard {
         let caption = plot.caption.clone();
         let group = plot.group.clone();
         let (labels, highlight) = (plot.labels.clone(), plot.highlight.clone());
+        let style = plot.style.clone();
         let enlarged = self.maximized.as_deref() == Some(name.as_str());
         if !self.graph_canvases.contains_key(&name) {
             let canvas = cx.new(|cx| GraphCanvas::new(window, cx));
@@ -927,6 +962,7 @@ impl Dashboard {
             *shown = Some(data.clone());
             canvas.update(cx, |canvas, cx| {
                 canvas.configure(caption, group, true, cx);
+                canvas.set_style(style);
                 canvas.set_look(labels.as_deref(), highlight.as_deref(), cx);
                 canvas.set_compact(!enlarged, window, cx);
                 canvas.set_data((*data).clone(), window, cx);
@@ -979,7 +1015,7 @@ impl Dashboard {
             .enumerate()
             .map(|(ix, (filter, pick))| {
                 let name = filter.name.clone();
-                let value = pick_text(&pick.value);
+                let value = pick.values.iter().map(pick_text).collect::<Vec<_>>().join(", ");
                 Button::new(("dashboard-pick", ix))
                     .outline()
                     .xsmall()
@@ -1429,6 +1465,7 @@ impl Dashboard {
             let is_empty = match plot.kind.as_str() {
                 "map" => plot.geo.as_ref().is_none_or(|geo| geo.point_count() == 0),
                 "graph" => plot.graph.as_ref().is_none_or(|g| g.is_empty()),
+                "timeline" => plot.timeline.as_ref().is_none_or(|t| t.events.is_empty()),
                 "pie" => plot.pie.is_empty(),
                 _ => plot.points.is_empty(),
             };
@@ -1476,6 +1513,13 @@ impl Dashboard {
                             &graph.map_or(0, |g| g.edges.len()).to_string(),
                         ],
                     )
+                }
+                "timeline" => {
+                    let events = plot.timeline.as_ref().map_or(0, |t| t.events.len());
+                    match plot.series_names.first() {
+                        Some(lanes) => trf("timeline.title_lanes", &[&events.to_string(), &plot.label_name, lanes]),
+                        None => trf("timeline.title", &[&events.to_string(), &plot.label_name]),
+                    }
                 }
                 "pie" => {
                     legend = pie_parts(&plot.pie, series.clone().into(), "dashboard-pie-key", cx).1;
@@ -1529,7 +1573,7 @@ impl Dashboard {
                 None => empty_chart(cx),
             }
         } else if self.plots[ix].kind == "bar" && self.is_pickable(&self.plots[ix].name) {
-            let picked = self.picked_band(&self.plots[ix]);
+            let picked = self.picked_bands(&self.plots[ix]);
             let chart = GroupedBars::new(
                 (
                     ElementId::from("dashboard-chart"),
@@ -2186,6 +2230,22 @@ impl Dashboard {
         )
     }
 
+    /// The zone the dashboard's times are shown in, when its spec sets one.
+    fn render_zone(&self, cx: &App) -> Option<impl IntoElement> {
+        let zone = self.spec.as_ref()?.timezone.as_deref().and_then(khonsu_dash::zone::Zone::parse)?;
+        Some(
+            div()
+                .flex_none()
+                .px_3()
+                .py_1()
+                .border_b_1()
+                .border_color(cx.theme().border)
+                .text_xs()
+                .text_color(cx.theme().muted_foreground)
+                .child(trf("dashboard.timezone", &[&zone.label()])),
+        )
+    }
+
     fn render_stale_warning(&self, cx: &App) -> Option<impl IntoElement> {
         let reason = self.stale_reason.clone()?;
         Some(
@@ -2409,7 +2469,7 @@ impl Render for Dashboard {
                 this.children(self.render_removed(cx))
             })
             .when(!self.showing_source, |this| {
-                this.children(self.render_picks(cx))
+                this.children(self.render_zone(cx)).children(self.render_picks(cx))
             })
             .child(body)
             .children(self.render_presence_names(cx))
@@ -2601,6 +2661,7 @@ fn load(path: &Path, picks: &HashMap<String, Pick>, reuse: &Outcomes) -> Run {
     // in front of it, which only read.
     // Picks go in before the sources, which only read.
     let _ = path;
+    let zone = spec.timezone.as_deref().and_then(khonsu_dash::zone::Zone::parse);
     let mut outcomes: Outcomes = HashMap::new();
     for query in &spec.queries {
         let sql = match model::writing_keyword(query.language, &query.text) {
@@ -2613,7 +2674,10 @@ fn load(path: &Path, picks: &HashMap<String, Pick>, reuse: &Outcomes) -> Run {
                 Some((ran, outcome)) if *ran == sql => (sql, outcome.clone()),
                 _ => {
                     let outcome = match crate::query::run(query.language, &sql) {
-                        Ok(QueryOutcome::Rows(result)) => Ok(Arc::new(result)),
+                        Ok(QueryOutcome::Rows(result)) => Ok(Arc::new(match zone {
+                            Some(zone) => in_zone(result, zone, &picked_columns(&spec, &query.name)),
+                            None => result,
+                        })),
                         Err(e) => Err(format!("{e:#}")),
                     };
                     (sql, outcome)
@@ -2648,6 +2712,36 @@ fn load(path: &Path, picks: &HashMap<String, Pick>, reuse: &Outcomes) -> Run {
         results,
         outcomes,
     }
+}
+
+/// `result` with the times in its time columns moved to `zone`, except in the
+/// columns named in `keep`: a filter picks those, and its pick has to match
+/// the graph's value as stored. A time that names no offset stays as it is.
+fn in_zone(mut result: QueryResult, zone: khonsu_dash::zone::Zone, keep: &[String]) -> QueryResult {
+    let columns: Vec<usize> = result
+        .columns
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| c.kind == ColumnKind::Temporal && !keep.iter().any(|k| k.eq_ignore_ascii_case(&c.name)))
+        .map(|(ix, _)| ix)
+        .collect();
+    for row in &mut result.rows {
+        for &ix in &columns {
+            if let Some(moved) = row.get(ix).and_then(|cell| zone.convert(cell)) {
+                row[ix] = moved;
+            }
+        }
+    }
+    result
+}
+
+/// The columns of `query` a filter picks on a plot that draws it.
+fn picked_columns(spec: &Spec, query: &str) -> Vec<String> {
+    spec.filters
+        .iter()
+        .filter(|f| spec.plots.iter().any(|p| p.name == f.plot && p.query == query))
+        .map(|f| f.column.clone())
+        .collect()
 }
 
 /// A picked cell as the value its predicate compares: a number when its
@@ -2700,7 +2794,7 @@ fn picks_for(
                 Pick {
                     column: filter.column.clone(),
                     expr: filter.match_expr.clone(),
-                    value: pick.value.clone(),
+                    values: pick.values.clone(),
                 },
             ))
         })
@@ -2728,6 +2822,10 @@ fn chart_element(plot_ix: usize, plot: &PreparedPlot, cx: &App) -> AnyElement {
 
     match plot.kind.as_str() {
         "pie" => pie_parts(&plot.pie, name.into(), named_id(), cx).0,
+        "timeline" => match &plot.timeline {
+            Some(timeline) => super::timeline::render(&plot.name, timeline, cx),
+            None => empty_chart(cx),
+        },
         "map" => match &plot.geo {
             Some(geo) => GeoPlot::new(named_id(), geo.clone()).into_any_element(),
             None => empty_chart(cx),
@@ -3244,13 +3342,31 @@ mod tests {
     // Not `use super::*`: that brings `gpui_kit::*`, whose `test` macro
     // shadows the built-in `#[test]`.
     use super::{
-        card_value_size, grid_rows, load, sorted_rows, Pick, Run, SpecTableDelegate,
+        card_value_size, grid_rows, in_zone, load, sorted_rows, Pick, Run, SpecTableDelegate,
         CARD_VALUE_MAX, CARD_VALUE_MIN,
     };
     use crate::query::{ColumnKind, ColumnMeta, QueryResult};
     use gpui_kit::component::table::ColumnSort;
     use std::collections::HashMap;
     use std::sync::Arc;
+
+    #[test]
+    fn times_move_to_the_dashboards_zone_except_where_a_filter_picks() {
+        let column = |name: &str, kind| ColumnMeta { name: name.into(), kind };
+        let result = QueryResult {
+            columns: vec![column("at", ColumnKind::Temporal), column("seen", ColumnKind::Temporal), column("host", ColumnKind::Text)],
+            rows: vec![
+                vec!["1970-01-01T02:15:00Z".into(), "1970-01-01T02:15:00Z".into(), "1970-01-01T02:15:00Z".into()],
+                vec!["1970-01-01 10:15".into(), "NULL".into(), "web".into()],
+            ],
+            truncated: false,
+            graph: None,
+        };
+        let zone = khonsu_dash::zone::Zone::parse("Asia/Hong_Kong").unwrap();
+        let moved = in_zone(result, zone, &["SEEN".to_string()]);
+        assert_eq!(moved.rows[0], ["1970-01-01 10:15:00", "1970-01-01T02:15:00Z", "1970-01-01T02:15:00Z"]);
+        assert_eq!(moved.rows[1], ["1970-01-01 10:15", "NULL", "web"], "a time without an offset stays");
+    }
 
     #[test]
     fn a_table_sorts_numbers_as_numbers_and_nulls_last() {
@@ -3359,7 +3475,7 @@ filter "channel" {
             Pick {
                 column: "channel".into(),
                 expr: Some("o.channel".into()),
-                value: serde_json::json!("web"),
+                values: vec![serde_json::json!("web")],
             },
         );
         let narrowed = load(&path, &picks, &fresh.outcomes);
@@ -3375,7 +3491,7 @@ filter "channel" {
         assert_eq!(narrowed.results["by_channel"].rows.len(), 3);
 
         // The grid's NULL picks the orders with no channel.
-        picks.get_mut("channel").unwrap().value = serde_json::Value::Null;
+        picks.get_mut("channel").unwrap().values = vec![serde_json::Value::Null];
         assert_eq!(total(&load(&path, &picks, &narrowed.outcomes)), "1");
 
         // A reload reuses nothing: every query runs.
