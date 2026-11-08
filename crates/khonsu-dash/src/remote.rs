@@ -76,6 +76,9 @@ pub struct SyncRequest {
     pub source: String,
     #[serde(default)]
     pub incremental: bool,
+    /// Remove nothing the source no longer has.
+    #[serde(default)]
+    pub append: bool,
 }
 
 /// `khonsu open`: a graph or `.dash` files to open, and a query to show in a

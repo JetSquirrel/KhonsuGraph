@@ -640,7 +640,7 @@ impl SourceForm {
         let state = self.state.clone();
         state.update(cx, |s, cx| s.set_syncing(Some(source.name.clone()), cx));
         cx.spawn_in(window, async move |this, cx| {
-            let result = smol::unblock(move || run_sync(&source, SyncMode::Full, &progress)).await;
+            let result = smol::unblock(move || run_sync(&source, SyncMode::Full, false, &progress)).await;
             this.update_in(cx, |this, window, cx| {
                 this.busy = None;
                 state.update(cx, |s, cx| {
@@ -675,7 +675,7 @@ fn describe_event(event: &SyncEvent) -> String {
 
 /// Sync `source` into the open graph. Holds the graph for the whole sync:
 /// HawDB has one writer.
-fn run_sync(source: &Source, mode: SyncMode, progress: &Mutex<Option<String>>) -> Result<SyncReport, String> {
+fn run_sync(source: &Source, mode: SyncMode, append: bool, progress: &Mutex<Option<String>>) -> Result<SyncReport, String> {
     crate::db::with_graph(|graph| {
         if graph.mode() == khonsu_core::AccessMode::ReadOnly {
             return Err(khonsu_core::QueryError {
@@ -685,7 +685,7 @@ fn run_sync(source: &Source, mode: SyncMode, progress: &Mutex<Option<String>>) -
                 column: None,
             });
         }
-        plugin::sync_source(graph, source, mode, &CANCEL, |event| {
+        plugin::sync_source_with(graph, source, mode, append, &CANCEL, |event| {
             *progress.lock().unwrap() = Some(describe_event(&event));
         })
         .map_err(|e| khonsu_core::QueryError {
@@ -725,7 +725,7 @@ pub fn sync(state: Entity<AppState>, source: Source, window: &mut Window, cx: &m
         .spawn(cx, async move |cx| {
             let result = smol::unblock(move || {
                 let mode = if source.cursor.is_some() { SyncMode::Incremental } else { SyncMode::Full };
-                run_sync(&source, mode, &progress)
+                run_sync(&source, mode, false, &progress)
             })
             .await;
             cx.update(move |window, cx| finish(state, result, window, cx)).ok();
@@ -783,10 +783,10 @@ pub fn finish(state: Entity<AppState>, result: Result<SyncReport, String>, windo
 /// A sync asked for by `khonsu plugin sync` while this window holds the graph.
 /// Runs on the caller's thread; the progress goes to the status bar through
 /// [`show_progress`].
-pub fn run_remote_sync(source: &Source, incremental: bool, progress: &Mutex<Option<String>>) -> Result<SyncReport, String> {
+pub fn run_remote_sync(source: &Source, incremental: bool, append: bool, progress: &Mutex<Option<String>>) -> Result<SyncReport, String> {
     CANCEL.store(false, Ordering::Relaxed);
     let mode = if incremental { SyncMode::Incremental } else { SyncMode::Full };
-    run_sync(source, mode, progress)
+    run_sync(source, mode, append, progress)
 }
 
 /// Remove a source and its keychain entries. Nodes it wrote stay in the graph.

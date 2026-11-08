@@ -91,7 +91,7 @@ fn handle(message: Message) -> Value {
             };
             let progress = Arc::new(Mutex::new(None));
             notice(SyncNotice::Started { name: source.name.clone(), progress: progress.clone() });
-            let result = crate::ui::sources::run_remote_sync(&source, request.incremental, &progress);
+            let result = crate::ui::sources::run_remote_sync(&source, request.incremental, request.append, &progress);
             let answer = match &result {
                 Ok(report) => serde_json::to_value(report).unwrap_or(Value::Null),
                 Err(message) => error("sync", message.clone()),

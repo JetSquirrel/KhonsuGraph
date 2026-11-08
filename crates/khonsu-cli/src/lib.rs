@@ -167,6 +167,10 @@ enum PluginCommand {
         /// Pull only changes since the last sync, when the plugin supports it.
         #[arg(long)]
         incremental: bool,
+        /// Add and update only: remove nothing the source no longer has. For
+        /// files that hold only what is new since the last sync.
+        #[arg(long)]
+        append: bool,
         /// Count and sample records without writing.
         #[arg(long)]
         dry_run: bool,
@@ -466,6 +470,7 @@ fn run_plugin(command: PluginCommand) -> Result<Value, CliError> {
         PluginCommand::Sync {
             source,
             incremental,
+            append,
             dry_run,
         } => {
             let source = settings::load_sources()
@@ -490,11 +495,11 @@ fn run_plugin(command: PluginCommand) -> Result<Value, CliError> {
                 Ok(graph) => graph,
                 // The window holds the graph: it syncs, and reruns what it shows.
                 Err(OpenError::Locked(owner)) => {
-                    return dash::sync_via_window(&source, incremental).unwrap_or_else(|| Err(OpenError::Locked(owner).into()));
+                    return dash::sync_via_window(&source, incremental, append).unwrap_or_else(|| Err(OpenError::Locked(owner).into()));
                 }
                 Err(e) => return Err(e.into()),
             };
-            let report = plugin::sync_source(&mut graph, &source, mode, &cancel, progress)?;
+            let report = plugin::sync_source_with(&mut graph, &source, mode, append, &cancel, progress)?;
             Ok(serde_json::to_value(report).expect("report serializes"))
         }
     }
