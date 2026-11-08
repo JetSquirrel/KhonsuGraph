@@ -486,7 +486,14 @@ fn run_plugin(command: PluginCommand) -> Result<Value, CliError> {
                 let preview = plugin::preview(&info, &request, &cancel, progress)?;
                 return Ok(json!({ "dry_run": true, "preview": preview }));
             }
-            let mut graph = Graph::open(&source.graph, AccessMode::ReadWrite, PROGRAM)?;
+            let mut graph = match Graph::open(&source.graph, AccessMode::ReadWrite, PROGRAM) {
+                Ok(graph) => graph,
+                // The window holds the graph: it syncs, and reruns what it shows.
+                Err(OpenError::Locked(owner)) => {
+                    return dash::sync_via_window(&source, incremental).unwrap_or_else(|| Err(OpenError::Locked(owner).into()));
+                }
+                Err(e) => return Err(e.into()),
+            };
             let report = plugin::sync_source(&mut graph, &source, mode, &cancel, progress)?;
             Ok(serde_json::to_value(report).expect("report serializes"))
         }

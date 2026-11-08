@@ -34,6 +34,20 @@ pub enum Message {
     Query(QueryRequest),
     /// `khonsu check` on the window's open graph, for the same reason.
     Check(CheckRequest),
+    /// `khonsu plugin sync` into the window's open graph, for the same
+    /// reason. The window reruns its open dashboards afterwards.
+    Sync(SyncRequest),
+}
+
+impl Message {
+    /// How long a command waits for the answer. A sync takes as long as its
+    /// source does, so it waits until the window answers or goes away.
+    fn answer_wait(&self) -> Option<Duration> {
+        match self {
+            Message::Sync(_) => None,
+            _ => Some(Duration::from_secs(10)),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -52,6 +66,16 @@ pub struct CheckRequest {
     pub path: String,
     #[serde(default)]
     pub summary: bool,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SyncRequest {
+    /// The graph the source writes to; the window refuses if it has another.
+    pub graph: String,
+    /// The source's ID.
+    pub source: String,
+    #[serde(default)]
+    pub incremental: bool,
 }
 
 /// `khonsu open`: a graph or `.dash` files to open, and a query to show in a
@@ -103,7 +127,6 @@ fn connect() -> Option<(TcpStream, String)> {
     let window: WindowFile = serde_json::from_str(&text).ok()?;
     let addr = SocketAddr::from(([127, 0, 0, 1], window.port));
     let stream = TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT).ok()?;
-    stream.set_read_timeout(Some(Duration::from_secs(10))).ok()?;
     Some((stream, window.token))
 }
 
@@ -125,6 +148,7 @@ pub fn notify(message: &Message) -> bool {
 /// Send and wait for the window's answer. `None` when no window is running.
 pub fn request(message: &Message) -> Option<Result<Json, String>> {
     let (mut stream, token) = connect()?;
+    stream.set_read_timeout(message.answer_wait()).ok()?;
     if let Err(e) = send(&mut stream, token, message) {
         return Some(Err(e.to_string()));
     }

@@ -180,6 +180,8 @@ pub struct Dashboard {
     outcomes: Outcomes,
     /// A pick changed while a run was in flight: run again when it lands.
     refilter_pending: bool,
+    /// The graph changed while a run was in flight: reload when it lands.
+    reload_pending: bool,
     /// Where each pickable plot was last laid out, by plot name, for a click
     /// to find its bar.
     plot_bounds: HashMap<String, Rc<Cell<Option<Bounds<Pixels>>>>>,
@@ -270,6 +272,7 @@ impl Dashboard {
             picks: HashMap::new(),
             outcomes: HashMap::new(),
             refilter_pending: false,
+            reload_pending: false,
             plot_bounds: HashMap::new(),
             graph_canvases: HashMap::new(),
             table_subscriptions: Vec::new(),
@@ -636,6 +639,20 @@ impl Dashboard {
         if self.running {
             return;
         }
+        self.reload_now(cx);
+    }
+
+    /// The graph changed under the dashboard: re-run everything, now or, with
+    /// a run in flight that read the graph as it was, as soon as it lands.
+    pub fn graph_written(&mut self, cx: &mut Context<Self>) {
+        if self.running {
+            self.reload_pending = true;
+        } else {
+            self.reload_now(cx);
+        }
+    }
+
+    fn reload_now(&mut self, cx: &mut Context<Self>) {
         if self.showing_source && !self.is_dirty(cx) {
             // The source view shows the file as it is now, not as it was when
             // toggled open — but a dirty buffer is the user's work, and a
@@ -766,7 +783,10 @@ impl Dashboard {
                         });
                     }
                 }
-                if std::mem::take(&mut this.refilter_pending) {
+                if std::mem::take(&mut this.reload_pending) {
+                    this.refilter_pending = false;
+                    this.reload_now(cx);
+                } else if std::mem::take(&mut this.refilter_pending) {
                     this.refilter(cx);
                 }
                 cx.notify();

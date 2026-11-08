@@ -3,19 +3,33 @@
 //! thread, against the window's own graph — HawDB leases a graph to one
 //! process, so while the window has it this is the only way in. Presence,
 //! open and state touch the views: they queue for the UI thread, which
-//! drains them on a slow poll, as DuckLocal's window does.
+//! drains them on a slow poll, as DuckLocal's window does. A sync runs here
+//! too, and tells the UI thread when it starts and ends (`take_syncs`).
 
 use std::path::Path;
 use std::sync::mpsc::{channel, Sender};
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
+use khonsu_core::plugin::SyncReport;
 use khonsu_core::QueryOptions;
 use khonsu_dash::remote::{self, Message, ServeGuard};
 use serde_json::{json, Map, Value};
 
 /// Messages for the UI thread, each with where its answer goes.
 static PENDING: Mutex<Vec<(Message, Sender<Value>)>> = Mutex::new(Vec::new());
+
+/// A sync a command asked for, as the UI thread shows it.
+pub enum SyncNotice {
+    Started { name: String, progress: Arc<Mutex<Option<String>>> },
+    Ended(Box<Result<SyncReport, String>>),
+}
+
+static SYNCS: Mutex<Vec<SyncNotice>> = Mutex::new(Vec::new());
+
+fn notice(notice: SyncNotice) {
+    SYNCS.lock().unwrap_or_else(PoisonError::into_inner).push(notice);
+}
 
 /// How long a command waits for the UI thread before giving up.
 const UI_ANSWER: Duration = Duration::from_secs(10);
@@ -68,6 +82,23 @@ fn handle(message: Message) -> Value {
                 Err(e) => error(&e.kind, e.message),
             }
         }
+        Message::Sync(request) => {
+            if let Err(e) = is_open_graph(&request.graph) {
+                return e;
+            }
+            let Some(source) = khonsu_core::settings::load_sources().into_iter().find(|s| s.id == request.source) else {
+                return error("not_found", format!("no source {:?}; see `khonsu source list`", request.source));
+            };
+            let progress = Arc::new(Mutex::new(None));
+            notice(SyncNotice::Started { name: source.name.clone(), progress: progress.clone() });
+            let result = crate::ui::sources::run_remote_sync(&source, request.incremental, &progress);
+            let answer = match &result {
+                Ok(report) => serde_json::to_value(report).unwrap_or(Value::Null),
+                Err(message) => error("sync", message.clone()),
+            };
+            notice(SyncNotice::Ended(Box::new(result)));
+            answer
+        }
         // The views answer these; the listener waits for them.
         other => {
             let (tx, rx) = channel();
@@ -92,4 +123,9 @@ pub fn serve() -> Option<ServeGuard> {
 /// The messages waiting for the UI thread.
 pub fn take_pending() -> Vec<(Message, Sender<Value>)> {
     std::mem::take(&mut *PENDING.lock().unwrap_or_else(PoisonError::into_inner))
+}
+
+/// Syncs started or ended since the last call, in order.
+pub fn take_syncs() -> Vec<SyncNotice> {
+    std::mem::take(&mut *SYNCS.lock().unwrap_or_else(PoisonError::into_inner))
 }

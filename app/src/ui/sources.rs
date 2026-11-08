@@ -652,6 +652,7 @@ impl SourceForm {
                         window.close_dialog(cx);
                         notify_report(&report, window, cx);
                         crate::ui::reload_schema(state.clone(), window, cx);
+                        state.update(cx, |s, cx| s.graph_written(cx));
                     }
                     Err(e) => this.message = Some((false, e)),
                 }
@@ -719,17 +720,30 @@ fn notify_report(report: &SyncReport, window: &mut Window, cx: &mut App) {
 pub fn sync(state: Entity<AppState>, source: Source, window: &mut Window, cx: &mut App) {
     CANCEL.store(false, Ordering::Relaxed);
     let progress = Arc::new(Mutex::new(None::<String>));
-    state.update(cx, |s, cx| s.set_syncing(Some(source.name.clone()), cx));
-    let name = source.name.clone();
-    let watch = progress.clone();
-    let watch_state = state.clone();
+    show_progress(state.clone(), source.name.clone(), progress.clone(), window, cx);
+    window
+        .spawn(cx, async move |cx| {
+            let result = smol::unblock(move || {
+                let mode = if source.cursor.is_some() { SyncMode::Incremental } else { SyncMode::Full };
+                run_sync(&source, mode, &progress)
+            })
+            .await;
+            cx.update(move |window, cx| finish(state, result, window, cx)).ok();
+        })
+        .detach();
+}
+
+/// Show a running sync of the source named `name` in the status bar, with the
+/// plugin's latest progress line, until [`finish`] clears it.
+pub fn show_progress(state: Entity<AppState>, name: String, progress: Arc<Mutex<Option<String>>>, window: &mut Window, cx: &mut App) {
+    state.update(cx, |s, cx| s.set_syncing(Some(name.clone()), cx));
     window
         .spawn(cx, async move |cx| loop {
             smol::Timer::after(std::time::Duration::from_millis(250)).await;
-            let line = watch.lock().unwrap().clone();
+            let line = progress.lock().unwrap().clone();
             let still = cx
                 .update(|_, cx| {
-                    watch_state.update(cx, |s, cx| {
+                    state.update(cx, |s, cx| {
                         if s.syncing.is_none() {
                             return false;
                         }
@@ -747,29 +761,32 @@ pub fn sync(state: Entity<AppState>, source: Source, window: &mut Window, cx: &m
             }
         })
         .detach();
-    window
-        .spawn(cx, async move |cx| {
-            let result = smol::unblock(move || {
-                let mode = if source.cursor.is_some() { SyncMode::Incremental } else { SyncMode::Full };
-                run_sync(&source, mode, &progress)
-            })
-            .await;
-            cx.update(move |window, cx| {
-                state.update(cx, |s, cx| {
-                    s.set_syncing(None, cx);
-                    s.reload_lists(cx);
-                });
-                match result {
-                    Ok(report) => {
-                        notify_report(&report, window, cx);
-                        crate::ui::reload_schema(state.clone(), window, cx);
-                    }
-                    Err(e) => window.push_notification(Notification::error(e).title(tr("sources.failed")), cx),
-                }
-            })
-            .ok();
-        })
-        .detach();
+}
+
+/// A sync ended: say how, and show the graph as it now is, open dashboards
+/// included.
+pub fn finish(state: Entity<AppState>, result: Result<SyncReport, String>, window: &mut Window, cx: &mut App) {
+    state.update(cx, |s, cx| {
+        s.set_syncing(None, cx);
+        s.reload_lists(cx);
+    });
+    match result {
+        Ok(report) => {
+            notify_report(&report, window, cx);
+            crate::ui::reload_schema(state.clone(), window, cx);
+            state.update(cx, |s, cx| s.graph_written(cx));
+        }
+        Err(e) => window.push_notification(Notification::error(e).title(tr("sources.failed")), cx),
+    }
+}
+
+/// A sync asked for by `khonsu plugin sync` while this window holds the graph.
+/// Runs on the caller's thread; the progress goes to the status bar through
+/// [`show_progress`].
+pub fn run_remote_sync(source: &Source, incremental: bool, progress: &Mutex<Option<String>>) -> Result<SyncReport, String> {
+    CANCEL.store(false, Ordering::Relaxed);
+    let mode = if incremental { SyncMode::Incremental } else { SyncMode::Full };
+    run_sync(source, mode, progress)
 }
 
 /// Remove a source and its keychain entries. Nodes it wrote stay in the graph.

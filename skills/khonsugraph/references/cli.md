@@ -171,6 +171,7 @@ khonsu source add --db DIR --plugin csv --name "Lab" \
 khonsu source list
 khonsu plugin sync --source lab --dry-run         # counts and samples, writes nothing
 khonsu plugin sync --source lab                   # full sync; --incremental when the plugin supports it
+                                                  # with the graph open in the window, the window syncs ("via_window": true) and reruns its dashboards
 khonsu source remove lab
 ```
 
