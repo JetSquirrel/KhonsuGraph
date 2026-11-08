@@ -67,9 +67,9 @@ pub enum OpenError {
     NotEmpty(PathBuf),
     #[error("{0} does not exist")]
     Missing(PathBuf),
-    /// Written by HawDB 0.8–0.15, whose formats the pinned HawDB rejects and
-    /// does not migrate; `rebuild` makes it again from its data sources.
-    #[error("{} was written by an older HawDB (0.8–0.15), which HawDB {} cannot read. Rebuild it from its data sources with `khonsu rebuild --db {}`; the old files are kept beside it", .0.display(), crate::HAWDB_VERSION, .0.display())]
+    /// Written by a HawDB before 0.25, whose formats the pinned HawDB rejects
+    /// and does not migrate; `rebuild` makes it again from its data sources.
+    #[error("{} was written by an older HawDB (before 0.25), which HawDB {} cannot read. Rebuild it from its data sources with `khonsu rebuild --db {}`; the old files are kept beside it", .0.display(), crate::HAWDB_VERSION, .0.display())]
     OldFormat(PathBuf),
     #[error("cannot open graph: {message}")]
     Engine { message: String, hint: Option<String> },
@@ -142,6 +142,37 @@ impl From<HawDBError> for QueryError {
     }
 }
 
+impl QueryError {
+    /// HawDB's SQL parser (0.26 on) reports `at bytes A..B` instead of a line
+    /// and column; work those out from the text it was given, `ran`, which
+    /// sits inside what the person wrote, `written`.
+    fn located_in(mut self, written: &str, ran: &str) -> Self {
+        if self.line.is_none() {
+            if let Some(byte) = byte_offset(&self.message) {
+                let lead = written.len() - written.trim_start().len();
+                if let Some((line, column)) = line_and_column(written, lead + byte.min(ran.len())) {
+                    (self.line, self.column) = (Some(line), Some(column));
+                }
+            }
+        }
+        self
+    }
+}
+
+/// The start of `at bytes A..B` in an error message.
+fn byte_offset(message: &str) -> Option<usize> {
+    let start = message.find("at bytes ")? + "at bytes ".len();
+    message[start..].split("..").next()?.trim().parse().ok()
+}
+
+/// 1-based line and column (in characters) of a byte offset in `text`.
+fn line_and_column(text: &str, byte: usize) -> Option<(u32, u32)> {
+    let before = text.get(..byte)?;
+    let line = before.matches('\n').count() + 1;
+    let column = before.rsplit('\n').next().unwrap_or("").chars().count() + 1;
+    Some((line as u32, column as u32))
+}
+
 /// Extracts `line N column M` (Cypher) or `Line: N, Column: M` (SQL).
 pub fn error_position(message: &str) -> (Option<u32>, Option<u32>) {
     let lower = message.to_ascii_lowercase();
@@ -211,8 +242,9 @@ impl Graph {
         }
         let mut graph = Self::open_inner(path, mode, program)?;
         // HawDB reads storage on the first statement, and only then refuses
-        // the relational codec 0.12–0.15 wrote. Other failures are left for
-        // the queries that follow to report.
+        // an older relational codec: 0.12–0.15 wrote version 1, 0.19–0.24
+        // version 2, and 0.25 reads neither. Other failures are left for the
+        // queries that follow to report.
         if let Err(HawDBError::UnsupportedStorageFormat(_)) = graph.db.query_sql("SELECT 1") {
             return Err(OpenError::OldFormat(graph.path));
         }
@@ -287,6 +319,7 @@ impl Graph {
         params: &Map<String, Json>,
         options: QueryOptions,
     ) -> Result<QueryResult, QueryError> {
+        let written = text;
         let text = text.trim().trim_end_matches(';').trim();
         if text.is_empty() {
             return Err(QueryError::new("parse", "the query is empty"));
@@ -300,7 +333,8 @@ impl Graph {
         let output = match language {
             Language::Cypher => self.db.query_with_params(text, &params),
             Language::Sql => self.db.query_sql_with_params(text, &positional(params)),
-        }?;
+        }
+        .map_err(|err| QueryError::from(err).located_in(written, text))?;
         let elapsed_ms = started.elapsed().as_millis() as u64;
         let mut columns: Vec<String> = output.schema().columns().iter().map(|c| c.to_string()).collect();
         let row_count = output.value_rows().count();
@@ -647,6 +681,22 @@ mod tests {
             (Some(2), Some(5))
         );
         assert_eq!(error_position("semantic error: unknown variable"), (None, None));
+    }
+
+    #[test]
+    fn a_byte_span_becomes_a_line_and_column_in_the_written_text() {
+        let error = |message: &str| QueryError::new("parse", message);
+        let written = "  SELECT name\nFROM t WHERE (";
+        let ran = written.trim();
+        let located = error("parse error: SQL syntax error UnexpectedToken at bytes 25..26").located_in(written, ran);
+        assert_eq!((located.line, located.column), (Some(2), Some(14)));
+        let located = error("parse error: SQL syntax error UnexpectedToken at bytes 0..5").located_in("SELEC 1", "SELEC 1");
+        assert_eq!((located.line, located.column), (Some(1), Some(1)));
+        // A message that already says where is left alone, and so is one that says nothing.
+        let placed = QueryError { line: Some(3), column: Some(4), ..error("parse error at bytes 0..1") };
+        let located = placed.located_in("x", "x");
+        assert_eq!((located.line, located.column), (Some(3), Some(4)));
+        assert_eq!(error("semantic error").located_in("x", "x").line, None);
     }
 
     #[test]

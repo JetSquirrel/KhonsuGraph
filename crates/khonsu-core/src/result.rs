@@ -99,7 +99,25 @@ pub fn value_to_json(value: &Value) -> Json {
         Value::Date(_) | Value::LocalTime(_) | Value::LocalDateTime(_) | Value::DateTime(_) | Value::Duration(_) => {
             Json::String(value.to_string())
         }
+        // SQL literals, DECIMAL columns and their sums are exact decimals since
+        // 0.25. A number keeps them chartable; one that a double cannot hold
+        // exactly stays text, rather than losing digits without a word.
+        Value::Decimal(decimal) => {
+            let text = decimal.to_string();
+            text.parse::<f64>()
+                .ok()
+                .filter(|float| float.is_finite() && same_decimal(decimal, &float.to_string()))
+                .and_then(serde_json::Number::from_f64)
+                .map(Json::Number)
+                .unwrap_or(Json::String(text))
+        }
     }
+}
+
+/// Whether `text` parses to the same number as `decimal`; HawDB compares
+/// decimals by value, so 25.00 and 25 are the same.
+fn same_decimal<D: std::str::FromStr + PartialEq>(decimal: &D, text: &str) -> bool {
+    text.parse::<D>().is_ok_and(|parsed| parsed == *decimal)
 }
 
 /// Converts a JSON parameter into a HawDB value. Integral numbers become
@@ -225,6 +243,19 @@ mod tests {
         ]));
         assert_eq!(json_to_value(&value_to_json(&value)), value);
         assert_eq!(value_to_json(&Value::Binary(vec![0xab, 1])), json!("\\xab01"));
+    }
+
+    #[test]
+    fn decimals_are_numbers_unless_a_double_would_lose_digits() {
+        let decimal = |text: &str| match text.parse() {
+            Ok(decimal) => Value::Decimal(decimal),
+            Err(_) => panic!("not a decimal: {text}"),
+        };
+        assert_eq!(value_to_json(&decimal("19.99")), json!(19.99));
+        assert_eq!(value_to_json(&decimal("25.00")), json!(25.0));
+        assert_eq!(value_to_json(&decimal("-0.3")), json!(-0.3));
+        assert_eq!(value_to_json(&decimal("9007199254740993.0100")), json!("9007199254740993.0100"));
+        assert_eq!(value_to_json(&decimal("0.12345678901234567890")), json!("0.12345678901234567890"));
     }
 
     #[test]
