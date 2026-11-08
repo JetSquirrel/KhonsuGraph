@@ -15,6 +15,9 @@
 //!   optional `caption` names the node property shown under each node, and
 //!   `group` a node property whose values gather nodes into outlined groups
 //!   that collapse into one node (a community id, a country, an owner);
+//!   `color` names a node property whose values color the nodes, `colors`
+//!   fixes the color of some values (`["confirmed=good", "open=#d03b3b"]`),
+//!   and `size` names a numeric node property that sizes them;
 //! * a `pie` takes `x` (the slices) and `y` (their sizes), and no `series`;
 //! * a `map` takes `lat` and `lng` instead of `x` and `y` — either may be left
 //!   out when a column's name says what it is (`geo_lat`, `longitude`) — and
@@ -59,7 +62,14 @@ const MAP_ATTRS: &[&str] = &["lat", "lng", "color", "size", "size_scale", "toolt
 const CARD_ATTRS: &[&str] = &["value", "note", "tone"];
 
 /// The attributes only a `graph` takes.
-const GRAPH_ATTRS: &[&str] = &["caption", "group", "labels", "highlight"];
+const GRAPH_ATTRS: &[&str] = &["caption", "group", "labels", "highlight", "colors"];
+
+/// The attributes a `graph` shares with a `map`, read as node properties.
+const GRAPH_MAP_ATTRS: &[&str] = &["color", "size"];
+
+/// The named colors a `graph`'s `colors` may give a value, besides `#rrggbb`:
+/// the card tones, and `muted` for what should recede.
+pub const GRAPH_COLORS: &[&str] = &["accent", "good", "warning", "critical", "muted"];
 
 /// Which node captions a `graph` draws: `auto` as many as fit, best
 /// connected first; `all` every one, overlapping or not; `focus` only around
@@ -207,6 +217,9 @@ pub struct Plot {
     pub labels: Option<String>,
     /// A `graph`'s focus, one of [`HIGHLIGHTS`]; `None` is `neighbors`.
     pub highlight: Option<String>,
+    /// A `graph`'s fixed colors for values of its `color` property: each a
+    /// value and one of [`GRAPH_COLORS`] or `#rrggbb`. Empty when not set.
+    pub colors: Vec<(String, String)>,
     /// Grid columns spanned as written; `Plot::width` applies the default.
     pub width: Option<u8>,
     /// Line and column of the block's kind keyword.
@@ -812,6 +825,7 @@ fn plot(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Option<Plot> {
     let mut group = None;
     let mut labels = None;
     let mut highlight = None;
+    let mut colors = Vec::new();
     let mut width = None;
     let mut seen: HashSet<&str> = HashSet::new();
     for attr in &block.attrs {
@@ -889,10 +903,11 @@ fn plot(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Option<Plot> {
             "group" => group = column(attr, diagnostics),
             "labels" => labels = one_of(attr, LABELS, "labels", diagnostics),
             "highlight" => highlight = one_of(attr, HIGHLIGHTS, "highlight", diagnostics),
+            "colors" => colors = color_map(attr, diagnostics),
             other => diagnostics.push(Diagnostic::at_attr(
                 attr,
                 format!(
-                    "A plot block holds type, query, x, y, series, title, width, for a map lat, lng, color, size, size_scale, tooltip, for a card value, note, tone, for a graph caption, group, labels and highlight, and for a text panel text; unknown attribute: {other}"
+                    "A plot block holds type, query, x, y, series, title, width, for a map lat, lng, color, size, size_scale, tooltip, for a card value, note, tone, for a graph caption, group, labels, highlight, color, colors and size, and for a text panel text; unknown attribute: {other}"
                 ),
             )),
         }
@@ -918,7 +933,10 @@ fn plot(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Option<Plot> {
                 "text is for text panels; this plot is a {kind_name} (its label is title)"
             ))
         } else if is_graph {
-            (matches!(name, "x" | "y" | "series") || MAP_ATTRS.contains(&name) || CARD_ATTRS.contains(&name)).then(|| {
+            (matches!(name, "x" | "y" | "series")
+                || (MAP_ATTRS.contains(&name) && !GRAPH_MAP_ATTRS.contains(&name))
+                || CARD_ATTRS.contains(&name))
+            .then(|| {
                 format!("A graph draws the nodes and relationships its query returns; it takes no {name}")
             })
         } else if !kind_name.is_empty() && GRAPH_ATTRS.contains(&name) {
@@ -945,6 +963,12 @@ fn plot(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Option<Plot> {
         };
         if let Some(message) = misplaced {
             diagnostics.push(Diagnostic::at_attr(attr, message));
+        }
+        if name == "colors" && color.is_none() && is_graph {
+            diagnostics.push(Diagnostic::at_attr(
+                attr,
+                "colors fixes the color of values of color; set color to a node property too",
+            ));
         }
         if name == "size_scale" && size.is_none() && is_map {
             diagnostics.push(Diagnostic::at_attr(
@@ -1013,6 +1037,7 @@ fn plot(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Option<Plot> {
         group,
         labels,
         highlight,
+        colors,
         width,
         line: block.line,
         col: block.col,
@@ -1039,6 +1064,44 @@ fn grid_width(attr: &Attr, diagnostics: &mut Vec<Diagnostic>) -> Option<u8> {
             None
         }
     }
+}
+
+/// A `graph`'s `colors`: `["confirmed=good", "open=#d03b3b"]`, each a value,
+/// `=`, and a color from [`GRAPH_COLORS`] or `#rrggbb`. The last `=` splits,
+/// so a value may hold one.
+fn color_map(attr: &Attr, diagnostics: &mut Vec<Diagnostic>) -> Vec<(String, String)> {
+    let shape = "colors is a list of \"value=color\": [\"confirmed=good\", \"open=#d03b3b\"]";
+    let Value::List(items) = &attr.value else {
+        diagnostics.push(Diagnostic::at_attr(attr, shape));
+        return Vec::new();
+    };
+    let mut map = Vec::with_capacity(items.len());
+    for item in items {
+        let Value::Str(text) = item else {
+            diagnostics.push(Diagnostic::at_attr(attr, shape));
+            return Vec::new();
+        };
+        let Some((value, color)) = text.rsplit_once('=') else {
+            diagnostics.push(Diagnostic::at_attr(attr, format!("{text:?} has no '='; {shape}")));
+            continue;
+        };
+        let color = color.trim();
+        if !is_graph_color(color) {
+            diagnostics.push(Diagnostic::at_attr(
+                attr,
+                format!("Unknown color {color:?} for {value:?}; one of {} or #rrggbb", GRAPH_COLORS.join(", ")),
+            ));
+            continue;
+        }
+        map.push((value.trim().to_string(), color.to_string()));
+    }
+    map
+}
+
+/// One of [`GRAPH_COLORS`], or `#rrggbb`.
+pub fn is_graph_color(color: &str) -> bool {
+    GRAPH_COLORS.contains(&color)
+        || color.strip_prefix('#').is_some_and(|hex| hex.len() == 6 && hex.chars().all(|c| c.is_ascii_hexdigit()))
 }
 
 /// A list of column names: `[place, requests, "Unique IPs"]`, not empty.
@@ -1212,14 +1275,16 @@ pub fn check_columns(spec: &Spec, columns: &ColumnLookup) -> Vec<Diagnostic> {
         }
         let x = !matches!(plot.kind.as_str(), "map" | "card") && !plot.x.is_empty();
         let x = x.then_some(plot.x.as_str());
+        // A graph's color and size are node properties, not result columns.
+        let node_property = plot.kind == "graph";
         for (name, column) in [
             ("x", x),
             ("y", plot.y.as_deref()),
             ("series", plot.series.as_deref()),
             ("lat", plot.lat.as_deref()),
             ("lng", plot.lng.as_deref()),
-            ("color", plot.color.as_deref()),
-            ("size", plot.size.as_deref()),
+            ("color", plot.color.as_deref().filter(|_| !node_property)),
+            ("size", plot.size.as_deref().filter(|_| !node_property)),
             ("value", plot.value.as_deref()),
             (
                 "note",
@@ -1521,6 +1586,42 @@ plot "web" {
         assert_eq!(spec.plots[0].group.as_deref(), Some("community"));
         let wrong = validate_err(&source.replace("\"graph\"", "\"table\""));
         assert!(wrong.iter().any(|d| d.message.contains("group is for graph plots")), "{wrong:?}");
+    }
+
+    #[test]
+    fn a_graph_colors_and_sizes_its_nodes_by_property() {
+        let source = r#"
+query "hosts" { cypher = "MATCH (a:Host)-[r:CALLS]->(b:Host) RETURN a, r, b" }
+plot "web" {
+  type   = "graph"
+  query  = query.hosts
+  group  = team
+  color  = status
+  colors = ["rotated=good", "exposed=critical", "a=b=#0ca30c"]
+  size   = requests
+}
+"#;
+        let spec = validate_ok(source);
+        let plot = &spec.plots[0];
+        assert_eq!(plot.color.as_deref(), Some("status"));
+        assert_eq!(plot.size.as_deref(), Some("requests"));
+        assert_eq!(
+            plot.colors,
+            vec![
+                ("rotated".to_string(), "good".to_string()),
+                ("exposed".to_string(), "critical".to_string()),
+                ("a=b".to_string(), "#0ca30c".to_string()),
+            ]
+        );
+
+        let unknown = validate_err(&source.replace("exposed=critical", "exposed=red"));
+        assert!(unknown.iter().any(|d| d.message.contains("Unknown color \"red\"")), "{unknown:?}");
+        let alone = validate_err(&source.replace("  color  = status\n", ""));
+        assert!(alone.iter().any(|d| d.message.contains("set color to a node property")), "{alone:?}");
+        let misplaced = validate_err(&source.replace("\"graph\"", "\"table\""));
+        assert!(misplaced.iter().any(|d| d.message.contains("colors is for graph plots")), "{misplaced:?}");
+        let scale = validate_err(&source.replace("  size   = requests\n", "  size   = requests\n  size_scale = \"log\"\n"));
+        assert!(scale.iter().any(|d| d.message.contains("it takes no size_scale")), "{scale:?}");
     }
 
     #[test]

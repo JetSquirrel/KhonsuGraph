@@ -84,6 +84,8 @@ pub struct PreparedPlot {
     /// A `graph`'s `labels` and `highlight`, as the spec names them.
     pub labels: Option<String>,
     pub highlight: Option<String>,
+    /// A `graph`'s `color`, `colors` and `size`.
+    pub style: crate::ui::canvas::NodeStyle,
     /// Grid columns the plot spans, default applied.
     pub width: u8,
     /// Whether `x` is a date or time column: its bands are points in time,
@@ -218,6 +220,15 @@ pub(crate) fn prepare<R: std::borrow::Borrow<QueryResult>>(
         group: plot.group.clone(),
         labels: plot.labels.clone(),
         highlight: plot.highlight.clone(),
+        style: if plot.kind == "graph" {
+            crate::ui::canvas::NodeStyle {
+                color: plot.color.clone(),
+                colors: plot.colors.clone(),
+                size: plot.size.clone(),
+            }
+        } else {
+            Default::default()
+        },
         width: plot.width(),
         time_axis: false,
         x_values: None,
@@ -611,6 +622,7 @@ pub(crate) fn prepare<R: std::borrow::Borrow<QueryResult>>(
         group: None,
         labels: None,
         highlight: None,
+        style: Default::default(),
         width: plot.width(),
         time_axis,
         x_values: None,
@@ -852,6 +864,7 @@ mod tests {
             group: None,
             labels: None,
             highlight: None,
+            colors: Vec::new(),
             width: None,
             line: 1,
             col: 1,

@@ -4,6 +4,13 @@
 //! A value nobody supplied is [`Field::Unknown`], never a guess. Records are
 //! meant to be copied out of the app, so they hold no source configuration, and
 //! anything that looks like a secret is left out and named in `redacted`.
+//!
+//! How strongly a record is known is the data's to say, by convention: a
+//! `confidence` property of `confirmed`, `inferred` or `unconfirmed`, and an
+//! `evidence` property saying what showed it (the query and its time window).
+//! A request that came back 2xx is not a confirmed read; that difference is
+//! what the convention is for. A record that says neither is
+//! [`Field::Unknown`], not confirmed.
 
 use crate::explore::{explain_hop, Exploration, Hop};
 use crate::merge::{ID_PROPERTY, PLUGIN_PROPERTY, SOURCE_PROPERTY, SYNCED_AT_PROPERTY};
@@ -13,6 +20,72 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value as Json};
 
 const REDACTED: &str = "[redacted]";
+
+/// The property a record states its [`Confidence`] in.
+pub const CONFIDENCE_PROPERTY: &str = "confidence";
+/// The property a record states what showed it in: the query, the time window.
+pub const EVIDENCE_PROPERTY: &str = "evidence";
+
+/// How strongly a record is known, weakest first, so the weakest of several
+/// is their minimum.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Confidence {
+    /// Seen only as far as a request that succeeded: nothing showed it happened.
+    Unconfirmed,
+    /// Worked out from other facts, not seen directly.
+    Inferred,
+    /// Seen directly in the data that would show it.
+    Confirmed,
+}
+
+impl Confidence {
+    pub const ALL: [Confidence; 3] = [Confidence::Confirmed, Confidence::Inferred, Confidence::Unconfirmed];
+
+    /// A `confidence` value as written: the English words in any case, or
+    /// 已确认, 推断, 未确认.
+    pub fn parse(text: &str) -> Option<Self> {
+        match text.trim().to_lowercase().as_str() {
+            "confirmed" | "已确认" | "确认" => Some(Self::Confirmed),
+            "inferred" | "推断" => Some(Self::Inferred),
+            "unconfirmed" | "未确认" | "待确认" => Some(Self::Unconfirmed),
+            _ => None,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Confirmed => "confirmed",
+            Self::Inferred => "inferred",
+            Self::Unconfirmed => "unconfirmed",
+        }
+    }
+
+    /// The confidence `properties` state, if they state one this knows.
+    pub fn of(properties: &Map<String, Json>) -> Option<Self> {
+        properties.get(CONFIDENCE_PROPERTY).and_then(Json::as_str).and_then(Self::parse)
+    }
+
+    /// What a chain of records is known as: as weak as its weakest link. One
+    /// unconfirmed link makes it unconfirmed whatever the rest say; otherwise a
+    /// link that states nothing leaves it unknown.
+    pub fn weakest(links: impl IntoIterator<Item = Field<Confidence>>) -> Field<Confidence> {
+        let mut weakest: Option<Confidence> = None;
+        let mut unstated = false;
+        for link in links {
+            match link {
+                Field::Known(confidence) => weakest = Some(weakest.map_or(confidence, |w| w.min(confidence))),
+                Field::Unknown => unstated = true,
+            }
+        }
+        match weakest {
+            Some(Confidence::Unconfirmed) => Field::Known(Confidence::Unconfirmed),
+            Some(confidence) if !unstated => Field::Known(confidence),
+            _ => Field::Unknown,
+        }
+    }
+}
+
 /// Property names that hold secrets, compared in lower case without `_` or `-`.
 const SECRET_NAMES: &[&str] = &[
     "password", "passwd", "secret", "token", "credential", "apikey", "accesskey", "privatekey", "authorization", "cookie",
@@ -41,10 +114,11 @@ pub fn coverage_of(source: &str, sources: &[Source]) -> Field<SourceCoverage> {
 }
 
 /// A value that was supplied, or a plain statement that it was not.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(tag = "status", content = "value", rename_all = "snake_case")]
 pub enum Field<T> {
     Known(T),
+    #[default]
     Unknown,
 }
 
@@ -117,6 +191,12 @@ pub struct Evidence {
     pub assertion: Assertion,
     /// The rule that produced it, for a derived record.
     pub rule_id: Field<String>,
+    /// How strongly the record is known, as its `confidence` property says.
+    #[serde(default)]
+    pub confidence: Field<Confidence>,
+    /// What showed it, as its `evidence` property says.
+    #[serde(default)]
+    pub evidence: Field<String>,
     /// The record's own properties, without bookkeeping or secrets.
     pub properties: Map<String, Json>,
     /// Property names left out or masked because they look like secrets.
@@ -136,6 +216,10 @@ pub struct PathEvidence {
     /// How it was worked out.
     pub derivation: String,
     pub rule_id: Field<String>,
+    /// The weakest `confidence` of the relationships it crosses (see
+    /// [`Confidence::weakest`]).
+    #[serde(default)]
+    pub confidence: Field<Confidence>,
     /// What the path does and does not show.
     pub claim: String,
     /// Each hop in words, in the order walked.
@@ -224,6 +308,7 @@ pub(crate) fn for_hops(hops: &[Hop], graph: &GraphData, sources: &[Source], deri
         assertion: Assertion::Derived,
         derivation: derivation.into(),
         rule_id,
+        confidence: Confidence::weakest(evidence.iter().filter(|record| record.kind == Kind::Relationship).map(|record| record.confidence.clone())),
         claim: PATH_CLAIM.into(),
         hops: hops.iter().map(|hop| explain_hop(&graph.nodes, hop)).collect(),
         supporting,
@@ -257,6 +342,8 @@ fn provenance(properties: &Map<String, Json>, source: Option<String>, sources: &
         source_snapshot: coverage.known().filter(|coverage| coverage.status == RunStatus::Complete).map(|coverage| coverage.run_id.clone()).into(),
         source_coverage: coverage,
         rule_id: Field::Unknown,
+        confidence: Confidence::of(properties).into(),
+        evidence: text(properties, EVIDENCE_PROPERTY).into(),
         properties: own,
         redacted,
     }
@@ -349,6 +436,40 @@ mod tests {
 
     fn map(value: Json) -> Map<String, Json> {
         value.as_object().unwrap().clone()
+    }
+
+    #[test]
+    fn a_record_states_its_confidence_and_what_showed_it() {
+        let edge = GraphEdge {
+            id: 7,
+            source: 1,
+            target: 2,
+            rel_type: "READ".into(),
+            properties: map(json!({"confidence": "Inferred", "evidence": "logs: status=200 path=/v1/items, 01:00-03:00 UTC"})),
+        };
+        let record = for_edge(&edge, &[], &[]);
+        assert_eq!(record.confidence, Field::Known(Confidence::Inferred));
+        assert_eq!(record.evidence, Field::Known("logs: status=200 path=/v1/items, 01:00-03:00 UTC".into()));
+
+        let plain = GraphEdge { properties: map(json!({"confidence": "probably"})), ..edge };
+        let record = for_edge(&plain, &[], &[]);
+        assert_eq!(record.confidence, Field::Unknown, "a word it does not know is not a confidence");
+        assert_eq!(record.evidence, Field::Unknown);
+        assert_eq!(Confidence::parse("已确认"), Some(Confidence::Confirmed));
+        assert_eq!(Confidence::parse(" 未确认 "), Some(Confidence::Unconfirmed));
+    }
+
+    #[test]
+    fn a_chain_is_as_weak_as_its_weakest_link() {
+        use Confidence::*;
+        let known = Field::Known;
+        assert_eq!(Confidence::weakest([known(Confirmed), known(Inferred)]), known(Inferred));
+        assert_eq!(Confidence::weakest([known(Confirmed), known(Confirmed)]), known(Confirmed));
+        // A link that says nothing leaves the chain unknown, unless one link
+        // is unconfirmed: then nothing can make it stronger.
+        assert_eq!(Confidence::weakest([known(Confirmed), Field::Unknown]), Field::Unknown);
+        assert_eq!(Confidence::weakest([Field::Unknown, known(Unconfirmed)]), known(Unconfirmed));
+        assert_eq!(Confidence::weakest([]), Field::Unknown);
     }
 
     fn synced(extra: Json) -> Map<String, Json> {
