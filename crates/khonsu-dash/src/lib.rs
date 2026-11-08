@@ -10,6 +10,7 @@
 //! src/comments.rs  review threads on plots, kept beside the spec
 //! src/presence.rs  an agent at work on a spec, for the window to show
 //! src/remote.rs    the line between khonsu commands and the running window
+//! src/zone.rs      the time zone a dashboard shows its times in
 //! ```
 
 pub mod check;
@@ -20,5 +21,6 @@ pub mod model;
 pub mod presence;
 pub mod remote;
 pub mod syntax;
+pub mod zone;
 
 pub use model::{parse, validate, validate_partial, Diagnostic, Filter, Plot, Query, Spec};

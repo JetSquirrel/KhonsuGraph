@@ -34,6 +34,9 @@
 //!   a predicate (see `filter.rs`). A Cypher query compares the expression
 //!   the filter's `match` names (`match = "h.name"`);
 //! * `query = query.latency` names a query block that exists;
+//! * one optional `dashboard` block holds settings for the whole file:
+//!   `timezone`, the zone every time with an offset is shown in (see
+//!   `zone.rs`);
 //! * `x`, `y`, `series` name result columns — as bare identifiers when the
 //!   column allows it, as strings when it does not (`"Revenue (USD)"`).
 //!
@@ -159,6 +162,8 @@ pub struct Spec {
     pub queries: Vec<Query>,
     pub plots: Vec<Plot>,
     pub filters: Vec<Filter>,
+    /// The `dashboard` block's `timezone`, as written and known to parse.
+    pub timezone: Option<String>,
     /// Where every block and attribute sits in the source, in source order,
     /// for `Spec::locate`.
     sites: Vec<Site>,
@@ -444,9 +449,17 @@ pub fn validate_partial(file: &File) -> (Spec, Vec<Diagnostic>) {
     let mut plot_names: HashSet<String> = HashSet::new();
     let mut filters = Vec::new();
     let mut filter_names: HashSet<String> = HashSet::new();
+    let mut timezone = None;
+    let mut dashboard_seen = false;
 
     for block in &file.blocks {
         match block.kind.as_str() {
+            "dashboard" => {
+                if std::mem::replace(&mut dashboard_seen, true) {
+                    diagnostics.push(Diagnostic::at_block(block, "A file holds one dashboard block"));
+                }
+                timezone = dashboard(block, &mut diagnostics);
+            }
             // DuckLocal reads data files through `source` blocks; a KhonsuGraph
             // dashboard reads the graph, which data sources fill.
             "source" => diagnostics.push(Diagnostic::at_block(
@@ -499,7 +512,7 @@ pub fn validate_partial(file: &File) -> (Spec, Vec<Diagnostic>) {
             other => diagnostics.push(Diagnostic::at_block(
                 block,
                 format!(
-                    "Unknown block: {other:?}; the file holds query, plot and filter blocks"
+                    "Unknown block: {other:?}; the file holds query, plot and filter blocks, and one dashboard block"
                 ),
             )),
         }
@@ -643,6 +656,7 @@ pub fn validate_partial(file: &File) -> (Spec, Vec<Diagnostic>) {
             queries,
             plots,
             filters,
+            timezone,
             sites,
         },
         diagnostics,
@@ -746,6 +760,29 @@ fn filter(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Filter {
         span: block.kind_span,
         name_span: block.name_span,
     }
+}
+
+/// The `dashboard` block: settings for the whole file. Its name is a title for
+/// whoever reads the file. Returns the `timezone`.
+fn dashboard(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Option<String> {
+    let mut timezone = None;
+    for attr in &block.attrs {
+        match attr.name.as_str() {
+            "timezone" => match string(attr, diagnostics) {
+                Some(zone) if crate::zone::Zone::parse(&zone).is_some() => timezone = Some(zone),
+                Some(zone) => diagnostics.push(Diagnostic::at_attr(
+                    attr,
+                    format!("Unknown timezone {zone:?}: an IANA name (\"Asia/Hong_Kong\"), \"UTC\", \"local\" or an offset (\"+08:00\")"),
+                )),
+                None => {}
+            },
+            other => diagnostics.push(Diagnostic::at_attr(
+                attr,
+                format!("A dashboard block holds timezone; unknown attribute: {other}"),
+            )),
+        }
+    }
+    timezone
 }
 
 fn query(block: &Block, diagnostics: &mut Vec<Diagnostic>) -> Option<Query> {
@@ -1631,6 +1668,23 @@ plot "web" {
         assert!(misplaced.iter().any(|d| d.message.contains("colors is for graph plots")), "{misplaced:?}");
         let scale = validate_err(&source.replace("  size   = requests\n", "  size   = requests\n  size_scale = \"log\"\n"));
         assert!(scale.iter().any(|d| d.message.contains("it takes no size_scale")), "{scale:?}");
+    }
+
+    #[test]
+    fn a_dashboard_block_sets_the_time_zone() {
+        let source = r#"
+dashboard "Operations" { timezone = "Asia/Hong_Kong" }
+query "q" { cypher = "MATCH (n) RETURN n.at AS at" }
+plot "t" {
+  type  = "table"
+  query = query.q
+}
+"#;
+        assert_eq!(validate_ok(source).timezone.as_deref(), Some("Asia/Hong_Kong"));
+        let unknown = validate_err(&source.replace("Asia/Hong_Kong", "HKT"));
+        assert!(unknown.iter().any(|d| d.message.contains("Unknown timezone \"HKT\"")), "{unknown:?}");
+        let twice = validate_err(&format!("{source}\ndashboard \"again\" {{ timezone = \"UTC\" }}"));
+        assert!(twice.iter().any(|d| d.message.contains("one dashboard block")), "{twice:?}");
     }
 
     #[test]

@@ -13,8 +13,9 @@
 use super::model;
 
 /// Every attribute a plot block may hold, in the order completion offers
-/// them: the common ones first, a map's, a card's and a text panel's own after.
-pub(crate) const PLOT_ATTRS: [&str; 17] = [
+/// them: the common ones first, a map's, a card's, a text panel's and a
+/// graph's own after.
+pub(crate) const PLOT_ATTRS: [&str; 22] = [
     "type",
     "query",
     "x",
@@ -32,10 +33,15 @@ pub(crate) const PLOT_ATTRS: [&str; 17] = [
     "note",
     "tone",
     "text",
+    "caption",
+    "group",
+    "colors",
+    "labels",
+    "highlight",
 ];
 
 /// The block kinds, in the order completion offers them at the top level.
-const BLOCKS: [&str; 4] = ["query", "plot", "source", "filter"];
+const BLOCKS: [&str; 4] = ["query", "plot", "filter", "dashboard"];
 
 /// One thing that could be inserted at the cursor.
 #[derive(Debug, Clone, PartialEq)]
@@ -142,10 +148,10 @@ pub(crate) fn complete(source: &str, line: usize, col: usize) -> Vec<Completion>
             .map(|name| attribute(name, "plot"))
             .collect(),
         Some(kind) if kind == "query" => vec![attribute("sql", "query")],
-        Some(kind) if kind == "source" => vec![attribute("path", "source")],
         Some(kind) if kind == "filter" => {
-            vec![attribute("plot", "filter"), attribute("column", "filter")]
+            vec![attribute("plot", "filter"), attribute("column", "filter"), attribute("match", "filter"), attribute("multiple", "filter")]
         }
+        Some(kind) if kind == "dashboard" => vec![attribute("timezone", "dashboard")],
         // An unknown block kind has no known attributes to offer.
         Some(_) => Vec::new(),
         None => BLOCKS
@@ -405,8 +411,8 @@ mod tests {
         let candidates = complete("query \"q\" {\n  s\n}", 2, 3);
         assert_eq!(labels(&candidates), ["sql"]);
 
-        let candidates = complete("source \"orders\" {\n  \n}", 2, 3);
-        assert_eq!(labels(&candidates), ["path"]);
+        let candidates = complete("dashboard \"ops\" {\n  \n}", 2, 3);
+        assert_eq!(labels(&candidates), ["timezone"]);
     }
 
     #[test]
@@ -451,7 +457,7 @@ mod tests {
     fn filter_attributes_and_plot_names() {
         let source =
             "plot \"channels\" {\n  type = \"bar\"\n}\nfilter \"c\" {\n  plot = plot.\n}\n";
-        assert_eq!(labels(&complete(source, 5, 3)), ["plot", "column"]);
+        assert_eq!(labels(&complete(source, 5, 3)), ["plot", "column", "match", "multiple"]);
         assert_eq!(labels(&complete(source, 5, 15)), ["channels"]);
     }
 

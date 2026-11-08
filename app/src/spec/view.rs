@@ -2222,6 +2222,22 @@ impl Dashboard {
         )
     }
 
+    /// The zone the dashboard's times are shown in, when its spec sets one.
+    fn render_zone(&self, cx: &App) -> Option<impl IntoElement> {
+        let zone = self.spec.as_ref()?.timezone.as_deref().and_then(khonsu_dash::zone::Zone::parse)?;
+        Some(
+            div()
+                .flex_none()
+                .px_3()
+                .py_1()
+                .border_b_1()
+                .border_color(cx.theme().border)
+                .text_xs()
+                .text_color(cx.theme().muted_foreground)
+                .child(trf("dashboard.timezone", &[&zone.label()])),
+        )
+    }
+
     fn render_stale_warning(&self, cx: &App) -> Option<impl IntoElement> {
         let reason = self.stale_reason.clone()?;
         Some(
@@ -2445,7 +2461,7 @@ impl Render for Dashboard {
                 this.children(self.render_removed(cx))
             })
             .when(!self.showing_source, |this| {
-                this.children(self.render_picks(cx))
+                this.children(self.render_zone(cx)).children(self.render_picks(cx))
             })
             .child(body)
             .children(self.render_presence_names(cx))
@@ -2637,6 +2653,7 @@ fn load(path: &Path, picks: &HashMap<String, Pick>, reuse: &Outcomes) -> Run {
     // in front of it, which only read.
     // Picks go in before the sources, which only read.
     let _ = path;
+    let zone = spec.timezone.as_deref().and_then(khonsu_dash::zone::Zone::parse);
     let mut outcomes: Outcomes = HashMap::new();
     for query in &spec.queries {
         let sql = match model::writing_keyword(query.language, &query.text) {
@@ -2649,7 +2666,10 @@ fn load(path: &Path, picks: &HashMap<String, Pick>, reuse: &Outcomes) -> Run {
                 Some((ran, outcome)) if *ran == sql => (sql, outcome.clone()),
                 _ => {
                     let outcome = match crate::query::run(query.language, &sql) {
-                        Ok(QueryOutcome::Rows(result)) => Ok(Arc::new(result)),
+                        Ok(QueryOutcome::Rows(result)) => Ok(Arc::new(match zone {
+                            Some(zone) => in_zone(result, zone, &picked_columns(&spec, &query.name)),
+                            None => result,
+                        })),
                         Err(e) => Err(format!("{e:#}")),
                     };
                     (sql, outcome)
@@ -2684,6 +2704,36 @@ fn load(path: &Path, picks: &HashMap<String, Pick>, reuse: &Outcomes) -> Run {
         results,
         outcomes,
     }
+}
+
+/// `result` with the times in its time columns moved to `zone`, except in the
+/// columns named in `keep`: a filter picks those, and its pick has to match
+/// the graph's value as stored. A time that names no offset stays as it is.
+fn in_zone(mut result: QueryResult, zone: khonsu_dash::zone::Zone, keep: &[String]) -> QueryResult {
+    let columns: Vec<usize> = result
+        .columns
+        .iter()
+        .enumerate()
+        .filter(|(_, c)| c.kind == ColumnKind::Temporal && !keep.iter().any(|k| k.eq_ignore_ascii_case(&c.name)))
+        .map(|(ix, _)| ix)
+        .collect();
+    for row in &mut result.rows {
+        for &ix in &columns {
+            if let Some(moved) = row.get(ix).and_then(|cell| zone.convert(cell)) {
+                row[ix] = moved;
+            }
+        }
+    }
+    result
+}
+
+/// The columns of `query` a filter picks on a plot that draws it.
+fn picked_columns(spec: &Spec, query: &str) -> Vec<String> {
+    spec.filters
+        .iter()
+        .filter(|f| spec.plots.iter().any(|p| p.name == f.plot && p.query == query))
+        .map(|f| f.column.clone())
+        .collect()
 }
 
 /// A picked cell as the value its predicate compares: a number when its
@@ -3280,13 +3330,31 @@ mod tests {
     // Not `use super::*`: that brings `gpui_kit::*`, whose `test` macro
     // shadows the built-in `#[test]`.
     use super::{
-        card_value_size, grid_rows, load, sorted_rows, Pick, Run, SpecTableDelegate,
+        card_value_size, grid_rows, in_zone, load, sorted_rows, Pick, Run, SpecTableDelegate,
         CARD_VALUE_MAX, CARD_VALUE_MIN,
     };
     use crate::query::{ColumnKind, ColumnMeta, QueryResult};
     use gpui_kit::component::table::ColumnSort;
     use std::collections::HashMap;
     use std::sync::Arc;
+
+    #[test]
+    fn times_move_to_the_dashboards_zone_except_where_a_filter_picks() {
+        let column = |name: &str, kind| ColumnMeta { name: name.into(), kind };
+        let result = QueryResult {
+            columns: vec![column("at", ColumnKind::Temporal), column("seen", ColumnKind::Temporal), column("host", ColumnKind::Text)],
+            rows: vec![
+                vec!["1970-01-01T02:15:00Z".into(), "1970-01-01T02:15:00Z".into(), "1970-01-01T02:15:00Z".into()],
+                vec!["1970-01-01 10:15".into(), "NULL".into(), "web".into()],
+            ],
+            truncated: false,
+            graph: None,
+        };
+        let zone = khonsu_dash::zone::Zone::parse("Asia/Hong_Kong").unwrap();
+        let moved = in_zone(result, zone, &["SEEN".to_string()]);
+        assert_eq!(moved.rows[0], ["1970-01-01 10:15:00", "1970-01-01T02:15:00Z", "1970-01-01T02:15:00Z"]);
+        assert_eq!(moved.rows[1], ["1970-01-01 10:15", "NULL", "web"], "a time without an offset stays");
+    }
 
     #[test]
     fn a_table_sorts_numbers_as_numbers_and_nulls_last() {

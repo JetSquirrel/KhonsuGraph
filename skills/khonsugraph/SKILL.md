@@ -68,7 +68,7 @@ Data comes in through plugins, never by writing nodes one by one: `khonsu plugin
 
 ## Authoring a dashboard (.dash)
 
-A `.dash` file declares a dashboard as blocks, after DuckLocal's format: `query`, `plot` and `filter`. Queries hold one read-only statement, Cypher or SQL:
+A `.dash` file declares a dashboard as blocks, after DuckLocal's format: `query`, `plot` and `filter`, plus one optional `dashboard "Title" { timezone = "Asia/Hong_Kong" }` (`"UTC"`, `"local"` or `"+08:00"` also work): every time a query returns *with its offset* (ending in `Z` or `+08:00`) is shown in that zone, and the dashboard says which. A time written without an offset is shown as written, so have the script that makes the CSV write offsets — that is what keeps a UTC dashboard and an HKT one from being misread side by side. A column a filter picks keeps its stored values. Queries hold one read-only statement, Cypher or SQL:
 
 ```hcl
 plot "intro" {

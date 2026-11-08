@@ -569,6 +569,7 @@ static STRINGS: &[(&str, &str, &str)] = &[
     ("dashboard.invalid_plot", "这个 plot 没有声明 y 列，无法绘制。", "This plot declares no y column to draw."),
     ("dashboard.map_no_coordinates", "地图需要经纬度列：请用 lat 和 lng 指定。查询返回的列：{}", "A map needs coordinate columns: name them with lat and lng. The query returns: {}"),
     ("dashboard.missing_column_named", "查询结果中没有列 {}。可用的列：{}", "The query result has no column {}. Available columns: {}"),
+    ("dashboard.timezone", "时间按 {} 显示", "Times shown in {}"),
     ("dashboard.not_updated", "Dashboard 未更新", "Dashboard not updated"),
     ("dashboard.notice.scatter_thinned", "显示 {} 个点（共 {} 个，沿 x 轴均匀抽样）。", "Showing {} of {} points, thinned evenly along x."),
     ("dashboard.notice.zero_filled", "{} 个（系列 × x）组合没有数据，按 0 补齐", "{} (series, x) cells had no data and were filled with 0"),
