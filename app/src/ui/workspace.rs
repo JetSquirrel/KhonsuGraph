@@ -322,6 +322,17 @@ impl Workspace {
     /// Open a `.dash` spec as a tab, or bring its tab forward when one is
     /// open already.
     pub fn open_dashboard(&mut self, path: PathBuf, window: &mut Window, cx: &mut Context<Self>) {
+        // A graph opened just before, by `khonsu open GRAPH DASH` or at startup,
+        // is still opening: wait for it, or the dashboard would be dropped for
+        // want of a graph that is about to be there.
+        if self.state.read(cx).is_opening() {
+            cx.spawn_in(window, async move |this, cx| {
+                cx.background_executor().timer(std::time::Duration::from_millis(100)).await;
+                this.update_in(cx, |this, window, cx| this.open_dashboard(path, window, cx)).ok();
+            })
+            .detach();
+            return;
+        }
         if self.state.read(cx).graph.is_none() {
             window.push_notification(Notification::error(tr("dashboard.needs_graph")), cx);
             return;
