@@ -16,7 +16,7 @@ Use the real `khonsu` executable, never GUI automation or a replacement script. 
 5. Write one statement using observed names, within HawDB's Cypher (below). Read [the CLI reference](references/cli.md) for options and output.
 6. Parse the JSON: `columns`, `rows`, `row_count`, `truncated`, and `graph` (`nodes`, `edges`) when the result holds nodes or relationships. `truncated: true` means `rows` is a prefix; say so. Answer from returned values and name the graph and query.
 
-## HawDB's Cypher (0.27.0) — what works
+## HawDB's Cypher (0.29.0) — what works
 
 - `MATCH`, `OPTIONAL MATCH` (not as the first clause), `WHERE` (comparisons, chains like `1 <= a.cpu <= 4`, `IN [...]`, `STARTS WITH`, `CONTAINS`, `=~`, `IS NULL`), `RETURN [DISTINCT]`, `ORDER BY` (also over expressions), `SKIP`, `LIMIT`, `WITH`, `UNWIND`, `CREATE`, `MERGE`, `SET`, `DELETE`, `DETACH DELETE`, `CASE WHEN … END`, `coalesce()`; parameters `$name` (`-p name=value`). A read starts with `MATCH` or `UNWIND`: a bare `RETURN 1` does not parse. `LOAD CSV` is switched off; bring files in with a data source.
 - Return whole nodes and relationships (`RETURN a, r, b`) to get them under `graph`; nodes come back as `{_id, labels, ...properties}`, relationships as `{_id, type, source_id, target_id, ...properties}`.
