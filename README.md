@@ -67,9 +67,9 @@ khonsu analyze pagerank --db graphs/audit --type TRUSTS --top 10
 khonsu analyze communities --db graphs/investigation
 ```
 
-## HawDB 0.27.0 notes
+## HawDB 0.29.0 notes
 
-KhonsuGraph pins HawDB to 0.27.0. See [upgrade validation](docs/hawdb-0.27-upgrade.md)
+KhonsuGraph pins HawDB to 0.29.0. See the [0.27 upgrade validation](docs/hawdb-0.27-upgrade.md)
 for compatibility checks, performance and their scope, and the [0.24](docs/hawdb-0.24-upgrade.md), [0.22](docs/hawdb-0.22-upgrade.md), [0.19](docs/hawdb-0.19-upgrade.md), [0.15](docs/hawdb-0.15-upgrade.md), [0.12](docs/hawdb-0.12-upgrade.md) and [0.11 validation](docs/hawdb-0.11-upgrade.md)
 for earlier database compatibility checks.
 
