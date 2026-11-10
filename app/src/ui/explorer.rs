@@ -474,7 +474,16 @@ mod tests {
         let on = offered();
         assert!(on.applies_to(&["Thing".to_string()]));
         assert!(!on.applies_to(&["Instance".to_string()]));
-        for (name, source) in [("explorer", include_str!("explorer.rs")), ("canvas", include_str!("canvas.rs"))] {
+        for (name, source) in [
+            ("explorer", include_str!("explorer.rs")),
+            ("canvas", include_str!("canvas/mod.rs")),
+            ("canvas/display", include_str!("canvas/display.rs")),
+            ("canvas/inspector", include_str!("canvas/inspector.rs")),
+            ("canvas/investigate", include_str!("canvas/investigate.rs")),
+            ("canvas/load", include_str!("canvas/load.rs")),
+            ("canvas/nodes", include_str!("canvas/nodes.rs")),
+            ("canvas/render", include_str!("canvas/render.rs")),
+        ] {
             let code = source.split("#[cfg(test)]").next().unwrap();
             for provider in ["aws.exposure", "\"Instance\"", "SecurityGroup", "potential_exposure"] {
                 assert!(!code.contains(provider), "{name} names {provider}");
