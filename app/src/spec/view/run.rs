@@ -441,6 +441,29 @@ filter "channel" {
         // A reload reuses nothing: every query runs.
         let reloaded = load(&path, &picks, &HashMap::new());
         assert!(!Arc::ptr_eq(&fresh.results["count"], &reloaded.results["count"]));
+
+        // The window holds the graph open for writing, but a dashboard's
+        // query and a command's query only read: the engine refuses them,
+        // whether or not anything reading the text could tell they write.
+        let graph = dir.join("graph").display().to_string();
+        for write in ["CREATE (:Order {amount: 99})", r"MATCH (o:Order) WHERE o.channel <> 'a\'b' SET o.amount = 0"] {
+            assert!(crate::query::run(khonsu_core::Language::Cypher, write).is_err(), "{write}");
+            let answer = crate::remote::handle(khonsu_dash::remote::Message::Query(khonsu_dash::remote::QueryRequest {
+                graph: graph.clone(),
+                language: khonsu_core::Language::Cypher,
+                text: write.into(),
+                max_rows: 10,
+            }));
+            assert_eq!(answer["error"]["kind"], "read_only", "{write}: {answer}");
+        }
+        assert_eq!(total(&load(&path, &HashMap::new(), &HashMap::new())), "4");
+        let read = crate::remote::handle(khonsu_dash::remote::Message::Query(khonsu_dash::remote::QueryRequest {
+            graph,
+            language: khonsu_core::Language::Cypher,
+            text: "MATCH (o:Order) RETURN count(o) AS orders".into(),
+            max_rows: 10,
+        }));
+        assert_eq!(read["rows"][0][0], 4, "{read}");
         crate::db::close();
         std::fs::remove_dir_all(&dir).ok();
     }

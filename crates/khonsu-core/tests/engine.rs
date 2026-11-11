@@ -285,3 +285,84 @@ fn read_row_ceiling_is_enforced_before_display_truncation() {
     assert_eq!(error.kind, "read_budget", "{error}");
     assert!(error.message.contains("100000"), "{error}");
 }
+
+/// What a read-write graph must still refuse through `run_read`. The first is
+/// the statement that got past the keyword scanner: its `\'` hid the `SET`.
+const WRITES: &[(Language, &str)] = &[
+    (Language::Cypher, r"MATCH (n) WHERE n.name <> 'a\'b' SET n.pwned = 'x\''"),
+    (Language::Cypher, "CREATE (:Host {name: 'b'})"),
+    (Language::Cypher, "MERGE (:Host {name: 'c'})"),
+    (Language::Cypher, "MATCH (n:Host) SET n.cpu = 1"),
+    (Language::Cypher, "MATCH (n:Host) REMOVE n.name"),
+    (Language::Cypher, "MATCH (n:Host) DETACH DELETE n"),
+    (Language::Cypher, "CREATE INDEX ON :Host(name)"),
+    (Language::Cypher, "CHECKPOINT"),
+    (Language::Sql, "CREATE TABLE pwned (id INT)"),
+    (Language::Sql, "INSERT INTO assets VALUES (2, 'x')"),
+    (Language::Sql, "UPDATE assets SET name = 'x'"),
+    (Language::Sql, "DELETE FROM assets"),
+    (Language::Sql, "DROP TABLE assets"),
+];
+
+#[test]
+fn run_read_refuses_every_write_on_a_graph_open_for_writing() {
+    let dir = TestDir::new();
+    let mut graph = Graph::create(dir.graph(), "test").unwrap();
+    run(&mut graph, Language::Cypher, "CREATE (:Host {name: 'a'})");
+    run(&mut graph, Language::Sql, "CREATE TABLE assets (id INT, name TEXT)");
+    run(&mut graph, Language::Sql, "INSERT INTO assets VALUES (1, 'one')");
+    let state = |graph: &mut Graph| {
+        let nodes = run(graph, Language::Cypher, "MATCH (n) RETURN n").rows;
+        let rows = run(graph, Language::Sql, "SELECT id, name FROM assets").rows;
+        let tables: Vec<String> = graph.schema().unwrap().tables.into_iter().map(|t| t.name).collect();
+        (nodes, rows, tables)
+    };
+    let before = state(&mut graph);
+
+    for (language, text) in WRITES {
+        let refused = graph.run_read(*language, text, &Map::new(), QueryOptions::default());
+        match refused {
+            // HawDB has no REMOVE and no DROP TABLE: those fail to parse or plan.
+            Err(error) if text.contains("REMOVE") || text.contains("DROP") => assert_ne!(error.kind, "engine", "{text}: {error:?}"),
+            Err(error) => assert_eq!(error.kind, "read_only", "{text}: {error:?}"),
+            Ok(result) => panic!("{text} ran: {result:?}"),
+        }
+        assert_eq!(state(&mut graph), before, "{text} changed the graph");
+    }
+
+    // Reads go through, and see what was written before them.
+    let read = graph.run_read(Language::Cypher, "MATCH (n:Host) RETURN n.name AS name", &Map::new(), QueryOptions::default()).unwrap();
+    assert_eq!(read.rows, vec![vec![json!("a")]]);
+    let read = graph.run_read(Language::Sql, "SELECT name FROM assets WHERE id = $1", &Map::from_iter([("1".into(), json!(1))]), QueryOptions::default()).unwrap();
+    assert_eq!(read.rows, vec![vec![json!("one")]]);
+    run(&mut graph, Language::Cypher, "CREATE (:Host {name: 'z'})");
+    let read = graph.run_read(Language::Cypher, "MATCH (n:Host) RETURN n.name AS name ORDER BY name", &Map::new(), QueryOptions::default()).unwrap();
+    assert_eq!(read.rows, vec![vec![json!("a")], vec![json!("z")]]);
+}
+
+#[test]
+fn text_that_is_not_ascii_is_a_query_like_any_other() {
+    let dir = TestDir::new();
+    let mut graph = Graph::create(dir.graph(), "test").unwrap();
+    run(&mut graph, Language::Cypher, "CREATE (:Host {name: '主机'})");
+    // Each of these put a byte offset inside a character.
+    for text in [
+        "MATCH (n) WITH '中文' AS x RETURN x",
+        "MATCH (n:Host) WHERE n.name = '主机' RETURN n.name AS 名字, '，' AS sep",
+        "MATCH (n)\u{a0}RETURN n",
+        "MATCH (n)\u{3000}RETURN n",
+        "é",
+    ] {
+        for read_only in [false, true] {
+            let outcome = if read_only {
+                graph.run_read(Language::Cypher, text, &Map::new(), QueryOptions::default())
+            } else {
+                graph.run(Language::Cypher, text, &Map::new(), QueryOptions::default())
+            };
+            // An error is fine; a panic is not.
+            let _ = outcome;
+        }
+    }
+    let found = run(&mut graph, Language::Cypher, "MATCH (n:Host) WHERE n.name = '主机' RETURN n.name AS name");
+    assert_eq!(found.rows, vec![vec![json!("主机")]]);
+}

@@ -98,6 +98,7 @@ impl Env {
         let output = Command::new(env!("CARGO_BIN_EXE_khonsugraph"))
             .args(args)
             .env("KHONSU_CONFIG_DIR", self.config())
+            .env("KHONSU_SCRIPTED_TRACE", self.path("scripted-trace.log"))
             .env_remove("KHONSU_DB")
             .output()
             .unwrap();
@@ -1235,9 +1236,8 @@ fn a_missing_response_removes_nothing_and_says_what_was_not_seen() {
     assert_eq!(env.count(&db, allows), 2);
 }
 
-/// Installs the scripted test plugin and adds a source that sends `lines` and
-/// exits with `exit`, on a new graph named `graph`.
-fn scripted_source(env: &Env, lines: &[Value], exit: i32) -> PathBuf {
+/// Installs the scripted test plugin, approved or not.
+fn install_scripted(env: &Env, approve: bool) {
     let plugin = env.path("scripted-plugin");
     std::fs::create_dir_all(&plugin).unwrap();
     let exe = format!("scripted{}", std::env::consts::EXE_SUFFIX);
@@ -1245,7 +1245,97 @@ fn scripted_source(env: &Env, lines: &[Value], exit: i32) -> PathBuf {
     std::fs::copy(&built, plugin.join(&exe)).unwrap();
     let manifest = json!({"id": "scripted", "name": "Scripted", "version": "0.1.0", "protocol": 1, "entry": [exe]});
     std::fs::write(plugin.join("khonsu-plugin.json"), manifest.to_string()).unwrap();
-    env.ok(&["plugin", "install", text(&plugin), "--yes"]);
+    let mut args = vec!["plugin", "install", text(&plugin)];
+    if approve {
+        args.push("--yes");
+    }
+    env.ok(&args);
+}
+
+/// What the scripted plugin was started for, in order: nothing when it never ran.
+fn scripted_trace(env: &Env) -> Vec<String> {
+    std::fs::read_to_string(env.path("scripted-trace.log")).unwrap_or_default().lines().map(str::to_string).collect()
+}
+
+/// #69: until a plugin is approved as it is now, nothing of it runs, whichever
+/// command asks: not `describe`, not a connection test, not a dry run. So it
+/// is sent no configuration and no secrets either.
+#[test]
+fn a_plugin_that_is_not_approved_is_never_started() {
+    // Never approved.
+    let env = Env::new();
+    install_scripted(&env, false);
+    let db = env.path("graph");
+    env.ok(&["init", text(&db)]);
+    let refused = |env: &Env, args: &[&str]| {
+        let (code, out) = env.khonsu(args);
+        assert_ne!(code, 0, "{args:?}: {out}");
+        assert_eq!(out["error"]["kind"], "plugin", "{args:?}: {out}");
+        assert!(out["error"]["message"].as_str().unwrap().contains("needs approval"), "{args:?}: {out}");
+        out
+    };
+    let out = refused(&env, &["plugin", "describe", "scripted"]);
+    assert_eq!(out["error"]["detail"]["reason"], "it has not been approved", "{out}");
+    refused(&env, &["source", "add", "-d", text(&db), "--plugin", "scripted", "--name", "script", "-c", "token=s3cret"]);
+    refused(&env, &["source", "add", "-d", text(&db), "--plugin", "scripted", "--name", "script", "-c", "token=s3cret", "--test"]);
+    assert_eq!(env.ok(&["source", "list"])["sources"], json!([]));
+    assert_eq!(scripted_trace(&env), Vec::<String>::new(), "it was started");
+
+    // Approved, it runs, and is sent the secret.
+    env.ok(&["plugin", "approve", "scripted"]);
+    env.ok(&["plugin", "describe", "scripted"]);
+    env.ok(&[
+        "source", "add", "-d", text(&db), "--plugin", "scripted", "--name", "script", "--test",
+        "-c", &format!("lines={}", json!([node_line("a"), done_line()])),
+        "-c", "token=s3cret",
+    ]);
+    env.ok(&["plugin", "sync", "--source", "script", "--dry-run"]);
+    env.ok(&["plugin", "sync", "--source", "script"]);
+    let ran = scripted_trace(&env);
+    assert!(["describe", "test", "sync", "secrets"].iter().all(|op| ran.iter().any(|line| line == op)), "{ran:?}");
+    assert_eq!(hosts(&env, &db), 1);
+
+    // Changed since: back to not running, for every way in.
+    std::fs::remove_file(env.path("scripted-trace.log")).unwrap();
+    tamper(&env, &format!("scripted{}", std::env::consts::EXE_SUFFIX), "tampered");
+    script(&env, &[node_line("a"), node_line("b"), done_line()], 0);
+    for args in [
+        &["plugin", "describe", "scripted"][..],
+        &["plugin", "sync", "--source", "script"],
+        &["plugin", "sync", "--source", "script", "--incremental"],
+        &["plugin", "sync", "--source", "script", "--dry-run"],
+        &["source", "add", "-d", text(&db), "--plugin", "scripted", "--name", "other", "--test"],
+        &["plugin", "analyze", "scripted", "anything", "-d", text(&db)],
+    ] {
+        let out = refused(&env, args);
+        assert!(out["error"]["message"].as_str().unwrap().contains("changed"), "{args:?}: {out}");
+    }
+    assert_eq!(scripted_trace(&env), Vec::<String>::new(), "it was started");
+    assert_eq!(hosts(&env, &db), 1, "and wrote nothing");
+
+    // The library refuses the same way, whoever calls it. Read from its
+    // folder: this process has no settings of its own to find it in, and none
+    // in which it is approved as it is now.
+    let dir = env.config().join("plugins").join("scripted");
+    let info = plugin::PluginInfo { manifest: plugin::read_manifest(&dir).unwrap(), dir, builtin: false };
+    assert!(matches!(plugin::describe(&info), Err(PluginError::NotApproved { .. })));
+    let request = khonsu_core::protocol::Request {
+        protocol: khonsu_core::protocol::PROTOCOL_VERSION,
+        config: Map::new(),
+        secrets: Map::from_iter([("token".to_string(), json!("s3cret"))]),
+        mode: SyncMode::Full,
+        cursor: None,
+    };
+    assert!(matches!(plugin::test(&info, &request), Err(PluginError::NotApproved { .. })));
+    assert!(matches!(plugin::preview(&info, &request, &AtomicBool::new(false), |_| {}), Err(PluginError::NotApproved { .. })));
+    assert!(matches!(plugin::run_sync(&info, &request, &AtomicBool::new(false), |_| {}, |_| Ok(())), Err(PluginError::NotApproved { .. })));
+    assert_eq!(scripted_trace(&env), Vec::<String>::new(), "it was started");
+}
+
+/// Installs the scripted test plugin and adds a source that sends `lines` and
+/// exits with `exit`, on a new graph named `graph`.
+fn scripted_source(env: &Env, lines: &[Value], exit: i32) -> PathBuf {
+    install_scripted(env, true);
 
     let db = env.path("graph");
     env.ok(&["init", text(&db)]);

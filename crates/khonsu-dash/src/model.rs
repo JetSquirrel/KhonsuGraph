@@ -115,8 +115,10 @@ pub const SIZE_SCALES: &[&str] = &["sqrt", "log"];
 /// by its row, a graph by its node.
 pub const FILTER_PLOTS: &[&str] = &["bar", "table", "graph"];
 
-/// Words that make a statement write. A dashboard is opened read-only, so
-/// HawDB would refuse them anyway; saying so at check time names the query.
+/// Words that make a statement write. This is a diagnostic, not a guard:
+/// dashboard queries run in a read transaction (`Graph::run_read`), where
+/// HawDB refuses a write whatever the text looks like. Saying so at check
+/// time names the query and the word.
 const CYPHER_WRITES: &[&str] = &["CREATE", "MERGE", "DELETE", "DETACH", "SET", "REMOVE", "DROP", "ALTER", "CHECKPOINT"];
 const SQL_WRITES: &[&str] = &["INSERT", "UPDATE", "DELETE", "CREATE", "DROP", "ALTER", "TRUNCATE", "COPY", "GRANT"];
 
@@ -134,7 +136,9 @@ pub fn writing_keyword(language: Language, text: &str) -> Option<String> {
             quote @ (b'\'' | b'"' | b'`') => {
                 i += 1;
                 while i < bytes.len() && bytes[i] != quote {
-                    i += 1;
+                    // Cypher escapes a quote with a backslash; SQL doubles
+                    // it, which reads as two strings side by side.
+                    i += if bytes[i] == b'\\' && language == Language::Cypher && quote != b'`' { 2 } else { 1 };
                 }
                 i += 1;
             }
@@ -142,6 +146,13 @@ pub fn writing_keyword(language: Language, text: &str) -> Option<String> {
                 while i < bytes.len() && bytes[i] != b'\n' {
                     i += 1;
                 }
+            }
+            b'/' if bytes.get(i + 1) == Some(&b'*') => {
+                i += 2;
+                while i < bytes.len() && !(bytes[i] == b'*' && bytes.get(i + 1) == Some(&b'/')) {
+                    i += 1;
+                }
+                i += 2;
             }
             b'-' if bytes.get(i + 1) == Some(&b'-') && language == Language::Sql => {
                 while i < bytes.len() && bytes[i] != b'\n' {
@@ -1473,6 +1484,23 @@ mod tests {
                     .join("\n")
             ),
         }
+    }
+
+    #[test]
+    fn a_writing_word_is_found_past_escaped_quotes_and_comments() {
+        let cypher = |text: &str| writing_keyword(Language::Cypher, text);
+        // The `\'` used to end the string early, hiding everything up to the next quote.
+        assert_eq!(cypher(r"MATCH (n) WHERE n.name <> 'a\'b' SET n.pwned = 'x\''").as_deref(), Some("SET"));
+        assert_eq!(cypher(r"MATCH (n) WHERE n.name = 'a\\' SET n.x = 1").as_deref(), Some("SET"));
+        assert_eq!(cypher("MATCH (n) /* quiet ' */ DELETE n /* ' */").as_deref(), Some("DELETE"));
+        assert_eq!(cypher(r"MATCH (n) WHERE n.note = 'don\'t SET this' RETURN n.set, n // CREATE"), None);
+        assert_eq!(cypher("MATCH (n) WHERE n.name = '中文 SET' RETURN n /* MERGE */"), None);
+        // SQL doubles a quote; a backslash there is a character like any other.
+        assert_eq!(writing_keyword(Language::Sql, r"SELECT 'it''s \' ; DROP TABLE t").as_deref(), Some("DROP"));
+        assert_eq!(writing_keyword(Language::Sql, "SELECT 'it''s DROP' AS x -- DELETE\nFROM t"), None);
+        // An unfinished string or comment ends the scan.
+        assert_eq!(cypher(r"MATCH (n) RETURN 'open \"), None);
+        assert_eq!(cypher("MATCH (n) RETURN n /* open"), None);
     }
 
     fn validate_err(source: &str) -> Vec<Diagnostic> {

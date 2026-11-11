@@ -10,7 +10,7 @@ program you run.
 | Claim | Enforced? |
 |---|---|
 | A plugin's declared `network`, `read_files` and `commands` | **No.** They're what the plugin says about itself, shown so you can decide |
-| A plugin doesn't run until approved | Yes, by the app and the CLI, for a sync and for an analysis |
+| A plugin doesn't run until approved | Yes, wherever its process would be started: `describe`, a connection test, a preview or dry run, a sync and an analysis. Until then it is sent no configuration and no secrets, and what it declares is read from its manifest |
 | A changed plugin needs approval again | Yes, for its version, permissions and the files in its folder |
 | `entry` stays inside the plugin's folder | Yes, except a bare program name found on `PATH` |
 | An archive stays inside its folder and within size limits | Yes |
@@ -45,8 +45,8 @@ program you run.
   checked but `python3` isn't.
 - **`__pycache__` and `.pyc` files.** These are left out of the check, because Python
   writes them as it runs, and they can hold code.
-- **What a plugin does between approval and running.** It's checked as each sync
-  starts.
+- **What a plugin does between approval and running.** It's checked each time its
+  process is started.
 - **Total volume.** A plugin can send endless valid records until you cancel, and
   they'll be written to the graph.
 - **A wrong answer that is well formed.** An analysis can point at real records and
@@ -74,8 +74,8 @@ reach it.
 
 ## Approving
 
-The window asks when you add or edit a source that uses the plugin. From the command
-line:
+The window asks when you add or edit a source that uses the plugin, before it asks the
+plugin anything: the dialog shows what the manifest declares. From the command line:
 
 ```sh
 khonsu plugin install ./my-plugin        # shows what it declares
@@ -83,7 +83,9 @@ khonsu plugin approve my-plugin          # after you've read that
 khonsu plugin list                       # approval: approved, not_approved or changed
 ```
 
-`khonsu plugin install --yes` does both in one step.
+`khonsu plugin install --yes` does both in one step. Before approval,
+`khonsu plugin describe`, `khonsu source add` and `khonsu plugin sync` (with or without
+`--dry-run`) fail with kind `plugin` and say that it needs approval.
 
 Plugins approved before folder contents were checked read as `changed`, and need
 approving once more. Built-in plugins ship with the app and need no approval.

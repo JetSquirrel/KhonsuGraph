@@ -101,9 +101,10 @@ impl From<&khonsu_core::QueryResult> for QueryResult {
 }
 
 /// Run a dashboard query on the window's graph, as DuckLocal's view runs one
-/// on its connection.
+/// on its connection. Read-only in the engine: a dashboard is a file someone
+/// may have sent, and the window holds the graph open for writing.
 pub fn run(language: Language, text: &str) -> anyhow::Result<QueryOutcome> {
-    let result = crate::db::run(language, text).map_err(|e| anyhow::anyhow!(e.message))?;
+    let result = crate::db::run_read(language, text, crate::db::MAX_ROWS).map_err(|e| anyhow::anyhow!(e.message))?;
     Ok(QueryOutcome::Rows(QueryResult::from(&result)))
 }
 

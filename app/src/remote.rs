@@ -12,9 +12,8 @@ use std::sync::{Arc, Mutex, PoisonError};
 use std::time::Duration;
 
 use khonsu_core::plugin::SyncReport;
-use khonsu_core::QueryOptions;
 use khonsu_dash::remote::{self, Message, ServeGuard};
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 
 /// Messages for the UI thread, each with where its answer goes.
 static PENDING: Mutex<Vec<(Message, Sender<Value>)>> = Mutex::new(Vec::new());
@@ -34,6 +33,8 @@ fn notice(notice: SyncNotice) {
 /// How long a command waits for the UI thread before giving up.
 const UI_ANSWER: Duration = Duration::from_secs(10);
 
+const READ_ONLY: &str = "queries through the window only read; close the graph in the window to write with --write";
+
 fn error(kind: &str, message: impl Into<String>) -> Value {
     json!({"error": {"kind": kind, "message": message.into()}})
 }
@@ -52,19 +53,17 @@ fn is_open_graph(graph: &str) -> Result<(), Value> {
     }
 }
 
-fn handle(message: Message) -> Value {
+pub(crate) fn handle(message: Message) -> Value {
     match message {
         Message::Query(request) => {
             if let Err(e) = is_open_graph(&request.graph) {
                 return e;
             }
-            // Read-only through the window too: a write waits for --write on
-            // a graph no window holds.
-            if khonsu_dash::model::writing_keyword(request.language, &request.text).is_some() {
-                return error("read_only", "queries through the window only read; close the graph in the window to write with --write");
-            }
-            match crate::db::with_graph(|g| g.run(request.language, &request.text, &Map::new(), QueryOptions { max_rows: request.max_rows })) {
+            // Read-only through the window too, and it is the engine that
+            // refuses: a write waits for --write on a graph no window holds.
+            match crate::db::run_read(request.language, &request.text, request.max_rows) {
                 Ok(result) => serde_json::to_value(result).unwrap_or(Value::Null),
+                Err(e) if e.kind == "read_only" => error("read_only", READ_ONLY),
                 Err(e) => json!({"error": {"kind": e.kind, "message": e.message, "detail": {"line": e.line, "column": e.column}}}),
             }
         }

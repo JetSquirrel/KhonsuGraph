@@ -52,13 +52,13 @@ A plugin can offer analyses: `khonsu plugin describe ID` lists them under `analy
 
 To answer "what changed?", take snapshots with `khonsu snapshot save FILE --db DIR` and compare them with `khonsu snapshot diff BEFORE AFTER`. Report `not_seen` as possibly still there, never as deleted, and read `warnings`. See `references/cli.md`.
 
-Plugins are not sandboxed: an installed plugin runs as the person, and its declared permissions are not enforced. Don't run `plugin install --yes` or `plugin approve` on a plugin the person hasn't chosen. A sync that fails with "needs approval" means the plugin changed since it was approved; tell the person rather than approving it yourself.
+Plugins are not sandboxed: an installed plugin runs as the person, and its declared permissions are not enforced. Don't run `plugin install --yes` or `plugin approve` on a plugin the person hasn't chosen. Nothing of a plugin runs until it is approved as it is now: `plugin describe`, `source add` and `plugin sync` (also `--dry-run`) all fail with "needs approval" when it was never approved or has changed since; tell the person rather than approving it yourself.
 
 To keep a line of inquiry, `khonsu investigation save FILE --db DIR --from NODE --to NODE` writes a file of its own, and `khonsu investigation reopen FILE` runs it again. Read `graph_state` first: when it is `changed`, say so, and read `path_same`, `missing_seeds`, `target_missing` and `unsure` before treating the answer as the saved one. See `references/cli.md`.
 
 ## The window and the graph lease
 
-HawDB leases a graph directory to one process. While the KhonsuGraph window has a graph open, `khonsu query` (reads only) and `khonsu check` on that graph go **through the window** — the output carries `"via_window": true` — so you can keep working while the person looks at it. `khonsu plugin sync` goes through the window too: the window runs the sync, shows its progress, and reruns the dashboards it has open, so there is no need to close the graph or reopen a dashboard after a sync. Writes (`--write`) need the graph free: an error of kind `locked` names the program and pid holding it; ask the person to close the graph rather than deleting lock files.
+HawDB leases a graph directory to one process. While the KhonsuGraph window has a graph open, `khonsu query` (reads only: the engine refuses a write with kind `read_only`, however it is spelled) and `khonsu check` on that graph go **through the window** — the output carries `"via_window": true` — so you can keep working while the person looks at it. `khonsu plugin sync` goes through the window too: the window runs the sync, shows its progress, and reruns the dashboards it has open, so there is no need to close the graph or reopen a dashboard after a sync. Writes (`--write`) need the graph free: an error of kind `locked` names the program and pid holding it; ask the person to close the graph rather than deleting lock files.
 
 A graph written by an older HawDB (before 0.25) fails to open with kind `old_format`: the current HawDB cannot read those formats and has no migration. `khonsu rebuild --db DIR` makes it again from its data sources — the old directory is kept beside it as `DIR.hawdb-old`, and anything written by hand rather than synced is not carried over, so say so to the person before running it. It exits 1 when a source failed to sync (`failed` names it and why); fix the cause and run `khonsu plugin sync --source ID`. Kind `missing_plugin` means it refused before touching anything.
 
@@ -117,7 +117,7 @@ filter "service" {
 
 Always validate: `khonsu check FILE --db DIR` runs every query read-only, types columns from their values (`number`, `text`, `node`, `relationship`, …), checks every plot's columns, and tries each filter with a value really picked. Each query reports its `rows` and `elapsed_ms`; a query a filter uses reruns on every pick, so tighten one that takes seconds. A spec mistake is exit 2 (kind `spec`, `file:line: message` per mistake, all at once); a query the graph refuses is exit 1 (kind `sql`). Fix all of them. `--summary` prints one line on success.
 
-Show it to the person with `khonsu open FILE` (it opens a dashboard tab in the running window, or starts one; `--no-launch` when a window appearing unasked would be unwelcome). `khonsu open --cypher "…" --run` puts a query in a tab of its own.
+Show it to the person with `khonsu open FILE` (it opens a dashboard tab in the running window, or starts one; `--no-launch` when a window appearing unasked would be unwelcome). `khonsu open --cypher "…" --run` puts a query in a tab of its own and runs it read-only: a statement that writes is shown, not run, and the person can run it themselves.
 
 ## Reviewing a dashboard with the person
 
