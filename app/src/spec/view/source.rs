@@ -115,7 +115,9 @@ impl Dashboard {
         self.conflict = false;
         self.read_source();
         self.external_reload = true;
-        self.reload(cx);
+        // Not `reload`, which a run in flight wins: that run read the file as
+        // it was, and a second write would otherwise never be shown.
+        self.graph_written(cx);
     }
 
     /// Read the spec file for the source view; a failure is kept as the

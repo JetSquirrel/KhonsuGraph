@@ -264,6 +264,11 @@ sources that use the same plugin never collide. On a sync:
 
 - a node that did not change is left alone, one that changed is updated in
   place, and a new ID adds a node;
+- a property your plugin sent before and no longer sends is taken off the
+  node. The host records which properties a source wrote (`khonsu_keys`), so a
+  property someone added by hand stays. HawDB keeps such a property as a null,
+  which KhonsuGraph doesn't list; the schema may still name it. A node last
+  written before this was recorded is reconciled from its second change on;
 - a relationship that did not change is left alone, and a changed one is
   replaced;
 - after a **full** sync, nodes and relationships this source wrote before but

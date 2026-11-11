@@ -47,7 +47,10 @@ pub fn load(reader: &mut dyn CypherReader, spec: &LoadSpec) -> Result<Network, Q
             net.add_node(node.id);
         }
         for edge in &graph.edges {
-            let weight = spec.weight.as_deref().map_or(1.0, |w| number(edge.properties.get(w)));
+            let weight = match spec.weight.as_deref() {
+                Some(w) => weight(edge.properties.get(w), w, edge.id)?,
+                None => 1.0,
+            };
             net.add_edge(edge.source, edge.target, weight);
         }
         return Ok(net);
@@ -74,7 +77,7 @@ pub fn load(reader: &mut dyn CypherReader, spec: &LoadSpec) -> Result<Network, Q
         kept = Some(set);
     }
 
-    let weight = spec.weight.as_deref().map(|w| format!(", r.{} AS w", ident(w))).unwrap_or_default();
+    let weight_column = spec.weight.as_deref().map(|w| format!(", r.{} AS w", ident(w))).unwrap_or_default();
     let patterns: Vec<String> = if spec.types.is_empty() {
         vec!["(a)-[r]->(b)".into()]
     } else {
@@ -84,11 +87,11 @@ pub fn load(reader: &mut dyn CypherReader, spec: &LoadSpec) -> Result<Network, Q
         let mut skip = 0;
         loop {
             let text = format!(
-                "MATCH {pattern} RETURN id(r) AS rid, id(a) AS s, id(b) AS t{weight} ORDER BY rid SKIP {skip} LIMIT {PAGE}"
+                "MATCH {pattern} RETURN id(r) AS rid, id(a) AS s, id(b) AS t{weight_column} ORDER BY rid SKIP {skip} LIMIT {PAGE}"
             );
             let result = reader.cypher(&text)?;
             let col = |name: &str| result.columns.iter().position(|c| c == name);
-            let (s, t, w) = (col("s"), col("t"), col("w"));
+            let (s, t, w, rid) = (col("s"), col("t"), col("w"), col("rid"));
             for row in &result.rows {
                 let (Some(source), Some(target)) = (s.and_then(|i| row[i].as_i64()), t.and_then(|i| row[i].as_i64())) else {
                     continue;
@@ -96,7 +99,11 @@ pub fn load(reader: &mut dyn CypherReader, spec: &LoadSpec) -> Result<Network, Q
                 if kept.as_ref().is_some_and(|k| !k.contains(&source) || !k.contains(&target)) {
                     continue;
                 }
-                net.add_edge(source, target, w.map_or(1.0, |i| number(row.get(i))));
+                let weighed = match (w, spec.weight.as_deref()) {
+                    (Some(i), Some(name)) => weight(row.get(i), name, rid.and_then(|i| row[i].as_i64()).unwrap_or(-1))?,
+                    _ => 1.0,
+                };
+                net.add_edge(source, target, weighed);
             }
             if result.rows.len() < PAGE {
                 break;
@@ -129,6 +136,23 @@ fn number(value: Option<&Json>) -> f64 {
         Some(Json::String(s)) => s.trim().parse().unwrap_or(1.0),
         _ => 1.0,
     }
+}
+
+/// A relationship's weight, which the algorithms need finite and not
+/// negative: a shortest path through a negative cycle has no end, and the
+/// search for one never returned. Refused here, before any of them runs.
+fn weight(value: Option<&Json>, property: &str, relationship: i64) -> Result<f64, QueryError> {
+    let weight = number(value);
+    if weight.is_finite() && weight >= 0.0 {
+        return Ok(weight);
+    }
+    Err(QueryError::new(
+        "weight",
+        format!(
+            "relationship #{relationship} has {property} = {weight}: a weight must be a finite number, zero or more. \
+             Leave such relationships out with --cypher, or use another property"
+        ),
+    ))
 }
 
 /// A label, type or property name as Cypher reads it: backquoted unless a
@@ -188,5 +212,57 @@ mod tests {
         assert_eq!(number(Some(&Json::from("3"))), 3.0);
         assert_eq!(number(Some(&Json::from("n/a"))), 1.0);
         assert_eq!(number(None), 1.0);
+    }
+
+    #[test]
+    fn a_weight_that_is_negative_or_not_finite_is_refused() {
+        assert_eq!(weight(Some(&Json::from(0)), "score", 1).unwrap(), 0.0);
+        assert_eq!(weight(Some(&Json::from("2.5")), "score", 1).unwrap(), 2.5);
+        assert_eq!(weight(None, "score", 1).unwrap(), 1.0);
+        for bad in [Json::from(-1), Json::from(-0.5), Json::from("-3"), Json::from("NaN"), Json::from("inf"), Json::from("-inf")] {
+            let error = weight(Some(&bad), "score", 7).unwrap_err();
+            assert_eq!(error.kind, "weight", "{bad}");
+            assert!(error.message.contains("#7") && error.message.contains("score"), "{}", error.message);
+        }
+    }
+
+    /// Answers every statement with the same rows.
+    struct Rows(crate::QueryResult);
+
+    impl CypherReader for Rows {
+        fn cypher(&mut self, _: &str) -> Result<crate::QueryResult, QueryError> {
+            Ok(self.0.clone())
+        }
+    }
+
+    /// Two nodes joined both ways with weight -1 made closeness and weighted
+    /// paths run without end.
+    #[test]
+    fn a_negative_cycle_is_refused_before_any_algorithm_runs() {
+        let rows = |weights: [f64; 2]| {
+            Rows(crate::QueryResult {
+                columns: ["rid", "s", "t", "w"].map(String::from).to_vec(),
+                rows: vec![
+                    vec![Json::from(10), Json::from(1), Json::from(2), Json::from(weights[0])],
+                    vec![Json::from(11), Json::from(2), Json::from(1), Json::from(weights[1])],
+                ],
+                row_count: 2,
+                truncated: false,
+                elapsed_ms: 0,
+                graph: None,
+            })
+        };
+        let spec = LoadSpec { types: vec!["LINKS".into()], weight: Some("score".into()), ..LoadSpec::default() };
+        let error = load(&mut rows([-1.0, -1.0]), &spec).unwrap_err();
+        assert_eq!(error.kind, "weight");
+        assert!(error.message.contains("#10"), "{}", error.message);
+
+        let net = load(&mut rows([1.0, 2.0]), &spec).unwrap();
+        assert_eq!(net.edge_count(), 2);
+        let close = crate::analysis::algorithms::closeness(&net, true, true);
+        assert!(close.iter().all(|c| c.is_finite()), "{close:?}");
+        // Without --weight the property is not read at all.
+        let unweighted = LoadSpec { types: vec!["LINKS".into()], ..LoadSpec::default() };
+        assert_eq!(load(&mut rows([-1.0, -1.0]), &unweighted).unwrap().edge_count(), 2);
     }
 }

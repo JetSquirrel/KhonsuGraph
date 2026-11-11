@@ -9,8 +9,11 @@
 //! the agent writes shows up on the plot it is about.
 //!
 //! Both sides write the whole file, so every change is a read-modify-write
-//! from disk — never from a copy held since — and two writers only race over
-//! the few milliseconds between reading and writing.
+//! from disk, never from a copy held since. It goes through
+//! `khonsu_core::store`: the file is locked across the read and the write, so
+//! a person's comment and an agent's reply made in the same moment both land,
+//! and it is replaced whole, so neither ever reads half of it. The lock is a
+//! `NAME.dash.comments.json.lock` beside it.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -136,30 +139,32 @@ pub fn path_for(spec: &Path) -> PathBuf {
 
 /// The comments on a spec. No file yet is no comments, not an error.
 pub fn load(spec: &Path) -> Result<Comments, String> {
-    let path = path_for(spec);
-    match std::fs::read_to_string(&path) {
-        Ok(text) if text.trim().is_empty() => Ok(Comments::default()),
-        Ok(text) => serde_json::from_str(&text).map_err(|e| format!("{}: {e}", path.display())),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Comments::default()),
-        Err(e) => Err(format!("{}: {e}", path.display())),
+    khonsu_core::store::read(&path_for(spec)).map(Option::unwrap_or_default).map_err(|e| e.to_string())
+}
+
+/// Why a change to the comments failed: the file, or what was asked.
+enum Failure {
+    Io(std::io::Error),
+    Change(String),
+}
+
+impl From<std::io::Error> for Failure {
+    fn from(error: std::io::Error) -> Self {
+        Failure::Io(error)
     }
 }
 
-pub fn save(spec: &Path, comments: &Comments) -> Result<(), String> {
-    let path = path_for(spec);
-    let text = serde_json::to_string_pretty(comments).map_err(|e| e.to_string())?;
-    std::fs::write(&path, text + "\n").map_err(|e| format!("{}: {e}", path.display()))
-}
-
-/// Load, change, save: every write starts from what is on disk now.
+/// Load, change, save, as one step with the file locked: every write starts
+/// from what is on disk now, and none is lost to another made meanwhile. A
+/// file that can't be read is left as it is, and so is one whose change fails.
 pub fn update<T>(
     spec: &Path,
     change: impl FnOnce(&mut Comments) -> Result<T, String>,
 ) -> Result<(T, Comments), String> {
-    let mut comments = load(spec)?;
-    let out = change(&mut comments)?;
-    save(spec, &comments)?;
-    Ok((out, comments))
+    khonsu_core::store::update(&path_for(spec), |comments: &mut Comments| change(comments).map_err(Failure::Change)).map_err(|failure| match failure {
+        Failure::Io(error) => error.to_string(),
+        Failure::Change(message) => message,
+    })
 }
 
 /// A thread as an agent reads it: with the plot it is on — its title, query
@@ -259,6 +264,49 @@ mod tests {
             .map(|t| t.id.clone())
             .collect();
         assert_eq!(ids, ["c3", "c1"]);
+    }
+
+    /// #69: a person and an agent commenting at once could each read the file
+    /// before the other wrote, and the later write dropped the earlier thread.
+    #[test]
+    fn comments_made_at_the_same_moment_all_land() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec = dir.path().join("d.dash");
+        std::thread::scope(|scope| {
+            for writer in 0..6 {
+                let spec = &spec;
+                scope.spawn(move || {
+                    let author = if writer % 2 == 0 { Author::User } else { Author::Agent };
+                    for step in 0..10 {
+                        update(spec, |c| Ok(c.add("p", author, &format!("{writer}-{step}")))).unwrap();
+                        // Never half a file, whoever is writing.
+                        load(spec).unwrap();
+                    }
+                });
+            }
+        });
+        let all = load(&spec).unwrap();
+        assert_eq!(all.threads.len(), 60);
+        let mut ids: Vec<&str> = all.threads.iter().map(|t| t.id.as_str()).collect();
+        ids.sort_unstable();
+        ids.dedup();
+        assert_eq!(ids.len(), 60, "no two threads share an id");
+    }
+
+    #[test]
+    fn a_comments_file_that_cannot_be_read_is_left_alone() {
+        let dir = tempfile::tempdir().unwrap();
+        let spec = dir.path().join("d.dash");
+        let broken = "{\"threads\": [{\"id\": \"c1\"";
+        std::fs::write(path_for(&spec), broken).unwrap();
+        assert!(load(&spec).is_err());
+        let error = update(&spec, |c| Ok(c.add("p", Author::Agent, "hi"))).unwrap_err();
+        assert!(error.contains("d.dash.comments.json"), "{error}");
+        assert_eq!(std::fs::read_to_string(path_for(&spec)).unwrap(), broken);
+        // A change that is refused writes nothing.
+        std::fs::remove_file(path_for(&spec)).unwrap();
+        assert!(update(&spec, |c| c.reply("c9", Author::Agent, "?")).is_err());
+        assert!(!path_for(&spec).exists());
     }
 
     #[test]

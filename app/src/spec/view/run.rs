@@ -14,8 +14,9 @@ impl Dashboard {
         self.reload_now(cx);
     }
 
-    /// The graph changed under the dashboard: re-run everything, now or, with
-    /// a run in flight that read the graph as it was, as soon as it lands.
+    /// The graph, or the spec file, changed under the dashboard: re-run
+    /// everything, now or, with a run in flight that read them as they were,
+    /// as soon as it lands.
     pub fn graph_written(&mut self, cx: &mut Context<Self>) {
         if self.running {
             self.reload_pending = true;
@@ -464,6 +465,23 @@ filter "channel" {
             max_rows: 10,
         }));
         assert_eq!(read["rows"][0][0], 4, "{read}");
+
+        // An open that fails leaves the graph that was open in place: the
+        // window still shows it, so it must still answer.
+        let open = crate::db::current().expect("a graph is open");
+        let not_a_graph = dir.join("not-a-graph");
+        std::fs::create_dir_all(&not_a_graph).unwrap();
+        std::fs::write(not_a_graph.join("notes.txt"), "x").unwrap();
+        assert!(crate::db::open(&dir.join("missing"), false).is_err());
+        assert!(crate::db::open(&not_a_graph, false).is_err());
+        assert!(crate::db::create(&not_a_graph).is_err());
+        assert_eq!(crate::db::current(), Some(open.clone()));
+        assert_eq!(total(&load(&path, &HashMap::new(), &HashMap::new())), "4");
+        // The same graph reopened read-only, and back, is one graph throughout.
+        assert!(crate::db::open(&open.path, true).unwrap().read_only);
+        assert!(crate::db::run(khonsu_core::Language::Cypher, "CREATE (:Order {amount: 2})").is_err());
+        assert!(!crate::db::open(&open.path, false).unwrap().read_only);
+        assert_eq!(total(&load(&path, &HashMap::new(), &HashMap::new())), "4");
         crate::db::close();
         std::fs::remove_dir_all(&dir).ok();
     }

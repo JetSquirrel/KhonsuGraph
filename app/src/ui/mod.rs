@@ -302,7 +302,15 @@ pub fn open_graph_with(
                         reload_schema(state, window, cx);
                         done(Ok(()), window, cx);
                     }
-                    Err(err) => done(Err(err), window, cx),
+                    Err(err) => {
+                        // The graph that was open still is, unless reopening
+                        // the same one failed both ways: show what is true.
+                        let now = crate::db::current();
+                        if state.read(cx).graph != now {
+                            state.update(cx, |state, cx| state.set_graph(now, cx));
+                        }
+                        done(Err(err), window, cx)
+                    }
                 }
             })
             .ok();

@@ -10,7 +10,7 @@
 use crate::engine::{Graph, QueryError};
 use crate::evidence::{self, Field, PathEvidence, SourceCoverage};
 use crate::explore::{Direction, Exploration, ExploreRequest, Hop, DEFAULT_MAX_EDGES, DEFAULT_MAX_NODES};
-use crate::merge::{HASH_PROPERTY, ID_PROPERTY, PLUGIN_PROPERTY, SOURCE_PROPERTY, SYNCED_AT_PROPERTY};
+use crate::merge::{HASH_PROPERTY, ID_PROPERTY, KEYS_PROPERTY, PLUGIN_PROPERTY, SOURCE_PROPERTY, SYNCED_AT_PROPERTY};
 use crate::protocol::HopRef;
 use crate::result::{value_to_json, GraphCollector, GraphData, GraphNode};
 use crate::settings::{RunStatus, Source};
@@ -555,9 +555,12 @@ pub(crate) fn content_hash(data: &GraphData) -> (String, Vec<String>) {
 fn node_line(node: &GraphNode) -> String {
     let mut labels = node.labels.clone();
     labels.sort_unstable();
-    // Nodes only got a hash later: a graph must not read as changed for gaining one.
+    // Nodes only got a hash, and a list of their source's properties, later: a
+    // graph must not read as changed for gaining them. Both say only what the
+    // other properties do.
     let mut properties = node.properties.clone();
     properties.remove(HASH_PROPERTY);
+    properties.remove(KEYS_PROPERTY);
     format!("{}|{}", labels.join(":"), canonical(&properties))
 }
 

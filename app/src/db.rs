@@ -43,26 +43,53 @@ fn info(graph: &Graph) -> GraphInfo {
     }
 }
 
-/// Opens an existing graph, releasing the current one first so reopening the
-/// same directory works.
+/// Opens an existing graph in place of the current one, which stays open if
+/// this fails: the window goes on showing it, so it must go on answering.
+///
+/// Another directory is opened first and swapped in. The same directory (a
+/// reopen read-only, say) can't be: HawDB leases it to one handle, so the
+/// current one is released first and, if the reopen fails, opened again as it
+/// was. Only when that fails too is there no graph, and the error says so.
 pub fn open(path: &Path, read_only: bool) -> Result<GraphInfo, OpenError> {
     let mut guard = GRAPH.lock().unwrap_or_else(PoisonError::into_inner);
-    *guard = None;
     let mode = if read_only { AccessMode::ReadOnly } else { AccessMode::ReadWrite };
-    let graph = Graph::open(path, mode, PROGRAM)?;
+    let current = guard.as_ref().map(|graph| (graph.path().to_path_buf(), graph.mode()));
+    let same = current.as_ref().is_some_and(|(open, _)| *open == khonsu_core::normalize_path(path));
+    if !same {
+        let graph = Graph::open(path, mode, PROGRAM)?;
+        let info = info(&graph);
+        *guard = Some(graph);
+        return Ok(info);
+    }
+    *guard = None;
+    match Graph::open(path, mode, PROGRAM) {
+        Ok(graph) => {
+            let info = info(&graph);
+            *guard = Some(graph);
+            Ok(info)
+        }
+        Err(error) => {
+            let (path, mode) = current.expect("the same graph was open");
+            *guard = Graph::open(&path, mode, PROGRAM).ok();
+            Err(error)
+        }
+    }
+}
+
+/// Creates a new, empty graph in an empty or new directory, in place of the
+/// current one, which stays open if this fails.
+pub fn create(path: &Path) -> Result<GraphInfo, OpenError> {
+    let mut guard = GRAPH.lock().unwrap_or_else(PoisonError::into_inner);
+    let graph = Graph::create(path, PROGRAM)?;
     let info = info(&graph);
     *guard = Some(graph);
     Ok(info)
 }
 
-/// Creates a new, empty graph in an empty or new directory.
-pub fn create(path: &Path) -> Result<GraphInfo, OpenError> {
-    let mut guard = GRAPH.lock().unwrap_or_else(PoisonError::into_inner);
-    *guard = None;
-    let graph = Graph::create(path, PROGRAM)?;
-    let info = info(&graph);
-    *guard = Some(graph);
-    Ok(info)
+/// The graph that is open now, if any: what the window should show after an
+/// open that failed.
+pub fn current() -> Option<GraphInfo> {
+    GRAPH.lock().unwrap_or_else(PoisonError::into_inner).as_ref().map(info)
 }
 
 pub fn close() {

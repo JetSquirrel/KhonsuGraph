@@ -14,6 +14,7 @@
       "stale_edges_removed": 0,
       "unchanged_edges": 0,
       "unchanged_nodes": 0,
+      "properties_removed": 0,
       "warnings": []
     },
     "run": {
@@ -42,6 +43,7 @@
       "stale_edges_removed": 0,
       "unchanged_edges": 24,
       "unchanged_nodes": 16,
+      "properties_removed": 0,
       "warnings": []
     },
     "run": {
@@ -66,6 +68,7 @@
           "account_id",
           "khonsu_hash",
           "khonsu_id",
+          "khonsu_keys",
           "khonsu_plugin",
           "khonsu_source",
           "khonsu_synced_at"
@@ -78,6 +81,7 @@
           "cidr",
           "khonsu_hash",
           "khonsu_id",
+          "khonsu_keys",
           "khonsu_plugin",
           "khonsu_source",
           "khonsu_synced_at",
@@ -92,6 +96,7 @@
           "instance_id",
           "khonsu_hash",
           "khonsu_id",
+          "khonsu_keys",
           "khonsu_plugin",
           "khonsu_source",
           "khonsu_synced_at",
@@ -109,6 +114,7 @@
         "properties": [
           "khonsu_hash",
           "khonsu_id",
+          "khonsu_keys",
           "khonsu_plugin",
           "khonsu_source",
           "khonsu_synced_at",
@@ -122,6 +128,7 @@
           "dns_name",
           "khonsu_hash",
           "khonsu_id",
+          "khonsu_keys",
           "khonsu_plugin",
           "khonsu_source",
           "khonsu_synced_at",
@@ -136,6 +143,7 @@
         "properties": [
           "khonsu_hash",
           "khonsu_id",
+          "khonsu_keys",
           "khonsu_plugin",
           "khonsu_source",
           "khonsu_synced_at",
@@ -149,6 +157,7 @@
           "arn",
           "khonsu_hash",
           "khonsu_id",
+          "khonsu_keys",
           "khonsu_plugin",
           "khonsu_source",
           "khonsu_synced_at",
@@ -165,6 +174,7 @@
           "group_id",
           "khonsu_hash",
           "khonsu_id",
+          "khonsu_keys",
           "khonsu_plugin",
           "khonsu_source",
           "khonsu_synced_at",
@@ -179,6 +189,7 @@
           "cidr",
           "khonsu_hash",
           "khonsu_id",
+          "khonsu_keys",
           "khonsu_plugin",
           "khonsu_source",
           "khonsu_synced_at",
@@ -193,6 +204,7 @@
         "properties": [
           "khonsu_hash",
           "khonsu_id",
+          "khonsu_keys",
           "khonsu_plugin",
           "khonsu_source",
           "khonsu_synced_at",
@@ -209,6 +221,7 @@
           "is_default",
           "khonsu_hash",
           "khonsu_id",
+          "khonsu_keys",
           "khonsu_plugin",
           "khonsu_source",
           "khonsu_synced_at",
@@ -1237,6 +1250,7 @@
               "instance_id": "i-web1",
               "khonsu_hash": "b4233834f5f2e2a5",
               "khonsu_id": "shop/123456789012:us-east-1:i-web1",
+              "khonsu_keys": "image_id,instance_id,launched_at,name,private_ip,public_ip,state,type",
               "khonsu_source": "shop",
               "launched_at": "2026-09-01T08:00:00+00:00",
               "name": "web-1",
@@ -1254,6 +1268,7 @@
             "properties": {
               "khonsu_hash": "4e09814f6a075a3a",
               "khonsu_id": "shop/123456789012:us-east-1:igw-shop",
+              "khonsu_keys": "name",
               "khonsu_source": "shop",
               "name": "igw-shop"
             }
@@ -1267,6 +1282,7 @@
               "dns_name": "shop-123.us-east-1.elb.amazonaws.com",
               "khonsu_hash": "010f1113ac7b980a",
               "khonsu_id": "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
+              "khonsu_keys": "dns_name,name,scheme,type",
               "khonsu_source": "shop",
               "name": "shop",
               "scheme": "internet-facing",
@@ -1281,6 +1297,7 @@
             "properties": {
               "khonsu_hash": "3acb1d6343183feb",
               "khonsu_id": "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/def",
+              "khonsu_keys": "name,port,protocol",
               "khonsu_source": "shop",
               "name": "web",
               "port": 8080,
@@ -1296,6 +1313,7 @@
               "cidr": "0.0.0.0/0",
               "khonsu_hash": "e266825b5407a2d6",
               "khonsu_id": "shop/cidr:internet",
+              "khonsu_keys": "cidr,name",
               "khonsu_source": "shop",
               "name": "Internet"
             }
@@ -1738,6 +1756,7 @@
               "instance_id": "i-web1",
               "khonsu_hash": "b4233834f5f2e2a5",
               "khonsu_id": "shop/123456789012:us-east-1:i-web1",
+              "khonsu_keys": "image_id,instance_id,launched_at,name,private_ip,public_ip,state,type",
               "khonsu_source": "shop",
               "launched_at": "2026-09-01T08:00:00+00:00",
               "name": "web-1",
@@ -1755,6 +1774,7 @@
             "properties": {
               "khonsu_hash": "3acb1d6343183feb",
               "khonsu_id": "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/def",
+              "khonsu_keys": "name,port,protocol",
               "khonsu_source": "shop",
               "name": "web",
               "port": 8080,
@@ -1846,6 +1866,7 @@
               "instance_id": "i-web1",
               "khonsu_hash": "b4233834f5f2e2a5",
               "khonsu_id": "shop/123456789012:us-east-1:i-web1",
+              "khonsu_keys": "image_id,instance_id,launched_at,name,private_ip,public_ip,state,type",
               "khonsu_source": "shop",
               "launched_at": "2026-09-01T08:00:00+00:00",
               "name": "web-1",
@@ -1863,6 +1884,7 @@
             "properties": {
               "khonsu_hash": "4e09814f6a075a3a",
               "khonsu_id": "shop/123456789012:us-east-1:igw-shop",
+              "khonsu_keys": "name",
               "khonsu_source": "shop",
               "name": "igw-shop"
             }
@@ -1876,6 +1898,7 @@
               "dns_name": "shop-123.us-east-1.elb.amazonaws.com",
               "khonsu_hash": "010f1113ac7b980a",
               "khonsu_id": "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:loadbalancer/app/shop/abc",
+              "khonsu_keys": "dns_name,name,scheme,type",
               "khonsu_source": "shop",
               "name": "shop",
               "scheme": "internet-facing",
@@ -1890,6 +1913,7 @@
             "properties": {
               "khonsu_hash": "3acb1d6343183feb",
               "khonsu_id": "shop/arn:aws:elasticloadbalancing:us-east-1:123456789012:targetgroup/web/def",
+              "khonsu_keys": "name,port,protocol",
               "khonsu_source": "shop",
               "name": "web",
               "port": 8080,
@@ -1905,6 +1929,7 @@
               "cidr": "0.0.0.0/0",
               "khonsu_hash": "e266825b5407a2d6",
               "khonsu_id": "shop/cidr:internet",
+              "khonsu_keys": "cidr,name",
               "khonsu_source": "shop",
               "name": "Internet"
             }

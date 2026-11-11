@@ -117,13 +117,14 @@ impl AppState {
     /// A graph was opened (or closed, with `None`). Remembers it as the one
     /// to reopen next launch.
     pub fn set_graph(&mut self, graph: Option<GraphInfo>, cx: &mut Context<Self>) {
-        let mut stored = Settings::load();
-        match &graph {
+        let stored = Settings::update(|stored| match &graph {
             Some(info) => stored.note_opened(&info.path),
             None => stored.last_opened = None,
+        });
+        match stored {
+            Ok(stored) => self.recent = stored.recent,
+            Err(error) => tracing::warn!("the open graph was not remembered: {error}"),
         }
-        let _ = stored.save();
-        self.recent = stored.recent;
         self.graph = graph;
         crate::ui::palette::forget_labels();
         self.schema = None;
@@ -136,13 +137,16 @@ impl AppState {
     }
 
     pub fn forget_recent(&mut self, path: &std::path::Path, cx: &mut Context<Self>) {
-        let mut stored = Settings::load();
-        stored.recent.retain(|p| p != path);
-        if stored.last_opened.as_deref() == Some(path) {
-            stored.last_opened = None;
+        let stored = Settings::update(|stored| {
+            stored.recent.retain(|p| p != path);
+            if stored.last_opened.as_deref() == Some(path) {
+                stored.last_opened = None;
+            }
+        });
+        match stored {
+            Ok(stored) => self.recent = stored.recent,
+            Err(error) => tracing::warn!("the recent list was not changed: {error}"),
         }
-        let _ = stored.save();
-        self.recent = stored.recent;
         cx.notify();
     }
 

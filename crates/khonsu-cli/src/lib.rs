@@ -518,6 +518,9 @@ fn run_source(command: SourceCommand) -> Result<Value, CliError> {
             test,
         } => {
             let graph = resolve_db(&db)?;
+            // Before a secret goes to the keychain for a source that then
+            // can't be saved.
+            settings::try_load_sources()?;
             // Otherwise the mistake only shows at the first sync.
             if !graph.exists() {
                 return Err(OpenError::Missing(graph).into());

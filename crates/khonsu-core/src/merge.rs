@@ -9,6 +9,13 @@
 //! | `khonsu_plugin`     | `<plugin id>@<plugin version>`          |
 //! | `khonsu_synced_at`  | start of the sync that last wrote it    |
 //! | `khonsu_hash`       | hash of its own properties              |
+//! | `khonsu_keys`       | nodes: the properties its source wrote  |
+//!
+//! A source owns the properties it wrote, and only those. When a record comes
+//! back without one of them (a CSV column was deleted), that property is taken
+//! off the node; a property someone added by hand is not the source's, and
+//! stays. `khonsu_keys` is what tells them apart. A relationship needs none:
+//! a changed one is deleted and created again.
 //!
 //! Nothing unchanged is written: each rewrite costs the engine a new version of
 //! the record, so rewriting a whole source on every sync made the graph grow by
@@ -37,6 +44,9 @@ pub const SOURCE_PROPERTY: &str = "khonsu_source";
 pub const PLUGIN_PROPERTY: &str = "khonsu_plugin";
 pub const SYNCED_AT_PROPERTY: &str = "khonsu_synced_at";
 pub const HASH_PROPERTY: &str = "khonsu_hash";
+/// The names of the properties a node's source wrote, in order, joined by
+/// commas (names are identifiers, so none holds one).
+pub const KEYS_PROPERTY: &str = "khonsu_keys";
 
 const BATCH_SIZE: usize = 256;
 /// Rows per read-back page, under the engine's 100,000-row read ceiling.
@@ -72,6 +82,9 @@ pub struct MergeStats {
     /// Nodes already in the graph as the source reports them; left alone.
     #[serde(default)]
     pub unchanged_nodes: u64,
+    /// Properties taken off nodes because their source no longer sends them.
+    #[serde(default)]
+    pub properties_removed: u64,
     pub warnings: Vec<String>,
 }
 
@@ -498,6 +511,7 @@ impl<'g> Merger<'g> {
             }
             let id = old.and_then(|old| old.id);
             written.insert(key, WrittenNode { id, hash: Some(hash.clone()) });
+            set.insert(KEYS_PROPERTY.into(), Value::String(set.keys().cloned().collect::<Vec<_>>().join(",")));
             set.insert(HASH_PROPERTY.into(), Value::String(hash));
             set.insert(SOURCE_PROPERTY.into(), Value::String(self.source.clone()));
             set.insert(PLUGIN_PROPERTY.into(), Value::String(self.plugin.clone()));
@@ -512,6 +526,7 @@ impl<'g> Merger<'g> {
         if upserts.is_empty() {
             return Ok(());
         }
+        self.reconcile_properties(&mut upserts)?;
         let mut indexes = Vec::new();
         for label in upserts.iter().map(|n| n.label.clone()).collect::<BTreeSet<_>>() {
             if self.indexed_labels.insert(label.clone()) {
@@ -526,6 +541,59 @@ impl<'g> Merger<'g> {
         self.graph.merge_nodes(upserts)?;
         // New nodes have IDs the index does not know yet.
         self.node_index = None;
+        Ok(())
+    }
+
+    /// For each node about to be rewritten in place, sets to null the
+    /// properties its source wrote last time and does not send now, which
+    /// takes them off the node. What the source never wrote is left alone.
+    ///
+    /// A node last written before `khonsu_keys` existed has no record of what
+    /// its source owns, so nothing is taken off it this once; it gains the
+    /// record now, and is reconciled from its next change on.
+    fn reconcile_properties(&mut self, upserts: &mut [NodeUpsert]) -> Result<(), QueryError> {
+        let mut by_label: BTreeMap<String, Vec<i64>> = BTreeMap::new();
+        for upsert in upserts.iter() {
+            if let Some(id) = upsert.id {
+                by_label.entry(upsert.label.clone()).or_default().push(id);
+            }
+        }
+        let mut owned: HashMap<i64, Option<String>> = HashMap::new();
+        for (label, ids) in by_label {
+            let query = format!("MATCH (n:{}) WHERE id(n) IN $ids RETURN id(n) AS i, n.{KEYS_PROPERTY} AS p", quote_ident(&label));
+            let params = BTreeMap::from([("ids".to_string(), Value::List(ids.into_iter().map(Value::Int).collect()))]);
+            for row in self.graph.raw_cypher_named(&query, &params)? {
+                if let Some(Value::Int(id)) = row.get("i") {
+                    owned.insert(
+                        *id,
+                        match row.get("p") {
+                            Some(Value::String(keys)) => Some(keys.clone()),
+                            _ => None,
+                        },
+                    );
+                }
+            }
+        }
+        let mut unrecorded = 0u64;
+        for upsert in upserts.iter_mut() {
+            let Some(id) = upsert.id else { continue };
+            let Some(Some(keys)) = owned.get(&id) else {
+                unrecorded += 1;
+                continue;
+            };
+            for key in keys.split(',').filter(|key| !key.is_empty()) {
+                if !upsert.set.contains_key(key) {
+                    upsert.set.insert(key.to_string(), Value::Null);
+                    self.stats.properties_removed += 1;
+                }
+            }
+        }
+        if unrecorded > 0 && self.stats.warnings.len() < 20 {
+            self.stats.warnings.push(format!(
+                "{unrecorded} changed nodes were last written before KhonsuGraph recorded which properties a source owns: \
+                 a property the source has dropped since stays on them this once, and is removed from the next change on"
+            ));
+        }
         Ok(())
     }
 
