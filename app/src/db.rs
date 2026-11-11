@@ -84,6 +84,12 @@ pub fn run(language: Language, text: &str) -> Result<QueryResult, QueryError> {
     with_graph(|g| g.run(language, text, &Map::new(), QueryOptions { max_rows: MAX_ROWS }))
 }
 
+/// Runs a statement that may only read, whatever the graph is open for:
+/// dashboards and commands from outside the window come through here.
+pub fn run_read(language: Language, text: &str, max_rows: usize) -> Result<QueryResult, QueryError> {
+    with_graph(|g| g.run_read(language, text, &Map::new(), QueryOptions { max_rows }))
+}
+
 pub fn explain(language: Language, text: &str) -> Result<String, QueryError> {
     with_graph(|g| g.explain(language, text))
 }

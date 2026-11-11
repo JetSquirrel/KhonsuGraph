@@ -8,6 +8,17 @@ const WRITE_WORDS: &[&str] = &["CREATE", "MERGE", "DELETE", "SET", "INSERT", "DR
 
 impl Workspace {
     pub fn run_active(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.run_active_as(false, window, cx);
+    }
+
+    /// Runs the active tab for a command (`khonsu open --run`), which may show
+    /// a query and read with it, but not write: the engine refuses a
+    /// statement that writes, and the person can still run it themselves.
+    pub fn run_active_read_only(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.run_active_as(true, window, cx);
+    }
+
+    fn run_active_as(&mut self, read_only: bool, window: &mut Window, cx: &mut Context<Self>) {
         if self.running || self.state.read(cx).is_opening() {
             return;
         }
@@ -36,7 +47,16 @@ impl Workspace {
         cx.spawn_in(window, async move |this, cx| {
             let run_text = text.clone();
             let (result, graph) = smol::unblock(move || {
-                let result = crate::db::run(language, &run_text);
+                let result = if read_only {
+                    crate::db::run_read(language, &run_text, crate::db::MAX_ROWS).map_err(|mut error| {
+                        if error.kind == "read_only" {
+                            error.message = tr("query.command_writes").into();
+                        }
+                        error
+                    })
+                } else {
+                    crate::db::run(language, &run_text)
+                };
                 let graph = crate::db::with_graph(|g| Ok(g.path().to_path_buf())).ok();
                 if let Some(graph) = &graph {
                     let _ = settings::push_history(HistoryEntry {

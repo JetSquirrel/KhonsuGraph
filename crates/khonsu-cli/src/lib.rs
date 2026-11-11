@@ -487,6 +487,8 @@ fn run_plugin(command: PluginCommand) -> Result<Value, CliError> {
             };
             if dry_run {
                 let info = plugin::find(&source.plugin)?;
+                // Before the keychain is read for it.
+                plugin::require_approved(&info)?;
                 let request = plugin::request_for(&source, mode)?;
                 let preview = plugin::preview(&info, &request, &cancel, progress)?;
                 return Ok(json!({ "dry_run": true, "preview": preview }));
@@ -524,6 +526,9 @@ fn run_source(command: SourceCommand) -> Result<Value, CliError> {
                 return Err(OpenError::NotAGraph(graph).into());
             }
             let info = plugin::find(&plugin_id)?;
+            // Describing and testing run the plugin, and a test hands it the
+            // secrets: neither happens for a plugin not approved as it is now.
+            plugin::require_approved(&info)?;
             let describe = plugin::describe(&info)?;
             let values = key_values(&config)?;
             let id = settings::new_source_id(&name);

@@ -1,6 +1,10 @@
 //! A plugin for tests: sends the JSON lines in its `lines` setting, then exits
 //! with its `exit` setting, so a test can make a sync fail in any way it likes.
 //! Not built into the app or shipped.
+//!
+//! With `KHONSU_SCRIPTED_TRACE` set to a file, each run appends the operation
+//! it was started for and whether it was sent secrets, so a test can tell
+//! that it was never started at all.
 
 use std::io::Write;
 use std::process::ExitCode;
@@ -9,6 +13,14 @@ use khonsu_plugin_protocol::{read_request, ConfigField, Describe, Emitter, Field
 
 fn main() -> ExitCode {
     let command = std::env::args().nth(1).unwrap_or_default();
+    let trace = |line: &str| {
+        if let Some(path) = std::env::var_os("KHONSU_SCRIPTED_TRACE") {
+            if let Ok(mut file) = std::fs::OpenOptions::new().create(true).append(true).open(path) {
+                let _ = writeln!(file, "{line}");
+            }
+        }
+    };
+    trace(&command);
     if command == "describe" {
         let describe = Describe {
             name: "Scripted".into(),
@@ -24,7 +36,17 @@ fn main() -> ExitCode {
                     help: String::new(),
                     default: None,
                 })
-                .to_vec(),
+                .into_iter()
+                .chain([ConfigField {
+                    key: "token".into(),
+                    label: "token".into(),
+                    kind: FieldKind::String,
+                    required: false,
+                    secret: true,
+                    help: String::new(),
+                    default: None,
+                }])
+                .collect(),
             permissions: Permissions::default(),
             labels: Vec::new(),
             relationship_types: Vec::new(),
@@ -35,6 +57,9 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
     let request = read_request().unwrap();
+    if !request.secrets.is_empty() {
+        trace("secrets");
+    }
     if command == "test" {
         Emitter::stdout().emit(&Message::TestResult { ok: true, message: String::new() }).unwrap();
         return ExitCode::SUCCESS;

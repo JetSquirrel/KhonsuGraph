@@ -14,7 +14,7 @@ pub trait CypherReader {
 
 impl CypherReader for Graph {
     fn cypher(&mut self, text: &str) -> Result<QueryResult, QueryError> {
-        self.run(Language::Cypher, text, &Map::new(), QueryOptions { max_rows: usize::MAX })
+        self.run_read(Language::Cypher, text, &Map::new(), QueryOptions { max_rows: usize::MAX })
     }
 }
 

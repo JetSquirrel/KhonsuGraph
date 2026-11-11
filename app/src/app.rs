@@ -158,8 +158,9 @@ impl KhonsuApp {
                     let run = request.run;
                     self.workspace.update(cx, |ws, cx| {
                         ws.add_tab(language, Some(&text), window, cx);
+                        // A command asked, not the person: it only reads.
                         if run {
-                            ws.run_active(window, cx);
+                            ws.run_active_read_only(window, cx);
                         }
                     });
                     opened.push(json!({"query": true, "run": run}));

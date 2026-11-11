@@ -237,6 +237,7 @@ static STRINGS: &[(&str, &str, &str)] = &[
     ("notify.open.not_a_graph", "{} 不是 HawDB 图目录", "{} is not a HawDB graph directory"),
     ("notify.open.not_empty", "{} 不是空目录，不能在这里新建图", "{} is not empty; a new graph needs an empty folder"),
     ("error.no_graph", "还没有打开图", "No graph is open"),
+    ("query.command_writes", "这条查询会写入。命令行只能显示和读取；要写入，请自己在这里运行它。", "This query writes. A command can show it and read with it; to write, run it here yourself."),
 
     // ── welcome ─────────────────────────────────────────────────────────
     ("home.title", "首页", "Home"),
@@ -508,6 +509,7 @@ static STRINGS: &[(&str, &str, &str)] = &[
 
     // ── plugins ─────────────────────────────────────────────────────────
     ("plugins.builtin", "内置", "Built-in"),
+    ("plugins.needs_approval", "需要先批准", "Needs approval first"),
     ("plugins.install", "安装插件…", "Install Plugin…"),
     ("plugins.installed", "已安装 {} {}", "Installed {} {}"),
     ("permissions.title", "允许这个插件运行？", "Allow this plugin to run?"),

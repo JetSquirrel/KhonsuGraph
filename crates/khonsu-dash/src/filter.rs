@@ -232,9 +232,13 @@ fn clause_words(language: Language) -> &'static [&'static str] {
 /// The word that ends just before `at` (skipping whitespace), and where it starts.
 fn word_before(text: &str, at: usize) -> Option<(usize, String)> {
     let head = text[..at].trim_end();
+    // Past the whole character, which may be longer than a byte (a
+    // non-breaking or full-width space, say).
     let start = head
-        .rfind(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
-        .map_or(0, |i| i + 1);
+        .char_indices()
+        .rev()
+        .find(|(_, c)| !(c.is_ascii_alphanumeric() || *c == '_'))
+        .map_or(0, |(i, c)| i + c.len_utf8());
     let word = &head[start..];
     (!word.is_empty()).then(|| (start, word.to_ascii_uppercase()))
 }
@@ -367,6 +371,24 @@ mod tests {
         assert!(placement_problems("MATCH (n) WHERE n.x = 1 AND $a", Language::Cypher).is_empty());
         assert_eq!(placement_problems("MATCH (n) WHERE $a OR n.x = 1 RETURN n", Language::Cypher).len(), 1);
         assert_eq!(placement_problems("MATCH (n) RETURN n, $a", Language::Cypher).len(), 1);
+    }
+
+    #[test]
+    fn words_are_found_next_to_characters_longer_than_a_byte() {
+        // A non-breaking space, a full-width space and CJK text beside the
+        // placeholder each put `word_before` inside a character.
+        for gap in ["\u{a0}", "\u{3000}", "中文 ", "é"] {
+            let text = format!("MATCH (n){gap}WHERE $a AND n.x = '中文' RETURN n");
+            assert!(placement_problems(&text, Language::Cypher).is_empty(), "{text}");
+            assert_eq!(neutral(&text, Language::Cypher), format!("MATCH (n){gap}WHERE n.x = '中文' RETURN n"));
+            let text = format!("MATCH (n) WHERE n.x = 1 AND{gap}$a{gap}RETURN n");
+            let _ = placement_problems(&text, Language::Cypher);
+            let _ = neutral(&text, Language::Cypher);
+            let text = format!("SELECT * FROM t WHERE{gap}$a");
+            let _ = placement_problems(&text, Language::Sql);
+            let _ = neutral(&text, Language::Sql);
+        }
+        assert_eq!(names("SELECT '中文 $x' FROM t WHERE $名 AND $ok"), ["ok"]);
     }
 
     #[test]

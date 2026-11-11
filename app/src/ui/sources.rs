@@ -87,7 +87,9 @@ pub fn open_add(state: Entity<AppState>, window: &mut Window, cx: &mut App) {
                 plugin::list()
                     .into_iter()
                     .map(|info| {
-                        let describe = plugin::describe(&info).map_err(|e| e.to_string());
+                        // Describing a plugin runs it, so one waiting for
+                        // approval is listed by its manifest alone.
+                        let describe = approved(&info).then(|| plugin::describe(&info).map_err(|e| e.to_string()));
                         (info, describe)
                     })
                     .collect::<Vec<_>>()
@@ -103,14 +105,9 @@ pub fn open_add(state: Entity<AppState>, window: &mut Window, cx: &mut App) {
 pub fn open_csv(state: Entity<AppState>, window: &mut Window, cx: &mut App) {
     window
         .spawn(cx, async move |cx| {
-            let found = smol::unblock(|| {
-                let info = plugin::find("csv")?;
-                let describe = plugin::describe(&info)?;
-                Ok::<_, plugin::PluginError>((info, describe))
-            })
-            .await;
+            let found = smol::unblock(|| plugin::find("csv")).await;
             cx.update(move |window, cx| match found {
-                Ok((info, describe)) => begin_configure(state, info, describe, None, window, cx),
+                Ok(info) => begin_configure(state, info, None, window, cx),
                 Err(_) => open_add(state, window, cx),
             })
             .ok();
@@ -120,7 +117,7 @@ pub fn open_csv(state: Entity<AppState>, window: &mut Window, cx: &mut App) {
 
 fn show_plugin_picker(
     state: Entity<AppState>,
-    plugins: Vec<(PluginInfo, Result<Describe, String>)>,
+    plugins: Vec<(PluginInfo, Option<Result<Describe, String>>)>,
     window: &mut Window,
     cx: &mut App,
 ) {
@@ -128,8 +125,7 @@ fn show_plugin_picker(
         let cards = plugins.iter().enumerate().map(|(ix, (info, describe))| {
             let state = state.clone();
             let info_for_click = info.clone();
-            let describe_for_click = describe.clone().ok();
-            let disabled = describe.is_err();
+            let disabled = matches!(describe, Some(Err(_)));
             v_flex()
                 .id(("plugin-card", ix))
                 .w(px(190.))
@@ -153,16 +149,18 @@ fn show_plugin_picker(
                         .text_color(cx.theme().muted_foreground)
                         .whitespace_normal()
                         .child(match describe {
-                            Ok(d) => d.description.clone(),
-                            Err(e) => e.clone(),
+                            Some(Ok(d)) => d.description.clone(),
+                            Some(Err(e)) => e.clone(),
+                            None => info.manifest.description.clone(),
                         }),
                 )
+                .when(describe.is_none(), |this| {
+                    this.child(div().text_xs().text_color(cx.theme().warning).child(tr("plugins.needs_approval")))
+                })
                 .when(!disabled, |this| {
                     this.on_click(move |_, window, cx| {
                         window.close_dialog(cx);
-                        if let Some(describe) = describe_for_click.clone() {
-                            begin_configure(state.clone(), info_for_click.clone(), describe, None, window, cx);
-                        }
+                        begin_configure(state.clone(), info_for_click.clone(), None, window, cx);
                     })
                 })
         });
@@ -215,24 +213,33 @@ pub fn install_from_folder(window: &mut Window, cx: &mut App) {
         .detach();
 }
 
+/// Asks an approved plugin what it takes, which runs it, and opens the form.
+fn describe_then_form(state: Entity<AppState>, info: PluginInfo, existing: Option<Source>, window: &mut Window, cx: &mut App) {
+    window
+        .spawn(cx, async move |cx| {
+            let asked = info.clone();
+            let describe = smol::unblock(move || plugin::describe(&asked)).await;
+            cx.update(move |window, cx| match describe {
+                Ok(describe) => open_form(state, info, describe, existing, window, cx),
+                Err(e) => window.push_notification(Notification::error(e.to_string()), cx),
+            })
+            .ok();
+        })
+        .detach();
+}
+
 /// Confirm a third-party plugin's permissions once per version, then
-/// configure the source.
-fn begin_configure(
-    state: Entity<AppState>,
-    info: PluginInfo,
-    describe: Describe,
-    existing: Option<Source>,
-    window: &mut Window,
-    cx: &mut App,
-) {
+/// configure the source. Until it is approved nothing of the plugin runs: the
+/// dialog shows what its manifest declares.
+fn begin_configure(state: Entity<AppState>, info: PluginInfo, existing: Option<Source>, window: &mut Window, cx: &mut App) {
     if approved(&info) {
-        open_form(state, info, describe, existing, window, cx);
+        describe_then_form(state, info, existing, window, cx);
         return;
     }
     let lines = permission_lines(&info.manifest.permissions);
     let changed = khonsu_core::plugin::approval_state(&info) == khonsu_core::plugin::ApprovalState::Changed;
     window.open_dialog(cx, move |dialog, _, cx| {
-        let (state, info, describe, existing) = (state.clone(), info.clone(), describe.clone(), existing.clone());
+        let (state, info, existing) = (state.clone(), info.clone(), existing.clone());
         dialog
             .title(tr("permissions.title"))
             .w(crate::ui::scale::design(480.))
@@ -261,7 +268,7 @@ fn begin_configure(
                             window.push_notification(Notification::error(e.to_string()), cx);
                             return;
                         }
-                        open_form(state.clone(), info.clone(), describe.clone(), existing.clone(), window, cx);
+                        describe_then_form(state.clone(), info.clone(), existing.clone(), window, cx);
                     })),
             )
     });
@@ -272,14 +279,9 @@ pub fn open_edit(state: Entity<AppState>, source: Source, window: &mut Window, c
     let plugin_id = source.plugin.clone();
     window
         .spawn(cx, async move |cx| {
-            let found = smol::unblock(move || {
-                let info = plugin::find(&plugin_id)?;
-                let describe = plugin::describe(&info)?;
-                Ok::<_, plugin::PluginError>((info, describe))
-            })
-            .await;
+            let found = smol::unblock(move || plugin::find(&plugin_id)).await;
             cx.update(move |window, cx| match found {
-                Ok((info, describe)) => begin_configure(state, info, describe, Some(source), window, cx),
+                Ok(info) => begin_configure(state, info, Some(source), window, cx),
                 Err(e) => window.push_notification(Notification::error(e.to_string()), cx),
             })
             .ok();

@@ -136,7 +136,7 @@ pub fn check_source(path: &str, source: &str, graph: &mut Graph, summary: bool) 
             continue;
         }
         let text = statement(query, &none);
-        match graph.run(query.language, &text, &Map::new(), QueryOptions { max_rows: CHECK_ROWS }) {
+        match graph.run_read(query.language, &text, &Map::new(), QueryOptions { max_rows: CHECK_ROWS }) {
             Ok(result) => {
                 columns.insert(query.name.clone(), columns_of(&result));
                 results.insert(query.name.clone(), result);
@@ -187,7 +187,7 @@ pub fn check_source(path: &str, source: &str, graph: &mut Graph, summary: bool) 
             }
             let picks = HashMap::from([(filter.name.clone(), pick.clone())]);
             let text = statement(query, &picks);
-            if let Err(error) = graph.run(query.language, &text, &Map::new(), QueryOptions { max_rows: 1 }) {
+            if let Err(error) = graph.run_read(query.language, &text, &Map::new(), QueryOptions { max_rows: 1 }) {
                 failures.push(format!(
                     "{path}:{}: query {:?} with filter {:?} picked ({}): {}",
                     query.line,

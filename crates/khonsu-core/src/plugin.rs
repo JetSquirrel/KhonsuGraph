@@ -74,7 +74,11 @@ impl PluginInfo {
         exe
     }
 
-    fn command(&self) -> Command {
+    /// The one place a plugin's process is made, for every operation, so it is
+    /// the one place that refuses a plugin not approved as it is now: nothing
+    /// of it runs, and it is sent no configuration or secrets.
+    fn command(&self) -> Result<Command, PluginError> {
+        require_approved(self)?;
         let mut command = Command::new(self.executable());
         command.args(&self.manifest.entry[1..]).current_dir(&self.dir);
         #[cfg(windows)]
@@ -83,7 +87,7 @@ impl PluginInfo {
             const CREATE_NO_WINDOW: u32 = 0x0800_0000;
             command.creation_flags(CREATE_NO_WINDOW);
         }
-        command
+        Ok(command)
     }
 }
 
@@ -591,6 +595,8 @@ fn failure(plugin: &PluginInfo, message: String, stderr: &Mutex<VecDeque<String>
     }
 }
 
+/// What a plugin says about itself. This runs it, so it needs approval like
+/// any other operation: what an unapproved plugin declares is in its manifest.
 pub fn describe(plugin: &PluginInfo) -> Result<Describe, PluginError> {
     describe_within(plugin, DESCRIBE_TIMEOUT)
 }
@@ -601,7 +607,7 @@ fn describe_within(plugin: &PluginInfo, timeout: std::time::Duration) -> Result<
         message,
     };
     let mut child = plugin
-        .command()
+        .command()?
         .arg("describe")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -635,7 +641,7 @@ fn describe_within(plugin: &PluginInfo, timeout: std::time::Duration) -> Result<
 
 fn spawn(plugin: &PluginInfo, operation: &str, request: &Request) -> Result<Child, PluginError> {
     let mut child = plugin
-        .command()
+        .command()?
         .arg(operation)
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -878,7 +884,7 @@ pub fn request_for(source: &Source, mode: SyncMode) -> Result<Request, PluginErr
 }
 
 /// Refuses a plugin that has not been approved as it is now.
-pub(crate) fn require_approved(plugin: &PluginInfo) -> Result<(), PluginError> {
+pub fn require_approved(plugin: &PluginInfo) -> Result<(), PluginError> {
     match approval_state(plugin) {
         ApprovalState::Approved => Ok(()),
         state => {
@@ -915,7 +921,7 @@ pub(crate) fn run_analyze(
     let mut line = serde_json::to_vec(request).map_err(std::io::Error::other)?;
     line.push(b'\n');
     let mut child = plugin
-        .command()
+        .command()?
         .arg("analyze")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -1018,13 +1024,14 @@ pub fn sync_source_with(
     on_event: impl FnMut(SyncEvent),
 ) -> Result<SyncReport, PluginError> {
     let plugin = find(&source.plugin)?;
+    // Before anything of it runs, `describe` included.
+    require_approved(&plugin)?;
     let describe = describe(&plugin)?;
     let mode = if mode == SyncMode::Incremental && !describe.supports_incremental {
         SyncMode::Full
     } else {
         mode
     };
-    require_approved(&plugin)?;
     let request = request_for(source, mode)?;
     let started = std::time::Instant::now();
     let synced_at = next_sync_stamp(graph, &source.id, util::unix_now() as i64)?;

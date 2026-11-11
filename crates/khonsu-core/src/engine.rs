@@ -132,6 +132,10 @@ impl From<HawDBError> for QueryError {
         if message.contains("opened in read-only mode") {
             return Self::new("read_only", "the query writes, but the graph is open read-only");
         }
+        // The same refusal from a read transaction (`Graph::run_read`).
+        if READ_TRANSACTION_REFUSALS.iter().any(|refusal| message.contains(refusal)) {
+            return Self::new("read_only", "the query writes, but it was run read-only");
+        }
         let (line, column) = error_position(&message);
         Self {
             kind: kind.into(),
@@ -158,6 +162,14 @@ impl QueryError {
         self
     }
 }
+
+/// What HawDB says when a read transaction is given a statement that writes.
+/// Cypher, then CHECKPOINT and SET of a system variable, then SQL.
+const READ_TRANSACTION_REFUSALS: &[&str] = &[
+    "read transaction query must not be a mutation",
+    "is not allowed inside a read transaction",
+    "relational query entrypoint requires SELECT",
+];
 
 /// The start of `at bytes A..B` in an error message.
 fn byte_offset(message: &str) -> Option<usize> {
@@ -312,8 +324,36 @@ impl Graph {
         self.mode
     }
 
+    /// Runs a statement with the access the graph was opened with: it may
+    /// write when that is read-write.
     pub fn run(
         &mut self,
+        language: Language,
+        text: &str,
+        params: &Map<String, Json>,
+        options: QueryOptions,
+    ) -> Result<QueryResult, QueryError> {
+        self.run_as(false, language, text, params, options)
+    }
+
+    /// Runs a statement that may only read, whatever the graph was opened
+    /// with. It runs in a HawDB read transaction, over a snapshot with no
+    /// writer, so a statement that writes is refused (kind `read_only`) by the
+    /// engine and not by anything that reads the text. Dashboards, checks and
+    /// commands that come through the window run here.
+    pub fn run_read(
+        &mut self,
+        language: Language,
+        text: &str,
+        params: &Map<String, Json>,
+        options: QueryOptions,
+    ) -> Result<QueryResult, QueryError> {
+        self.run_as(true, language, text, params, options)
+    }
+
+    fn run_as(
+        &mut self,
+        read_only: bool,
         language: Language,
         text: &str,
         params: &Map<String, Json>,
@@ -330,9 +370,11 @@ impl Graph {
         }
         let params = json_params(params);
         let started = Instant::now();
-        let output = match language {
-            Language::Cypher => self.db.query_with_params(text, &params),
-            Language::Sql => self.db.query_sql_with_params(text, &positional(params)),
+        let output = match (read_only, language) {
+            (false, Language::Cypher) => self.db.query_with_params(text, &params),
+            (false, Language::Sql) => self.db.query_sql_with_params(text, &positional(params)),
+            (true, Language::Cypher) => self.db.begin_read_transaction().and_then(|mut tx| tx.query_with_params(text, &params)),
+            (true, Language::Sql) => self.db.begin_read_transaction().and_then(|tx| tx.query_sql_with_params(text, &positional(params))),
         }
         .map_err(|err| QueryError::from(err).located_in(written, text))?;
         let elapsed_ms = started.elapsed().as_millis() as u64;
@@ -430,14 +472,20 @@ impl Graph {
         Ok(data)
     }
 
-    /// Runs a parameterized Cypher statement and returns raw rows.
+    /// Runs a parameterized Cypher statement that reads and returns raw rows.
+    /// Walks, evidence, saved investigations and analyses build their text
+    /// from names that come from outside (a relationship type on a command
+    /// line, a label a plugin asked for), so it runs in a read transaction:
+    /// whatever the text says, it cannot write.
     pub(crate) fn raw_cypher(&mut self, text: &str, params: &BTreeMap<String, Value>) -> Result<Vec<Vec<Value>>, QueryError> {
-        let output = self.db.query_with_params(text, params)?;
+        let output = self.db.begin_read_transaction()?.query_with_params(text, params)?;
         Ok(output.value_rows().map(|row| row.to_vec()).collect())
     }
 
     /// Runs a parameterized Cypher statement and returns rows keyed by column
-    /// name: HawDB sorts Cypher columns by name, not in `RETURN` order.
+    /// name: HawDB sorts Cypher columns by name, not in `RETURN` order. The
+    /// merge writer pages through a graph with this, so it keeps the
+    /// database's plan cache, which a read transaction would not.
     pub(crate) fn raw_cypher_named(&mut self, text: &str, params: &BTreeMap<String, Value>) -> Result<Vec<BTreeMap<String, Value>>, QueryError> {
         let output = self.db.query_with_params(text, params)?;
         let columns: Vec<String> = output.schema().columns().iter().map(|c| c.to_string()).collect();
@@ -447,9 +495,9 @@ impl Graph {
             .collect())
     }
 
-    /// Runs SQL and returns rows keyed by column name.
+    /// Runs SQL that reads and returns rows keyed by column name.
     pub(crate) fn raw_sql(&mut self, text: &str) -> Result<Vec<BTreeMap<String, Value>>, QueryError> {
-        let output = self.db.query_sql(text)?;
+        let output = self.db.begin_read_transaction()?.query_sql(text)?;
         let columns: Vec<String> = output.schema().columns().iter().map(|c| c.to_string()).collect();
         Ok(output
             .value_rows()
@@ -604,9 +652,8 @@ fn positional(params: BTreeMap<String, Value>) -> Vec<Value> {
 }
 
 fn starts_with_keyword(text: &str, keyword: &str) -> bool {
-    text.len() > keyword.len()
-        && text[..keyword.len()].eq_ignore_ascii_case(keyword)
-        && text[keyword.len()..].starts_with(char::is_whitespace)
+    // `get`, not an index: a multi-byte character may sit across that offset.
+    text.get(..keyword.len()).is_some_and(|head| head.eq_ignore_ascii_case(keyword)) && text[keyword.len()..].starts_with(char::is_whitespace)
 }
 
 fn plan_result(plan: &str) -> QueryResult {
@@ -703,6 +750,9 @@ mod tests {
     fn explain_keyword_needs_a_word_boundary() {
         assert!(starts_with_keyword("explain MATCH (n) RETURN n", "EXPLAIN"));
         assert!(!starts_with_keyword("EXPLAINED", "EXPLAIN"));
+        assert!(!starts_with_keyword("EXPLAIN", "EXPLAIN"));
+        // The seventh byte is inside a character.
+        assert!(!starts_with_keyword("WITH '中文' AS x RETURN x", "EXPLAIN"));
     }
 
     #[test]
