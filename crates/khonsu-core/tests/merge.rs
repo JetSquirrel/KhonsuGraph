@@ -298,3 +298,72 @@ fn a_sync_in_the_same_second_as_the_last_still_removes_stale_nodes() {
     assert_eq!(next_sync_stamp(&mut graph, "nfl", 5000).unwrap(), 5000);
     assert_eq!(next_sync_stamp(&mut graph, "other", now).unwrap(), now);
 }
+
+fn host(graph: &mut Graph) -> Map<String, serde_json::Value> {
+    let result = graph.run(Language::Cypher, "MATCH (h:Host) RETURN h", &Map::new(), QueryOptions::default()).unwrap();
+    let nodes = result.graph.unwrap().nodes;
+    assert_eq!(nodes.len(), 1);
+    nodes[0].properties.clone()
+}
+
+fn sync_host(graph: &mut Graph, synced_at: i64, properties: serde_json::Value) -> MergeStats {
+    let mut merger = Merger::new(graph, "lab", "test@0", synced_at);
+    merger.add_node(NodeRecord { id: "a".into(), label: "Host".into(), properties: properties.as_object().unwrap().clone() }).unwrap();
+    merger.finish(true, &[]).unwrap().0
+}
+
+/// #69: a property the source stops sending (a CSV column deleted) used to
+/// stay on the node, with the new hash stored over it, so every later sync
+/// called the node unchanged.
+#[test]
+fn a_property_the_source_drops_leaves_the_node_and_one_added_by_hand_stays() {
+    let dir = TestDir::new();
+    let mut graph = Graph::create(dir.graph(), "test").unwrap();
+    sync_host(&mut graph, 1, json!({"name": "web", "cpu": 4, "region": "eu"}));
+    assert_eq!(host(&mut graph)["khonsu_keys"], "cpu,name,region");
+    // Not the source's: someone wrote it on the node.
+    graph.run(Language::Cypher, "MATCH (h:Host) SET h.note = 'keep me'", &Map::new(), QueryOptions::default()).unwrap();
+
+    let stats = sync_host(&mut graph, 2, json!({"name": "web", "cpu": 8}));
+    assert_eq!((stats.nodes_written, stats.properties_removed), (1, 1), "{stats:?}");
+    let now = host(&mut graph);
+    assert!(!now.contains_key("region"), "{now:?}");
+    assert_eq!((&now["name"], &now["cpu"], &now["note"]), (&json!("web"), &json!(8), &json!("keep me")));
+    assert_eq!(now["khonsu_keys"], "cpu,name");
+    assert_eq!(count(&mut graph, "MATCH (h:Host) WHERE h.region = 'eu' RETURN count(h)"), 0);
+
+    // Unchanged from here, and nothing more to take off.
+    let stats = sync_host(&mut graph, 3, json!({"name": "web", "cpu": 8}));
+    assert_eq!((stats.nodes_written, stats.unchanged_nodes, stats.properties_removed), (0, 1, 0), "{stats:?}");
+
+    // A property that comes back is written again, and one dropped with every
+    // other goes too.
+    sync_host(&mut graph, 4, json!({"name": "web", "cpu": 8, "region": "us"}));
+    assert_eq!(host(&mut graph)["region"], "us");
+    let stats = sync_host(&mut graph, 5, json!({}));
+    assert_eq!(stats.properties_removed, 3, "{stats:?}");
+    let now = host(&mut graph);
+    assert_eq!(now.keys().filter(|key| !key.starts_with("khonsu_")).collect::<Vec<_>>(), ["note"], "{now:?}");
+}
+
+/// A node written before `khonsu_keys` has no record of what its source owns:
+/// nothing is taken off it the first time, and the sync says so.
+#[test]
+fn a_node_from_before_ownership_was_recorded_is_reconciled_from_its_second_change() {
+    let dir = TestDir::new();
+    let mut graph = Graph::create(dir.graph(), "test").unwrap();
+    sync_host(&mut graph, 1, json!({"name": "web", "region": "eu"}));
+    graph.run(Language::Cypher, "MATCH (h:Host) SET h.khonsu_keys = null", &Map::new(), QueryOptions::default()).unwrap();
+    assert!(!host(&mut graph).contains_key("khonsu_keys"));
+
+    let stats = sync_host(&mut graph, 2, json!({"name": "web2"}));
+    assert_eq!(stats.properties_removed, 0);
+    assert!(stats.warnings.iter().any(|warning| warning.contains("before KhonsuGraph recorded")), "{stats:?}");
+    let now = host(&mut graph);
+    assert_eq!((&now["region"], &now["khonsu_keys"]), (&json!("eu"), &json!("name")));
+
+    let stats = sync_host(&mut graph, 3, json!({"label": "web"}));
+    assert_eq!(stats.properties_removed, 1, "{stats:?}");
+    let now = host(&mut graph);
+    assert!(!now.contains_key("name") && now["region"] == "eu", "{now:?}");
+}

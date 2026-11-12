@@ -1,0 +1,170 @@
+{
+  "platform": "Windows-10-10.0.26200-SP0",
+  "cpu": "AMD64 Family 25 Model 68 Stepping 1, AuthenticAMD",
+  "ram_bytes": 33492590592,
+  "build": "release",
+  "commit": "10d29e2cb94d5eb772f7574cb8dfc8927d2781d5",
+  "operations": {
+    "summary": {
+      "args": [
+        "analyze",
+        "summary",
+        "--db",
+        "E:\\Proj\\KhonsuGraph\\scratch\\manual-20261103\\exposure"
+      ],
+      "samples": [
+        {
+          "ms": 181.73,
+          "peak_mib": 22.45
+        },
+        {
+          "ms": 165.03,
+          "peak_mib": 23.98
+        },
+        {
+          "ms": 175.21,
+          "peak_mib": 22.3
+        }
+      ],
+      "median_ms": 175.21,
+      "median_peak_mib": 22.45
+    },
+    "dashboard": {
+      "args": [
+        "check",
+        "E:\\Proj\\KhonsuGraph\\examples\\aws\\exposure.dash",
+        "--db",
+        "E:\\Proj\\KhonsuGraph\\scratch\\manual-20261103\\exposure"
+      ],
+      "samples": [
+        {
+          "ms": 185.17,
+          "peak_mib": 24.77
+        },
+        {
+          "ms": 179.1,
+          "peak_mib": 23.01
+        },
+        {
+          "ms": 179.38,
+          "peak_mib": 24.74
+        }
+      ],
+      "median_ms": 179.38,
+      "median_peak_mib": 24.74
+    },
+    "shortest-path": {
+      "args": [
+        "query",
+        "--db",
+        "E:\\Proj\\KhonsuGraph\\scratch\\manual-20261103\\exposure",
+        "--cypher",
+        "MATCH p = shortestPath((a:Cidr {khonsu_id: $internet})-[*..3]->(b:Instance {khonsu_id: $web})) RETURN [n IN nodes(p) | n.khonsu_id] AS hops",
+        "-p",
+        "internet=shop/cidr:internet",
+        "-p",
+        "web=shop/123456789012:us-east-1:i-web1"
+      ],
+      "samples": [
+        {
+          "ms": 178.87,
+          "peak_mib": 17.27
+        },
+        {
+          "ms": 218.39,
+          "peak_mib": 22.44
+        },
+        {
+          "ms": 184.83,
+          "peak_mib": 22.33
+        }
+      ],
+      "median_ms": 184.83,
+      "median_peak_mib": 22.33
+    },
+    "exposure": {
+      "args": [
+        "plugin",
+        "analyze",
+        "aws",
+        "exposure",
+        "--db",
+        "E:\\Proj\\KhonsuGraph\\scratch\\manual-20261103\\exposure"
+      ],
+      "samples": [
+        {
+          "ms": 755.75,
+          "peak_mib": 24.22
+        },
+        {
+          "ms": 502.46,
+          "peak_mib": 24.06
+        },
+        {
+          "ms": 458.72,
+          "peak_mib": 24.77
+        }
+      ],
+      "median_ms": 502.46,
+      "median_peak_mib": 24.22
+    },
+    "explore": {
+      "args": [
+        "explore",
+        "--db",
+        "E:\\Proj\\KhonsuGraph\\scratch\\manual-20261103\\exposure",
+        "--from",
+        "shop/cidr:internet",
+        "--to",
+        "shop/123456789012:us-east-1:i-web1",
+        "--direction",
+        "both",
+        "--type",
+        "ALLOWS,PROTECTED_BY",
+        "--max-hops",
+        "2"
+      ],
+      "samples": [
+        {
+          "ms": 201.57,
+          "peak_mib": 23.98
+        },
+        {
+          "ms": 214.29,
+          "peak_mib": 23.96
+        },
+        {
+          "ms": 201.7,
+          "peak_mib": 23.71
+        }
+      ],
+      "median_ms": 201.7,
+      "median_peak_mib": 23.96
+    },
+    "evidence": {
+      "args": [
+        "evidence",
+        "--db",
+        "E:\\Proj\\KhonsuGraph\\scratch\\manual-20261103\\exposure",
+        "--node",
+        "shop/123456789012:us-east-1:i-web1"
+      ],
+      "samples": [
+        {
+          "ms": 209.29,
+          "peak_mib": 20.96
+        },
+        {
+          "ms": 188.4,
+          "peak_mib": 22.12
+        },
+        {
+          "ms": 202.85,
+          "peak_mib": 23.72
+        }
+      ],
+      "median_ms": 202.85,
+      "median_peak_mib": 22.12
+    }
+  }
+}

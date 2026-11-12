@@ -6,3 +6,6 @@ node_modules/
 .DS_Store
 # local graph databases used while developing
 /scratch/
+# review threads on a dashboard, and the lock taken to change them
+*.dash.comments.json
+*.dash.comments.json.lock

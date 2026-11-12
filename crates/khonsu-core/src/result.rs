@@ -94,7 +94,13 @@ pub fn value_to_json(value: &Value) -> Json {
         }
         Value::Uuid(uuid) => Json::String(uuid.to_string()),
         Value::List(items) => Json::Array(items.iter().map(value_to_json).collect()),
-        Value::Map(map) => Json::Object(map.iter().map(|(k, v)| (k.clone(), value_to_json(v))).collect()),
+        Value::Map(map) => {
+            // A node or relationship. HawDB has no way to take a property off
+            // one, and keeps a property set to null as a null; in a property
+            // graph that is a property it no longer has, so it is not listed.
+            let record = map.contains_key("_id");
+            Json::Object(map.iter().filter(|(_, v)| !(record && matches!(v, Value::Null))).map(|(k, v)| (k.clone(), value_to_json(v))).collect())
+        }
         // JSON has no temporal type; HawDB prints these in ISO 8601.
         Value::Date(_) | Value::LocalTime(_) | Value::LocalDateTime(_) | Value::DateTime(_) | Value::Duration(_) => {
             Json::String(value.to_string())
@@ -225,6 +231,20 @@ mod tests {
         assert_eq!(graph.edges[0].rel_type, "RUNS");
         assert_eq!(graph.edges[0].properties["since"], 1);
         assert_eq!(graph.dangling_endpoints(), vec![1]);
+    }
+
+    #[test]
+    fn a_property_set_to_null_is_not_one_the_record_has() {
+        let node = Value::Map(BTreeMap::from([
+            ("_id".to_string(), Value::Int(1)),
+            ("labels".to_string(), Value::List(vec![Value::String("Host".into())])),
+            ("name".to_string(), Value::String("web".into())),
+            ("region".to_string(), Value::Null),
+        ]));
+        assert_eq!(value_to_json(&node), serde_json::json!({"_id": 1, "labels": ["Host"], "name": "web"}));
+        // A map someone returned keeps what they put in it.
+        let map = Value::Map(BTreeMap::from([("region".to_string(), Value::Null)]));
+        assert_eq!(value_to_json(&map), serde_json::json!({"region": null}));
     }
 
     #[test]

@@ -229,10 +229,12 @@ fn normalize(value: &Value) -> Value {
 
 /// Without `khonsu_hash`, for graphs kept from before nodes had one: they gain it
 /// on their next sync, and it says nothing the other properties don't.
+const LATER: &[&str] = &["khonsu_hash", "khonsu_keys"];
+
 fn without_hash(value: &Value) -> Value {
     match value {
-        Value::Object(map) => Value::Object(map.iter().filter(|(key, _)| key.as_str() != "khonsu_hash").map(|(key, value)| (key.clone(), without_hash(value))).collect()),
-        Value::Array(items) => Value::Array(items.iter().filter(|item| item.as_str() != Some("khonsu_hash")).map(without_hash).collect()),
+        Value::Object(map) => Value::Object(map.iter().filter(|(key, _)| !LATER.contains(&key.as_str())).map(|(key, value)| (key.clone(), without_hash(value))).collect()),
+        Value::Array(items) => Value::Array(items.iter().filter(|item| !item.as_str().is_some_and(|name| LATER.contains(&name))).map(without_hash).collect()),
         other => other.clone(),
     }
 }

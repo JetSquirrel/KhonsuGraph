@@ -1,0 +1,144 @@
+{
+  "sync_single_run": {
+    "args": [
+      "plugin",
+      "sync",
+      "--source",
+      "manual-audit"
+    ],
+    "samples": [
+      {
+        "ms": 4241.08,
+        "peak_mib": 213.45
+      }
+    ],
+    "median_ms": 4241.08,
+    "median_peak_mib": 213.45
+  },
+  "audit-summary": {
+    "args": [
+      "analyze",
+      "summary",
+      "--db",
+      "E:\\Proj\\KhonsuGraph\\scratch\\manual-20261103\\audit"
+    ],
+    "samples": [
+      {
+        "ms": 2660.35,
+        "peak_mib": 178.89
+      },
+      {
+        "ms": 2600.82,
+        "peak_mib": 178.46
+      },
+      {
+        "ms": 2639.41,
+        "peak_mib": 173.4
+      }
+    ],
+    "median_ms": 2639.41,
+    "median_peak_mib": 178.46
+  },
+  "audit-count": {
+    "args": [
+      "query",
+      "--db",
+      "E:\\Proj\\KhonsuGraph\\scratch\\manual-20261103\\audit",
+      "--cypher",
+      "MATCH (n) RETURN count(n) AS c"
+    ],
+    "samples": [
+      {
+        "ms": 1153.39,
+        "peak_mib": 131.27
+      },
+      {
+        "ms": 1225.62,
+        "peak_mib": 131.68
+      },
+      {
+        "ms": 1200.52,
+        "peak_mib": 130.29
+      }
+    ],
+    "median_ms": 1200.52,
+    "median_peak_mib": 131.27
+  },
+  "audit-two-hop": {
+    "args": [
+      "query",
+      "--db",
+      "E:\\Proj\\KhonsuGraph\\scratch\\manual-20261103\\audit",
+      "--cypher",
+      "MATCH (a)-[]->(b)-[]->(c) RETURN count(*) AS c"
+    ],
+    "samples": [
+      {
+        "ms": 5470.26,
+        "peak_mib": 136.83
+      },
+      {
+        "ms": 5059.13,
+        "peak_mib": 132.46
+      },
+      {
+        "ms": 4901.99,
+        "peak_mib": 132.55
+      }
+    ],
+    "median_ms": 5059.13,
+    "median_peak_mib": 132.55
+  },
+  "audit-pagerank": {
+    "args": [
+      "analyze",
+      "pagerank",
+      "--db",
+      "E:\\Proj\\KhonsuGraph\\scratch\\manual-20261103\\audit",
+      "--type",
+      "TRUSTS",
+      "--top",
+      "10"
+    ],
+    "samples": [
+      {
+        "ms": 2206.56,
+        "peak_mib": 169.29
+      },
+      {
+        "ms": 2184.34,
+        "peak_mib": 170.68
+      },
+      {
+        "ms": 2265.4,
+        "peak_mib": 169.86
+      }
+    ],
+    "median_ms": 2206.56,
+    "median_peak_mib": 169.86
+  },
+  "audit-dashboard": {
+    "args": [
+      "check",
+      "E:\\Proj\\KhonsuGraph\\examples\\audit\\trust_network.dash",
+      "--db",
+      "E:\\Proj\\KhonsuGraph\\scratch\\manual-20261103\\audit"
+    ],
+    "samples": [
+      {
+        "ms": 1506.65,
+        "peak_mib": 133.43
+      },
+      {
+        "ms": 1550.44,
+        "peak_mib": 138.53
+      },
+      {
+        "ms": 1557.6,
+        "peak_mib": 141.97
+      }
+    ],
+    "median_ms": 1550.44,
+    "median_peak_mib": 138.53
+  }
+}

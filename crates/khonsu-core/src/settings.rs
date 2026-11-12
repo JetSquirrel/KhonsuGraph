@@ -2,13 +2,21 @@
 //! history, configured data sources and plugin approvals. Stored as JSON in the
 //! platform config directory (`KHONSU_CONFIG_DIR` overrides it). Secrets are
 //! never written here; see [`crate::secrets`].
+//!
+//! Reading for display is forgiving: a file that is missing or can't be read
+//! shows as its defaults. Changing is not: every change goes through
+//! [`crate::store::update`], which refuses a file it can't read rather than
+//! write the defaults over it, and locks the file across the read and the
+//! write so that the window and a command can't lose each other's change.
 
 use crate::engine::Language;
 use crate::merge::EdgePattern;
+use crate::store;
 use khonsu_plugin_protocol::{Permissions, SyncMode};
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value as Json};
+#[cfg(test)]
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
@@ -28,20 +36,19 @@ pub fn plugins_dir() -> PathBuf {
     config_dir().join("plugins")
 }
 
+/// For display: the defaults when the file is missing or can't be read.
 fn load<T: DeserializeOwned + Default>(name: &str) -> T {
-    fs::read(config_dir().join(name))
-        .ok()
-        .and_then(|bytes| serde_json::from_slice(&bytes).ok())
-        .unwrap_or_default()
+    store::read(&config_dir().join(name)).ok().flatten().unwrap_or_default()
 }
 
-fn save<T: Serialize>(name: &str, value: &T) -> io::Result<()> {
-    let dir = config_dir();
-    fs::create_dir_all(&dir)?;
-    let path = dir.join(name);
-    let tmp = path.with_extension("json.tmp");
-    fs::write(&tmp, serde_json::to_vec_pretty(value).map_err(io::Error::other)?)?;
-    fs::rename(tmp, path)
+/// Read, change and write `name` as one step. Refused, with the file left as
+/// it was, when what is there can't be read.
+fn update<T: DeserializeOwned + Serialize + Default>(name: &str, change: impl FnOnce(&mut T)) -> io::Result<T> {
+    store::update(&config_dir().join(name), |value: &mut T| {
+        change(value);
+        Ok::<_, io::Error>(())
+    })
+    .map(|((), value)| value)
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
@@ -68,8 +75,10 @@ impl Settings {
         load("settings.json")
     }
 
-    pub fn save(&self) -> io::Result<()> {
-        save("settings.json", self)
+    /// Changes the stored settings, starting from what is on disk now, and
+    /// returns them as written.
+    pub fn update(change: impl FnOnce(&mut Self)) -> io::Result<Self> {
+        update("settings.json", change)
     }
 
     /// A stored preference, read fresh from disk.
@@ -79,9 +88,10 @@ impl Settings {
 
     /// Stores one preference (a blocking read-modify-write of settings.json).
     pub fn set_value(key: &str, value: &str) -> io::Result<()> {
-        let mut settings = Self::load();
-        settings.values.insert(key.to_string(), value.to_string());
-        settings.save()
+        Self::update(|settings| {
+            settings.values.insert(key.to_string(), value.to_string());
+        })
+        .map(|_| ())
     }
 
     pub fn note_opened(&mut self, path: &Path) {
@@ -108,16 +118,19 @@ pub fn load_history() -> Vec<HistoryEntry> {
 
 /// Adds an entry (most recent first), replacing an identical earlier query.
 pub fn push_history(entry: HistoryEntry) -> io::Result<Vec<HistoryEntry>> {
-    let mut history = load_history();
-    history.retain(|h| !(h.text == entry.text && h.language == entry.language && h.graph == entry.graph));
-    history.insert(0, entry);
-    history.truncate(MAX_HISTORY);
-    save("history.json", &history)?;
-    Ok(history)
+    update("history.json", |history: &mut Vec<HistoryEntry>| {
+        history.retain(|h| !(h.text == entry.text && h.language == entry.language && h.graph == entry.graph));
+        history.insert(0, entry);
+        history.truncate(MAX_HISTORY);
+    })
 }
 
+/// Empties the history, whatever the file held: asked for by name, so a file
+/// that can't be read is no reason to refuse.
 pub fn clear_history() -> io::Result<()> {
-    save::<Vec<HistoryEntry>>("history.json", &Vec::new())
+    let path = config_dir().join("history.json");
+    let _lock = store::lock(&path)?;
+    store::write(&path, &Vec::<HistoryEntry>::new())
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -228,23 +241,22 @@ pub fn load_sources() -> Vec<Source> {
     load("sources.json")
 }
 
-pub fn save_sources(sources: &[Source]) -> io::Result<()> {
-    save("sources.json", &sources)
+/// The sources, or why they can't be read: for a caller about to act on
+/// there being none.
+pub fn try_load_sources() -> io::Result<Vec<Source>> {
+    Ok(store::read(&config_dir().join("sources.json"))?.unwrap_or_default())
 }
 
 pub fn upsert_source(source: Source) -> io::Result<()> {
-    let mut sources = load_sources();
-    match sources.iter_mut().find(|s| s.id == source.id) {
+    update("sources.json", |sources: &mut Vec<Source>| match sources.iter_mut().find(|s| s.id == source.id) {
         Some(existing) => *existing = source,
         None => sources.push(source),
-    }
-    save_sources(&sources)
+    })
+    .map(|_| ())
 }
 
 pub fn remove_source(id: &str) -> io::Result<()> {
-    let mut sources = load_sources();
-    sources.retain(|s| s.id != id);
-    save_sources(&sources)
+    update("sources.json", |sources: &mut Vec<Source>| sources.retain(|s| s.id != id)).map(|_| ())
 }
 
 /// Makes a source ID from a display name, unique among existing sources.
@@ -288,14 +300,42 @@ pub fn load_approvals() -> Vec<Approval> {
 }
 
 pub fn approve(plugin: &str, version: &str, permissions: &Permissions, identity: &str) -> io::Result<()> {
-    let mut approvals = load_approvals();
-    approvals.retain(|a| a.plugin != plugin);
-    approvals.push(Approval {
-        plugin: plugin.to_string(),
-        version: version.to_string(),
-        permissions: permissions.clone(),
-        identity: Some(identity.to_string()),
-        at: crate::util::unix_now(),
-    });
-    save("approvals.json", &approvals)
+    update("approvals.json", |approvals: &mut Vec<Approval>| {
+        approvals.retain(|a| a.plugin != plugin);
+        approvals.push(Approval {
+            plugin: plugin.to_string(),
+            version: version.to_string(),
+            permissions: permissions.clone(),
+            identity: Some(identity.to_string()),
+            at: crate::util::unix_now(),
+        });
+    })
+    .map(|_| ())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// #69: a settings file that didn't parse read as empty, and the next
+    /// `source add` wrote that emptiness, plus one source, over all the others.
+    #[test]
+    fn a_change_never_overwrites_a_file_that_cannot_be_read() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("sources.json");
+        let broken = "[{\"id\": \"shop\", \"name\": \"Shop\"";
+        fs::write(&path, broken).unwrap();
+        let add = |value: &mut Vec<Json>| value.push(Json::from("new"));
+        let error = store::update(&path, |value: &mut Vec<Json>| {
+            add(value);
+            Ok::<_, io::Error>(())
+        })
+        .unwrap_err();
+        assert!(error.to_string().contains("sources.json"), "{error}");
+        assert_eq!(fs::read_to_string(&path).unwrap(), broken, "the file is as it was");
+        // For display it reads as nothing, without touching the file.
+        let shown: Vec<Json> = store::read(&path).ok().flatten().unwrap_or_default();
+        assert!(shown.is_empty());
+        assert_eq!(fs::read_to_string(&path).unwrap(), broken);
+    }
 }

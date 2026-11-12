@@ -36,6 +36,12 @@ pub fn format_rfc3339(secs: u64) -> String {
     format!("{}T{}Z", &text[..10], &text[11..19])
 }
 
+/// SHA-256 of `bytes`, in hex.
+pub fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    Sha256::digest(bytes).iter().map(|byte| format!("{byte:02x}")).collect()
+}
+
 #[cfg(test)]
 mod tests {
     #[test]
