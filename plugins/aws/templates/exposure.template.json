@@ -1,0 +1,32 @@
+{
+  "format": "khonsu-template",
+  "version": 1,
+  "id": "aws.exposure",
+  "revision": "1",
+  "name": "AWS candidate exposure",
+  "question": "Which instances does this account's configuration leave potentially open to the internet, and through what?",
+  "claim": "Potential exposure worked out from configuration by the AWS plugin's rules. No finding shows that anything is reachable, and an instance without one is not shown to be safe.",
+  "requires": {
+    "node_labels": ["Instance", "SecurityGroup"],
+    "relationship_types": ["PROTECTED_BY"]
+  },
+  "parameters": [],
+  "steps": [
+    {
+      "id": "exposure",
+      "title": "What each exposure rule says about each instance",
+      "kind": "analysis",
+      "plugin": "aws",
+      "analysis": "exposure"
+    },
+    {
+      "id": "open_rules",
+      "title": "Security group rules that allow the whole internet",
+      "kind": "query",
+      "cypher": "MATCH (c:Cidr)-[a:ALLOWS]->(g:SecurityGroup) WHERE c.cidr = '0.0.0.0/0' OR c.cidr = '::/0' RETURN g AS security_group, a AS rule, a.protocol AS protocol, a.ports AS ports ORDER BY g.khonsu_id, a.khonsu_id",
+      "max_rows": 500,
+      "resource_column": "security_group",
+      "verdict": "open_to_internet"
+    }
+  ]
+}

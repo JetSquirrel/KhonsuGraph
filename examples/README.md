@@ -40,6 +40,19 @@ profile; the plugin only calls `describe`, `list` and `get` operations.
 [the investigation gates](../docs/investigation-gates.md) for what is tested and
 what a result does not prove.
 
+`sre/blast-radius.template.json` asks the blast-radius question of the same
+CSV demo as an [investigation template](../docs/templates.md), and keeps the
+answer in a report:
+
+```sh
+khonsu template run examples/sre/blast-radius.template.json --db graphs/infra \
+  -p service=infra/svc-db --report db.report.json
+khonsu report export db.report.json --markdown db.md
+```
+
+The AWS plugin ships `aws.exposure`, which runs on `graphs/aws` above:
+`khonsu template run plugins/aws/templates/exposure.template.json --db graphs/aws`.
+
 For findings that explain themselves, with the rule, fields and unknowns behind
 each, follow the walkthrough in [the exposure rules](../plugins/aws/README.md).
 

@@ -14,7 +14,9 @@ mod evidence;
 mod explore;
 mod investigation;
 mod plugin_analysis;
+mod report;
 mod snapshot;
+mod template;
 
 use clap::{Args, CommandFactory, Parser, Subcommand};
 use khonsu_core::plugin::{self, SyncEvent};
@@ -132,6 +134,16 @@ enum Command {
     Investigation {
         #[command(subcommand)]
         command: investigation::InvestigationCommand,
+    },
+    /// Investigation templates: a question asked the same way each time, read-only and within caps, with the records behind each finding.
+    Template {
+        #[command(subcommand)]
+        command: template::TemplateCommand,
+    },
+    /// A kept template run: verify it, export it for a person to read, review its findings, and make the run again.
+    Report {
+        #[command(subcommand)]
+        command: report::ReportCommand,
     },
     /// Keep a graph's records in a file, and say what changed between two. A record is only called removed when its source was read completely.
     Snapshot {
@@ -286,7 +298,7 @@ fn resolve_db(arg: &DbArg) -> Result<PathBuf, CliError> {
         .clone()
         .or_else(|| std::env::var_os("KHONSU_DB").map(PathBuf::from))
         .or_else(|| settings::Settings::load().last_opened)
-        .ok_or_else(|| CliError::new("usage", "no graph given: pass --db <dir> or set KHONSU_DB"))
+        .ok_or_else(|| CliError::usage("no graph given: pass --db <dir> or set KHONSU_DB"))
 }
 
 fn read_text(text: &QueryText) -> Result<(Language, String), CliError> {
@@ -303,7 +315,7 @@ fn read_text(text: &QueryText) -> Result<(Language, String), CliError> {
             let is_sql = path.extension().is_some_and(|e| e.eq_ignore_ascii_case("sql"));
             Ok((if is_sql { Language::Sql } else { Language::Cypher }, body))
         }
-        _ => Err(CliError::new("usage", "give a query with --cypher, --sql or --file")),
+        _ => Err(CliError::usage("give a query with --cypher, --sql or --file")),
     }
 }
 
@@ -312,7 +324,7 @@ fn key_values(pairs: &[String]) -> Result<Map<String, Value>, CliError> {
     for pair in pairs {
         let (key, value) = pair
             .split_once('=')
-            .ok_or_else(|| CliError::new("usage", format!("expected key=value, got {pair:?}")))?;
+            .ok_or_else(|| CliError::usage(format!("expected key=value, got {pair:?}")))?;
         let value = serde_json::from_str(value).unwrap_or_else(|_| Value::String(value.to_string()));
         map.insert(key.trim().trim_start_matches('$').to_string(), value);
     }
@@ -400,6 +412,8 @@ fn execute(command: Command) -> Result<Value, CliError> {
         Command::Explore(args) => explore::explore(args),
         Command::Evidence(args) => evidence::evidence(args),
         Command::Investigation { command } => investigation::investigation(command),
+        Command::Template { command } => template::template(command),
+        Command::Report { command } => report::report(command),
         Command::Snapshot { command } => snapshot::snapshot(command),
     }
 }
@@ -540,7 +554,7 @@ fn run_source(command: SourceCommand) -> Result<Value, CliError> {
             for (key, value) in values {
                 let field = describe.config.iter().find(|f| f.key == key);
                 match field {
-                    None => return Err(CliError::new("usage", format!("{plugin_id} has no config field {key:?}"))),
+                    None => return Err(CliError::usage(format!("{plugin_id} has no config field {key:?}"))),
                     Some(f) if f.secret => {
                         let text = value.as_str().map(str::to_string).unwrap_or_else(|| value.to_string());
                         secrets::set(&id, &key, &text).map_err(|e| CliError::new("keychain", e))?;
@@ -559,7 +573,7 @@ fn run_source(command: SourceCommand) -> Result<Value, CliError> {
             }
             for field in describe.config.iter().filter(|f| f.required) {
                 if !plain.contains_key(&field.key) && !secret_keys.contains(&field.key) {
-                    return Err(CliError::new("usage", format!("missing required config {:?}", field.key)));
+                    return Err(CliError::usage(format!("missing required config {:?}", field.key)));
                 }
             }
             let source = Source {

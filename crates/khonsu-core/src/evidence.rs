@@ -385,6 +385,16 @@ pub fn masked_properties(properties: &Map<String, Json>) -> Map<String, Json> {
     shown
 }
 
+/// `value` as it may be shown under `name`: masked whole when the name is a
+/// secret's, and otherwise wherever something in it looks like one. Also says
+/// whether anything was masked.
+pub(crate) fn masked(name: &str, value: &Json) -> (Json, bool) {
+    if is_secret_name(name) && !value.is_null() {
+        return (Json::String(REDACTED.into()), true);
+    }
+    mask_values(value)
+}
+
 fn is_secret_name(name: &str) -> bool {
     let plain = name.to_lowercase().replace(['_', '-'], "");
     SECRET_NAMES.iter().any(|secret| plain.contains(secret))
@@ -420,10 +430,42 @@ fn mask_values(value: &Json) -> (Json, bool) {
 
 /// Key material by its shape: AWS access key IDs and PEM blocks.
 fn looks_like_a_secret(text: &str) -> bool {
-    let aws_key = (text.starts_with("AKIA") || text.starts_with("ASIA"))
-        && text.len() == 20
-        && text.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit());
-    aws_key || text.contains("-----BEGIN")
+    is_aws_key(text) || text.contains(PEM_START)
+}
+
+const PEM_START: &str = "-----BEGIN";
+
+fn is_aws_key(text: &str) -> bool {
+    (text.starts_with("AKIA") || text.starts_with("ASIA")) && text.len() == 20 && text.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit())
+}
+
+/// Free text, such as a note or an error message, with key material in it
+/// masked: an AWS access key ID among other words, and everything from the
+/// start of a PEM block on.
+pub fn scrub(text: &str) -> String {
+    let (kept, cut) = match text.find(PEM_START) {
+        Some(at) => (&text[..at], true),
+        None => (text, false),
+    };
+    let mut out = String::with_capacity(kept.len());
+    let mut word = String::new();
+    let flush = |word: &mut String, out: &mut String| {
+        out.push_str(if is_aws_key(word) { REDACTED } else { word });
+        word.clear();
+    };
+    for c in kept.chars() {
+        if c.is_ascii_alphanumeric() {
+            word.push(c);
+        } else {
+            flush(&mut word, &mut out);
+            out.push(c);
+        }
+    }
+    flush(&mut word, &mut out);
+    if cut {
+        out.push_str(REDACTED);
+    }
+    out
 }
 
 pub(crate) use khonsu_plugin_protocol::fnv1a;
@@ -457,6 +499,16 @@ mod tests {
         assert_eq!(record.evidence, Field::Unknown);
         assert_eq!(Confidence::parse("已确认"), Some(Confidence::Confirmed));
         assert_eq!(Confidence::parse(" 未确认 "), Some(Confidence::Unconfirmed));
+    }
+
+    #[test]
+    fn free_text_loses_key_material_and_nothing_else() {
+        assert_eq!(scrub("used AKIAIOSFODNN7EXAMPLE, then left"), "used [redacted], then left");
+        assert_eq!(scrub("key: -----BEGIN RSA PRIVATE KEY-----\nMIIE..."), "key: [redacted]");
+        assert_eq!(scrub("中文 and AKIA are fine"), "中文 and AKIA are fine");
+        assert_eq!(masked("api_token", &json!("abc")), (json!("[redacted]"), true));
+        assert_eq!(masked("name", &json!({"password": "x", "port": 80})), (json!({"password": "[redacted]", "port": 80}), true));
+        assert_eq!(masked("name", &json!("web")), (json!("web"), false));
     }
 
     #[test]

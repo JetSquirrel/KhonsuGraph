@@ -1,0 +1,51 @@
+{
+  "format": "khonsu-template",
+  "version": 1,
+  "id": "blast-radius",
+  "revision": "1",
+  "name": "Blast radius of a service",
+  "question": "If this service fails, which services depend on it, what runs it, and which alerts fired on it?",
+  "claim": "What the graph records as depending on the service, directly or through other services. It is a dependency in the data, not a measurement of impact: a caller with a fallback still appears, and a dependency nobody recorded does not.",
+  "requires": {
+    "node_labels": ["Service"],
+    "relationship_types": ["DEPENDS_ON"]
+  },
+  "parameters": [
+    { "name": "service", "kind": "node", "description": "The service that fails: its khonsu_id." },
+    { "name": "hops", "kind": "integer", "description": "How many DEPENDS_ON steps to follow back.", "default": 4 }
+  ],
+  "steps": [
+    {
+      "id": "dependents",
+      "title": "Services that depend on it, directly or through others",
+      "kind": "walk",
+      "from": ["$service"],
+      "direction": "in",
+      "types": ["DEPENDS_ON"],
+      "max_hops": "$hops",
+      "max_nodes": 500,
+      "max_edges": 2000,
+      "labels": ["Service"],
+      "verdict": "depends_on_it",
+      "assumptions": ["Every DEPENDS_ON relationship is a hard dependency: the data does not say which callers degrade and which fail."]
+    },
+    {
+      "id": "runs_on",
+      "title": "What runs the service",
+      "kind": "query",
+      "cypher": "MATCH (h)-[r:RUNS]->(s {khonsu_id: $service}) RETURN h AS host, r AS runs ORDER BY h.khonsu_id",
+      "max_rows": 200,
+      "resource_column": "host",
+      "verdict": "runs_it"
+    },
+    {
+      "id": "alerts",
+      "title": "Alerts that fired on the service or on what runs it",
+      "kind": "query",
+      "cypher": "MATCH (a:Alert)-[f:FIRED_ON]->(t) WHERE t.khonsu_id = $service OR (t)-[:RUNS]->({khonsu_id: $service}) RETURN a AS alert, f AS fired_on, t.khonsu_id AS target ORDER BY a.khonsu_id",
+      "max_rows": 200,
+      "resource_column": "alert",
+      "verdict": "fired_nearby"
+    }
+  ]
+}
