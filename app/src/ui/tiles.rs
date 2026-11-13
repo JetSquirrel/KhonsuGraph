@@ -253,9 +253,9 @@ fn fetch(template: &str, key: TileKey) -> anyhow::Result<Vec<u8>> {
         ureq::Agent::config_builder()
             .timeout_global(Some(Duration::from_secs(15)))
             .user_agent(concat!(
-                "DuckLocal/",
+                "KhonsuGraph/",
                 env!("CARGO_PKG_VERSION"),
-                " (+https://ducklocal.app)"
+                " (+https://github.com/JetSquirrel/KhonsuGraph)"
             ))
             .build()
             .into()
@@ -278,7 +278,7 @@ pub(crate) fn tile_url(template: &str, key: TileKey) -> String {
 /// `<data>/tiles/<server>/<z>/<x>/<y>`: one directory per tile server, so a
 /// changed `map_tile_url` never draws the old server's tiles.
 fn cache_path(template: &str, key: TileKey) -> Option<PathBuf> {
-    let dirs = directories::ProjectDirs::from("", "", "DuckLocal")?;
+    let dirs = directories::ProjectDirs::from("", "", "KhonsuGraph")?;
     Some(
         dirs.cache_dir()
             .join("tiles")

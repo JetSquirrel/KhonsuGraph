@@ -26,6 +26,10 @@ for id in $PLUGINS; do
   cp "$BIN/khonsu-plugin-$id" "$APP/Contents/Resources/plugins/$id/"
   chmod +x "$APP/Contents/Resources/plugins/$id/khonsu-plugin-$id"
   cp "plugins/$id/khonsu-plugin.json" "$APP/Contents/Resources/plugins/$id/"
+  # Investigation templates a plugin ships: files that are read, never run.
+  if [ -d "plugins/$id/templates" ]; then
+    cp -R "plugins/$id/templates" "$APP/Contents/Resources/plugins/$id/"
+  fi
 done
 
 cp app/assets/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"

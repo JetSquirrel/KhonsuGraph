@@ -16,6 +16,8 @@ foreach ($id in "csv", "aws", "neo4j") {
   $target = "$dir/plugins/$id"
   New-Item -ItemType Directory $target | Out-Null
   Copy-Item "$Bin/khonsu-plugin-$id.exe", "plugins/$id/khonsu-plugin.json" $target
+  # Investigation templates a plugin ships: files that are read, never run.
+  if (Test-Path "plugins/$id/templates") { Copy-Item -Recurse "plugins/$id/templates" $target }
 }
 if (Test-Path $Out) { Remove-Item $Out }
 Compress-Archive -Path $dir -DestinationPath $Out -CompressionLevel Optimal

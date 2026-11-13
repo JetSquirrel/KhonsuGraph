@@ -19,7 +19,12 @@ Protocol version 1 is experimental and may change before 1.0.
 folders/
   khonsu-plugin.json   # the manifest, read without running anything
   plugin.py            # whatever the manifest's entry runs
+  templates/           # optional: investigation templates, *.template.json
 ```
+
+A plugin can ship [investigation templates](templates.md) in `templates/`.
+They are files KhonsuGraph reads, and nothing in them is run as a program; like
+every file in the folder, changing one means the plugin needs approval again.
 
 ```json
 {

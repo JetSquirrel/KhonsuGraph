@@ -6,6 +6,11 @@ resource types are planned. KhonsuGraph's core and window don't depend on it.
 
 ## Exposure rules
 
+`templates/exposure.template.json` runs these rules as an
+[investigation template](../../docs/templates.md), `aws.exposure`, along with a
+query for security group rules open to the whole internet, and
+`--report` keeps the answer in [a report](../../docs/reports.md).
+
 `khonsu plugin analyze aws exposure` says which instances an account's
 configuration leaves potentially open to the internet, and shows how it decided.
 It reads the graph only. It sends no traffic and needs no AWS access once the
@@ -44,7 +49,7 @@ Every instance gets one finding.
 |---|---|---|
 | `instance-running` | `describe-instances`: `State.Name` | No state was supplied |
 | `public-address` | `describe-instances`: `PublicIpAddress`, `Ipv6Address` | Never: AWS omits the field when there is no address |
-| `open-inbound-rule` | `describe-security-groups`: `IpPermissions[]` from `0.0.0.0/0` or `::/0` | No security groups are recorded, since every instance has one |
+| `open-inbound-rule` | `describe-security-groups`: `IpPermissions[]` from `0.0.0.0/0` or `::/0` | No security groups are recorded, since every instance has one, or no rule is from the internet and one is from a managed prefix list, whose entries are not read |
 | `internet-route` | `describe-route-tables`: `Routes[]`, `Associations[]` | No subnet or route table is recorded, or only a narrower route leads to a gateway |
 
 A subnet with no route table of its own uses its VPC's main table. A route counts

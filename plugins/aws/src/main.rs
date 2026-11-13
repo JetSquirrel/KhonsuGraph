@@ -73,7 +73,7 @@ fn describe() -> Describe {
             commands: vec!["aws".into()],
             notes: vec!["Read-only: ec2:Describe*, elasticloadbalancing:Describe*, iam:List*, sts:GetCallerIdentity".into()],
         },
-        labels: ["Account", "Region", "Vpc", "Subnet", "SecurityGroup", "Cidr", "Instance", "InternetGateway", "RouteTable", "LoadBalancer", "TargetGroup", "Role"]
+        labels: ["Account", "Region", "Vpc", "Subnet", "SecurityGroup", "Cidr", "PrefixList", "Instance", "InternetGateway", "RouteTable", "LoadBalancer", "TargetGroup", "Role"]
             .map(String::from)
             .to_vec(),
         relationship_types: ["IN_REGION", "IN_VPC", "IN_SUBNET", "PROTECTED_BY", "ALLOWS", "ATTACHED_TO", "ASSUMES", "FORWARDS_TO", "ROUTES_TO", "USES_ROUTE_TABLE", "ROUTES_VIA", "OWNS"]
@@ -424,6 +424,15 @@ fn collect<W: Write>(source: &Source, regions: &[String], out: &mut Emitter<W>) 
                         g.node(format!("cidr:{cidr}"), "Cidr", props(&[("name", Some(json!(cidr))), ("cidr", Some(json!(cidr)))]))
                     };
                     with_rule(source_id, &mut g);
+                }
+                // A managed prefix list's addresses are not read: a rule from
+                // one is recorded so the exposure rules can say it is unknown
+                // rather than take it for no rule at all.
+                for list in items(permission, "PrefixListIds") {
+                    if let Some(list_id) = s(list, "PrefixListId") {
+                        let source_id = g.node(scoped(list_id), "PrefixList", props(&[("name", Some(json!(list_id))), ("prefix_list_id", Some(json!(list_id)))]));
+                        with_rule(source_id, &mut g);
+                    }
                 }
                 for pair in items(permission, "UserIdGroupPairs") {
                     if let Some(other) = s(pair, "GroupId") {

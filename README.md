@@ -19,7 +19,7 @@ HawDB product.
 | `plugins/aws` | The official AWS plugin: VPCs, subnets, security groups, instances, load balancers and IAM roles, read through the `aws` CLI |
 | `plugins/neo4j` | The official Neo4j plugin: copies a Neo4j database, such as one [Cartography](https://github.com/cartography-cncf/cartography) fills, over its HTTP API |
 | `skills/khonsugraph` | The agent skill: how to query, author dashboards and review them with a person |
-| `examples/` | Five user-story dashboards on public datasets, the scripts that build their graphs, an AWS exposure dashboard and a Python plugin |
+| `examples/` | Five user-story dashboards on public datasets, the scripts that build their graphs, an AWS exposure dashboard, a blast-radius investigation template and a Python plugin |
 
 ## Build
 
@@ -66,6 +66,27 @@ khonsu analyze summary --db graphs/audit
 khonsu analyze pagerank --db graphs/audit --type TRUSTS --top 10
 khonsu analyze communities --db graphs/investigation
 ```
+
+## Investigations
+
+`khonsu explore` follows relationships from a node within caps, `khonsu
+evidence` says what supports a record, `khonsu investigation` saves a line of
+inquiry and reopens it against the graph as it is now, and `khonsu snapshot`
+says what changed between two points. See [saved investigations](docs/investigations.md),
+[snapshots](docs/snapshots.md) and [what the gates test](docs/investigation-gates.md).
+
+A template asks a question the same way each time, read-only and within caps,
+and a report keeps the answer so a reviewer can check it and run it again:
+
+```sh
+khonsu template run examples/sre/blast-radius.template.json --db graphs/infra \
+  -p service=infra/svc-db --report db.report.json
+khonsu report export db.report.json --markdown db.md
+khonsu report replay db.report.json
+```
+
+Every finding names the records behind it, the caps that applied and what was
+missing. See [templates](docs/templates.md) and [reports](docs/reports.md).
 
 ## HawDB 0.29.0 notes
 

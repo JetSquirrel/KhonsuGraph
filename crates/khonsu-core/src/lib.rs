@@ -14,12 +14,14 @@ pub mod merge;
 pub mod plugin;
 pub mod plugin_analysis;
 pub mod rebuild;
+pub mod report;
 pub mod result;
 pub mod schema;
 pub mod secrets;
 pub mod settings;
 pub mod snapshot;
 pub mod store;
+pub mod template;
 pub mod util;
 
 pub use engine::{normalize_path, AccessMode, Graph, Language, OpenError, QueryError, QueryOptions};

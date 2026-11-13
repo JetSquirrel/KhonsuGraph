@@ -28,6 +28,9 @@ pub const VERSION: u32 = 1;
 pub const EXTENSION: &str = "investigation";
 /// Above this many nodes or relationships a graph is counted, not hashed.
 const MAX_HASHED_RECORDS: usize = 200_000;
+/// Records read per query when reading a whole graph, well under the engine's
+/// 100,000-row ceiling.
+const READ_PAGE: usize = 20_000;
 
 /// A record, by its stable ID when it has one.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -254,12 +257,33 @@ impl Graph {
     }
 
     /// Every node and relationship. The caller has checked how many there are.
+    /// Read a page at a time by internal ID, so a graph larger than the
+    /// engine's read ceiling (100,000 rows) is read whole.
     pub(crate) fn read_all_records(&mut self) -> Result<GraphData, QueryError> {
-        let params = BTreeMap::new();
+        self.read_all_records_by(READ_PAGE)
+    }
+
+    fn read_all_records_by(&mut self, page: usize) -> Result<GraphData, QueryError> {
         let mut collector = GraphCollector::default();
-        for text in ["MATCH (n) RETURN n", "MATCH ()-[r]->() RETURN r"] {
-            for row in self.raw_cypher(text, &params)? {
-                row.iter().for_each(|value| collector.visit(&value_to_json(value)));
+        for (text, column) in [
+            ("MATCH (n) WHERE id(n) >= $from RETURN n, id(n) AS k ORDER BY k LIMIT $page", "n"),
+            ("MATCH ()-[r]->() WHERE id(r) >= $from RETURN r, id(r) AS k ORDER BY k LIMIT $page", "r"),
+        ] {
+            let mut from = 0_i64;
+            loop {
+                let params = BTreeMap::from([("from".to_string(), Value::Int(from)), ("page".to_string(), Value::Int(page as i64))]);
+                let rows = self.raw_cypher_named(text, &params)?;
+                for row in &rows {
+                    if let Some(record) = row.get(column) {
+                        collector.visit(&value_to_json(record));
+                    }
+                    if let Some(key) = row.get("k").map(value_to_json).and_then(|key| key.as_i64()) {
+                        from = from.max(key + 1);
+                    }
+                }
+                if rows.len() < page {
+                    break;
+                }
             }
         }
         Ok(collector.finish().unwrap_or_default())
@@ -711,6 +735,34 @@ mod tests {
         assert_eq!(compare(&print(5, None, &[]), &print(5, None, &[])).0, GraphState::NotCompared);
         assert_eq!(compare(&a, &print(5, None, &[])).0, GraphState::NotCompared);
         assert_eq!(compare(&print(5, None, &[]), &print(6, None, &[])).0, GraphState::Changed);
+    }
+
+    #[test]
+    fn a_whole_graph_is_read_in_pages_without_losing_or_repeating_a_record() {
+        let base = std::env::var_os("KHONSU_TEST_DIR").map(PathBuf::from).unwrap_or_else(|| std::env::current_dir().unwrap());
+        std::fs::create_dir_all(&base).unwrap();
+        let dir = tempfile::tempdir_in(base).unwrap();
+        let mut graph = Graph::create(dir.path().join("graph"), "test").unwrap();
+        let none = serde_json::Map::new();
+        let mut run = |text: String| {
+            graph.run(crate::Language::Cypher, &text, &none, crate::QueryOptions::default()).unwrap();
+        };
+        // Ten of each, read three at a time: the last page is part full.
+        let count = 10;
+        for i in 1..=count {
+            run(format!("CREATE (:N {{i: {i}}})"));
+        }
+        for i in 1..count {
+            run(format!("MATCH (a:N {{i: {i}}}), (b:N {{i: {}}}) CREATE (a)-[:NEXT]->(b)", i + 1));
+        }
+        run("CREATE (:N {i: 0})".into());
+        let count = count + 1;
+        let data = graph.read_all_records_by(3).unwrap();
+        assert_eq!(data.nodes.len(), count);
+        assert_eq!(data.edges.len(), count - 2);
+        assert_eq!(data, graph.read_all_records().unwrap(), "pages give what one read does");
+        let ids: BTreeSet<i64> = data.nodes.iter().map(|node| node.id).collect();
+        assert_eq!(ids.len(), count);
     }
 
     #[test]

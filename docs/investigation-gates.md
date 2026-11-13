@@ -6,6 +6,7 @@ as part of `cargo test --workspace`. To run it alone:
 
 ```sh
 cargo test --locked --workspace --test investigation
+cargo test --locked --workspace --test templates
 ```
 
 ## What is checked
@@ -27,6 +28,8 @@ cargo test --locked --workspace --test investigation
 | Sync coverage | A scripted plugin fails midway, stops without `done`, reports gaps, sends duplicates and missing endpoints, and moves its cursor; none of it removes records or moves the cursor unless the sync was complete |
 | Snapshots and diff | Two kept snapshots give a fixed diff; the AWS and CSV examples report what changed, a no-op re-sync gives none, and incomplete coverage is never called a removal. See [snapshots](snapshots.md) |
 | Plugin safety | A changed program, file or manifest needs approval again; entries and IDs can't leave the plugin folder; a bad reinstall keeps the old plugin; oversized and invalid output end a sync with records intact. See [plugin security](plugin-security.md) |
+| Templates | `app/tests/templates.rs` runs the two shipped templates on the offline AWS and CSV examples: two graphs of the same data give the same finding IDs; a graph without what a template needs is refused; a step that writes, an unsupported pattern and a missing column each fail by name while the rest run, and nothing is written; row, hop and finding caps are reported. `crates/khonsu-core/tests/template.rs` covers cancellation and a source not read completely. See [templates](templates.md) |
+| Reports | A report verifies, takes notes and reviews, exports Markdown with observations, derived findings, hypotheses and conclusions apart, replays to the same result ID on unchanged data and names what moved on changed data, hands a finding's path to the window as a saved investigation, and is refused once edited by hand. Passwords, access keys and key blocks stay out of the file and the page. See [reports](reports.md) |
 | HawDB upgrades | `app/tests/fixtures/graph-hawdb-*.zip` must still give the golden answers and fingerprint, and accept a write |
 
 Timings, sync times, paths, line numbers and plugin versions are left out of the

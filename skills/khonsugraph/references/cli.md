@@ -125,6 +125,47 @@ khonsu investigation reopen web.investigation
 
 Errors have kind `graph_missing`, `not_found`, `invalid` or `too_new`. See `docs/investigations.md`.
 
+## Templates
+
+```sh
+khonsu template list                              # your templates folder and each plugin's; --dir adds a folder
+khonsu template check TEMPLATE --db DIR           # is the file usable, does the graph hold what it needs, may its plugins run
+khonsu template run TEMPLATE --db DIR -p name=value --report FILE.report.json --snapshot FILE.snapshot.json
+```
+
+`TEMPLATE` is a file or an ID from `list` (`blast-radius` in `examples/sre`, `aws.exposure` with the AWS plugin). `run` takes `--max-findings` (200), `--timeout` seconds (300; stops further steps from starting) and `--force` to replace the report and snapshot files. It opens the graph read-only and runs queries in read transactions: a template cannot write.
+
+`check` gives `{file, valid, template: {id, revision, name, question, claim, digest, requires, plugins, parameters, steps}, plugins: [{plugin, ready, reason?}], graph: {path, supported, missing}, ready}`.
+
+| Run field | Meaning |
+|---|---|
+| `complete`, `gaps` | False, with reasons in words, when a step failed or was cancelled, a cap was reached, findings were cut, or a source's last sync wasn't complete. A missing finding then means nothing |
+| `failed`, `cancelled` | Steps that could not run (exit 1 when any), and whether the run was stopped |
+| `steps` | `{id, kind, title, status: ok\|failed\|cancelled, caps, limits, findings, error: {kind, message}?, warnings?, started_at, elapsed_ms}` |
+| `template`, `parameters`, `fingerprint`, `sources` | What ran, with what, on what the graph held, and each source's last sync |
+| `summary`, `max_findings`, `truncated` | Findings by step, the cap, and how many it left out |
+| `findings` | `{finding_id, step, rule_id, verdict, class: observation\|derived, resource, resource_name, summary, values?, path?: {evidence_id, derivation, confidence, claim, hops, supporting, refs}, conditions?, unknowns?, assumptions?, evidence_ids}`. `verdict`, `resource` and `resource_name` are `{"status":"known","value":…}` or `{"status":"unknown"}` |
+| `evidence` | Every record a finding cites, as `khonsu evidence` gives it |
+| `report` | With `--report`: `{saved, result_id, digest, snapshot}` |
+
+Errors: `unsupported_source` (the graph lacks `detail.missing`; nothing ran), `not_found` (no such template, or a node parameter names no node), `invalid` or `too_new` (the template file), `exists` (a report or snapshot file, without `--force`), and exit 2 with kind `usage` for a missing, unknown or mistyped parameter. A step's own failure is in `steps[].error` (`read_only` for a query that writes, `parse` or `semantic` for one HawDB cannot run, `plugin` for an analysis). See `docs/templates.md`.
+
+## Reports
+
+```sh
+khonsu report verify FILE.report.json             # digest, result ID, cited records; exit 1 and `problems` when it fails
+khonsu report export FILE.report.json --markdown FILE.md
+khonsu report export FILE.report.json --investigation F.investigation --finding FINDING_ID   # then: khonsu open F.investigation
+khonsu report replay FILE.report.json             # -d for another graph, -p to change or re-give a parameter
+khonsu report note FILE.report.json --hypothesis "…" --by NAME [--finding FINDING_ID]
+khonsu report note FILE.report.json --conclusion "…" --by NAME
+khonsu report review FILE.report.json --finding FINDING_ID --state confirmed|rejected|needs-more --by NAME [--note "…"]
+```
+
+A report is `{format: "khonsu-report", version, result_id, created_at, created_by, template, run, snapshot?, actions, notes, reviews, digest}`. `result_id` is the same for the same template, parameters and graph contents. `actions` lists the run, each step and every note and review in order: `{seq, at, actor, action: run|step|note|review, id, outcome, caps?, error?}`.
+
+`replay` gives `{graph_state, differences, saved_result_id, result_id, same, unchanged, added, removed, run, verified, problems}` and does not change the report. `note` and `review` fail with kind `invalid` on a file that does not verify, and `not_found` for a finding that is not in it. `--investigation` fails with kind `invalid` for a finding with no path. Hypotheses are anyone's; reviews and conclusions are a person's. See `docs/reports.md`.
+
 ## Snapshots and diff
 
 ```sh

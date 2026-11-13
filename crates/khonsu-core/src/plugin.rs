@@ -34,6 +34,8 @@ const MAX_STDERR_LINE: usize = 4096;
 const MAX_OUTPUT_BYTES: u64 = 16 * 1024 * 1024;
 /// How long `describe` may take: it says what a plugin is, and needs no network.
 const DESCRIBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+/// How long a connection test may take: long enough for a slow login.
+const TEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 /// How long an `analyze` may take: it works on what it was sent, and needs no network.
 pub const ANALYZE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 /// The most findings an `analyze` may send. Past this it fails rather than filling memory.
@@ -111,6 +113,20 @@ pub enum PluginError {
     Other(String),
 }
 
+/// Where Cargo put the plugins when `dir` holds a test binary: the profile
+/// folder, `target/<profile>`. A test binary is in `target/<profile>/deps`,
+/// or, with newer Cargo's build directory layout, in
+/// `target/<profile>/build/<package>/<hash>/out`.
+fn test_profile_dir(dir: &Path) -> Option<PathBuf> {
+    if dir.ends_with("deps") {
+        return dir.parent().map(Path::to_path_buf);
+    }
+    if dir.ends_with("out") {
+        return dir.ancestors().skip(1).find(|at| at.ends_with("build")).and_then(Path::parent).map(Path::to_path_buf);
+    }
+    None
+}
+
 /// Directories searched for built-in plugins, nearest first.
 fn builtin_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
@@ -126,12 +142,7 @@ fn builtin_dirs() -> Vec<PathBuf> {
     for exe in exes {
         if let Some(dir) = exe.parent() {
             dirs.push(dir.to_path_buf());
-            // Test binaries live in target/<profile>/deps.
-            if dir.ends_with("deps") {
-                if let Some(parent) = dir.parent() {
-                    dirs.push(parent.to_path_buf());
-                }
-            }
+            dirs.extend(test_profile_dir(dir));
             // macOS bundles keep extra binaries in Contents/Resources.
             dirs.push(dir.join("../Resources"));
         }
@@ -659,12 +670,28 @@ fn spawn(plugin: &PluginInfo, operation: &str, request: &Request) -> Result<Chil
 }
 
 pub fn test(plugin: &PluginInfo, request: &Request) -> Result<(bool, String), PluginError> {
+    test_within(plugin, request, TEST_TIMEOUT)
+}
+
+fn test_within(plugin: &PluginInfo, request: &Request, timeout: std::time::Duration) -> Result<(bool, String), PluginError> {
     let mut child = spawn(plugin, "test", request)?;
     let stderr = drain_stderr(&mut child);
-    let mut stdout = Vec::new();
-    child.stdout.take().expect("stdout is piped").take(MAX_OUTPUT_BYTES).read_to_end(&mut stdout)?;
+    let out = child.stdout.take().expect("stdout is piped");
+    let (tx, rx) = std::sync::mpsc::channel();
+    thread::spawn(move || {
+        let mut text = Vec::new();
+        let read = out.take(MAX_OUTPUT_BYTES).read_to_end(&mut text);
+        let _ = tx.send(read.map(|_| text));
+    });
+    // A plugin that never answers, or keeps its output open after it has, is
+    // ended rather than waited on.
+    let read = rx.recv_timeout(timeout);
     let _ = child.kill();
-    child.wait()?;
+    let _ = child.wait();
+    let Ok(read) = read else {
+        return Err(failure(plugin, format!("test took more than {} seconds", timeout.as_secs()), &stderr));
+    };
+    let stdout = read?;
     for line in String::from_utf8_lossy(&stdout).lines() {
         match parse_line(line) {
             Some(Ok(Message::TestResult { ok, message })) => return Ok((ok, scrub(&message, &request.secrets))),
@@ -1162,6 +1189,16 @@ fn scrub_error(error: PluginError, secrets: &serde_json::Map<String, serde_json:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_test_binary_finds_the_plugins_in_either_cargo_layout() {
+        let profile = Path::new("target").join("debug");
+        assert_eq!(test_profile_dir(&profile.join("deps")), Some(profile.clone()));
+        let out = profile.join("build").join("khonsu-core").join("0c8cc84fd4fe06a9").join("out");
+        assert_eq!(test_profile_dir(&out), Some(profile.clone()));
+        assert_eq!(test_profile_dir(&profile), None);
+        assert_eq!(test_profile_dir(&Path::new("Applications").join("out")), None);
+    }
 
     #[test]
     fn an_error_a_plugin_caused_is_masked_too() {
