@@ -11,14 +11,13 @@
 //! }
 //! ```
 //!
-//! `$host` is a predicate. In SQL it is `("name" = 'web-1')` while a value
-//! is picked and `TRUE` while none is, as in DuckLocal. In Cypher a picked
-//! filter is `(h.name = 'web-1')` and an unpicked one is taken out of its `WHERE` together with the `AND` that
-//! joins it — and the `WHERE` itself when it was the only condition. For that
-//! to stay well formed a Cypher placeholder must be one whole condition of a
-//! `WHERE`, joined by `AND` (`cypher_placement_problems` says where not).
-//! Either way a dashboard with nothing picked runs exactly the statement it
-//! would without the filter.
+//! `$host` is a predicate, true for every row while nothing is picked, as in
+//! DuckLocal: write it anywhere a condition goes in a `WHERE`, with `AND`,
+//! `OR`, `NOT` or parentheses. Picked, it compares what the filter names —
+//! `("name" = 'web-1')` in SQL, `(h.name = 'web-1')` in Cypher, from the
+//! filter's `match`. Unpicked, it is `true` in Cypher; HawDB's SQL takes no
+//! `TRUE`, so there it is `("name" IS NULL OR "name" IS NOT NULL)`, on the
+//! column a pick compares, which the query must therefore have.
 //!
 //! The picking plot's own queries see nothing picked: the filter narrows
 //! everything else, never the plot it is picked on — otherwise one click
@@ -176,17 +175,42 @@ pub fn placeholders(sql: &str) -> Vec<Placeholder> {
     found
 }
 
+/// What a filter compares in a query when nothing is picked: the column its
+/// plot picks. Only SQL needs it (see `unpicked`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Target {
+    pub column: String,
+}
+
+/// An unpicked filter's predicate: true for every row. Cypher has `true`;
+/// HawDB's SQL accepts no `TRUE` in a predicate, so it says the same of the
+/// column a pick compares.
+fn unpicked(target: &Target, language: Language) -> String {
+    match language {
+        Language::Cypher => "true".to_string(),
+        Language::Sql => {
+            let column = format!("\"{}\"", target.column.replace('"', "\"\""));
+            format!("({column} IS NULL OR {column} IS NOT NULL)")
+        }
+    }
+}
+
 /// `text` with each `$name` replaced by the picked value's predicate when
-/// `picks` has one for that name. An unpicked one is taken out with the
-/// `AND` that joins it, and a `WHERE` left with no condition goes too: HawDB's
-/// SQL accepts no `TRUE` in a predicate (still so in 0.27; its Cypher does).
-pub fn apply(text: &str, language: Language, picks: &HashMap<String, Pick>) -> String {
+/// `picks` has one for that name, and else by its filter's always-true one
+/// (`targets` names each filter's column). A `$name` with neither, with no
+/// filter block (the spec's mistake, said elsewhere), is taken out with the
+/// `AND` that joins it.
+pub fn apply(text: &str, language: Language, picks: &HashMap<String, Pick>, targets: &HashMap<String, Target>) -> String {
     // Work from the last placeholder back, so earlier ranges stay valid.
     let mut out = text.to_string();
     for placeholder in placeholders(text).into_iter().rev() {
         let range = placeholder.range.clone();
         if let Some(pick) = picks.get(&placeholder.name) {
             out.replace_range(range, &pick.predicate(language));
+            continue;
+        }
+        if let Some(target) = targets.get(&placeholder.name) {
+            out.replace_range(range, &unpicked(target, language));
             continue;
         }
         // Drop `AND $x` when something precedes it, else `$x AND`, else the
@@ -212,8 +236,8 @@ fn cut(out: &mut String, start: usize, end: usize) {
 }
 
 /// The statement as it runs with nothing picked: what `check` judges.
-pub fn neutral(text: &str, language: Language) -> String {
-    apply(text, language, &HashMap::new())
+pub fn neutral(text: &str, language: Language, targets: &HashMap<String, Target>) -> String {
+    apply(text, language, &HashMap::new(), targets)
 }
 
 /// Words that end a `WHERE` clause.
@@ -253,29 +277,31 @@ fn word_after(text: &str, at: usize) -> Option<(usize, String)> {
     (len > 0).then(|| (start + len, text[start..start + len].to_ascii_uppercase()))
 }
 
-/// Where a placeholder cannot be taken out cleanly: it must stand as one
-/// condition of a `WHERE`, joined to the others by `AND`.
+/// Where a placeholder is not a condition: it stands for a predicate, so it
+/// must be in a `WHERE` (with `AND`, `OR`, `NOT` or parentheses as needed).
 pub fn placement_problems(text: &str, language: Language) -> Vec<String> {
     let mut problems = Vec::new();
     for placeholder in placeholders(text) {
-        let before = word_before(text, placeholder.range.start).map(|(_, w)| w);
-        let after = word_after(text, placeholder.range.end).map(|(_, w)| w);
-        let before_ok = matches!(before.as_deref(), Some("WHERE" | "AND"));
-        let after_ok = match after.as_deref() {
-            None => {
-                let rest = text[placeholder.range.end..].trim_start();
-                rest.is_empty() || rest.starts_with([')', ';'])
-            }
-            Some(word) => word == "AND" || clause_words(language).contains(&word),
-        };
-        if !(before_ok && after_ok) {
+        if clause_of(text, placeholder.range.start, language).as_deref() != Some("WHERE") {
             let name = &placeholder.name;
             problems.push(format!(
-                "${name} must be a whole condition of a WHERE, joined by AND (WHERE ${name} AND x > 1): while nothing is picked it is taken out"
+                "${name} is a condition: write it in a WHERE (WHERE ${name} AND x > 1, or WHERE ${name} OR x > 1)"
             ));
         }
     }
     problems
+}
+
+/// The clause `at` is in: the last `WHERE` or clause word before it.
+fn clause_of(text: &str, at: usize, language: Language) -> Option<String> {
+    let mut clause = None;
+    for word in text[..at].split(|c: char| !(c.is_ascii_alphanumeric() || c == '_')) {
+        let word = word.to_ascii_uppercase();
+        if word == "WHERE" || clause_words(language).contains(&word.as_str()) {
+            clause = Some(word);
+        }
+    }
+    clause
 }
 
 #[cfg(test)]
@@ -304,9 +330,9 @@ mod tests {
     #[test]
     fn sql_nothing_picked_is_left_out_and_a_pick_is_a_comparison() {
         let sql = "FROM t WHERE $channel AND $day AND $n";
-        assert_eq!(neutral(sql, Language::Sql), "FROM t");
+        assert_eq!(neutral(sql, Language::Sql, &HashMap::new()), "FROM t");
         assert_eq!(
-            neutral("SELECT a FROM t WHERE $x AND a > 1 GROUP BY a", Language::Sql),
+            neutral("SELECT a FROM t WHERE $x AND a > 1 GROUP BY a", Language::Sql, &HashMap::new()),
             "SELECT a FROM t WHERE a > 1 GROUP BY a"
         );
         let mut picks = HashMap::new();
@@ -317,7 +343,7 @@ mod tests {
         picks.insert("day".to_string(), Pick { column: "day".into(), expr: None, values: vec![Json::Null] });
         picks.insert("n".to_string(), Pick { column: "n".into(), expr: None, values: vec![json!(3)] });
         assert_eq!(
-            apply(sql, Language::Sql, &picks),
+            apply(sql, Language::Sql, &picks, &HashMap::new()),
             "FROM t WHERE (\"Sales \"\"Channel\"\"\" = 'it''s') AND (\"day\" IS NULL) AND (\"n\" = 3)"
         );
     }
@@ -325,13 +351,13 @@ mod tests {
     #[test]
     fn cypher_unpicked_conditions_are_taken_out_with_their_and() {
         let only = "MATCH (h:Host)-[r]->(s) WHERE $host RETURN h, r, s";
-        assert_eq!(neutral(only, Language::Cypher), "MATCH (h:Host)-[r]->(s) RETURN h, r, s");
+        assert_eq!(neutral(only, Language::Cypher, &HashMap::new()), "MATCH (h:Host)-[r]->(s) RETURN h, r, s");
         let first = "MATCH (h:Host) WHERE $host AND h.cpu > 4 RETURN h";
-        assert_eq!(neutral(first, Language::Cypher), "MATCH (h:Host) WHERE h.cpu > 4 RETURN h");
+        assert_eq!(neutral(first, Language::Cypher, &HashMap::new()), "MATCH (h:Host) WHERE h.cpu > 4 RETURN h");
         let last = "MATCH (h:Host) WHERE h.cpu > 4 AND $host RETURN h";
-        assert_eq!(neutral(last, Language::Cypher), "MATCH (h:Host) WHERE h.cpu > 4 RETURN h");
+        assert_eq!(neutral(last, Language::Cypher, &HashMap::new()), "MATCH (h:Host) WHERE h.cpu > 4 RETURN h");
         let both = "MATCH (h:Host) WHERE $a AND $b RETURN h";
-        assert_eq!(neutral(both, Language::Cypher), "MATCH (h:Host) RETURN h");
+        assert_eq!(neutral(both, Language::Cypher, &HashMap::new()), "MATCH (h:Host) RETURN h");
     }
 
     #[test]
@@ -342,7 +368,7 @@ mod tests {
             Pick { column: "name".into(), expr: Some("h.name".into()), values: vec![json!("o'brien\\x")] },
         );
         assert_eq!(
-            apply("MATCH (h:Host) WHERE $host AND $other RETURN h", Language::Cypher, &picks),
+            apply("MATCH (h:Host) WHERE $host AND $other RETURN h", Language::Cypher, &picks, &HashMap::new()),
             "MATCH (h:Host) WHERE (h.name = 'o\\'brien\\\\x') RETURN h"
         );
     }
@@ -354,10 +380,10 @@ mod tests {
         pick.toggle(json!(3));
         let picks = HashMap::from([("kind".to_string(), pick.clone())]);
         assert_eq!(
-            apply("MATCH (s) WHERE $kind RETURN s", Language::Cypher, &picks),
+            apply("MATCH (s) WHERE $kind RETURN s", Language::Cypher, &picks, &HashMap::new()),
             "MATCH (s) WHERE (s.kind IN ['api', 'web', 3]) RETURN s"
         );
-        assert_eq!(apply("FROM t WHERE $kind", Language::Sql, &picks), "FROM t WHERE (\"kind\" IN ('api', 'web', 3))");
+        assert_eq!(apply("FROM t WHERE $kind", Language::Sql, &picks, &HashMap::new()), "FROM t WHERE (\"kind\" IN ('api', 'web', 3))");
         pick.toggle(Json::Null);
         pick.toggle(json!(3));
         pick.toggle(json!("api"));
@@ -366,11 +392,26 @@ mod tests {
     }
 
     #[test]
-    fn placement_must_be_a_whole_condition() {
+    fn nothing_picked_is_true_for_every_row() {
+        let targets = HashMap::from([("x".to_string(), Target { column: "day".into() })]);
+        assert_eq!(
+            neutral("SELECT a FROM t WHERE $x OR a > 1", Language::Sql, &targets),
+            "SELECT a FROM t WHERE (\"day\" IS NULL OR \"day\" IS NOT NULL) OR a > 1"
+        );
+        assert_eq!(
+            neutral("MATCH (h:Host) WHERE NOT ($x) RETURN h", Language::Cypher, &targets),
+            "MATCH (h:Host) WHERE NOT (true) RETURN h"
+        );
+    }
+
+    #[test]
+    fn placement_is_anywhere_in_a_where() {
         assert!(placement_problems("MATCH (n) WHERE $a AND n.x = 1 RETURN n", Language::Cypher).is_empty());
         assert!(placement_problems("MATCH (n) WHERE n.x = 1 AND $a", Language::Cypher).is_empty());
-        assert_eq!(placement_problems("MATCH (n) WHERE $a OR n.x = 1 RETURN n", Language::Cypher).len(), 1);
+        assert!(placement_problems("MATCH (n) WHERE $a OR n.x = 1 RETURN n", Language::Cypher).is_empty());
+        assert!(placement_problems("SELECT a FROM t WHERE NOT ($a OR a > 1) GROUP BY a", Language::Sql).is_empty());
         assert_eq!(placement_problems("MATCH (n) RETURN n, $a", Language::Cypher).len(), 1);
+        assert_eq!(placement_problems("MATCH (n) WHERE n.x = 1 RETURN n, $a", Language::Cypher).len(), 1);
     }
 
     #[test]
@@ -380,13 +421,13 @@ mod tests {
         for gap in ["\u{a0}", "\u{3000}", "中文 ", "é"] {
             let text = format!("MATCH (n){gap}WHERE $a AND n.x = '中文' RETURN n");
             assert!(placement_problems(&text, Language::Cypher).is_empty(), "{text}");
-            assert_eq!(neutral(&text, Language::Cypher), format!("MATCH (n){gap}WHERE n.x = '中文' RETURN n"));
+            assert_eq!(neutral(&text, Language::Cypher, &HashMap::new()), format!("MATCH (n){gap}WHERE n.x = '中文' RETURN n"));
             let text = format!("MATCH (n) WHERE n.x = 1 AND{gap}$a{gap}RETURN n");
             let _ = placement_problems(&text, Language::Cypher);
-            let _ = neutral(&text, Language::Cypher);
+            let _ = neutral(&text, Language::Cypher, &HashMap::new());
             let text = format!("SELECT * FROM t WHERE{gap}$a");
             let _ = placement_problems(&text, Language::Sql);
-            let _ = neutral(&text, Language::Sql);
+            let _ = neutral(&text, Language::Sql, &HashMap::new());
         }
         assert_eq!(names("SELECT '中文 $x' FROM t WHERE $名 AND $ok"), ["ok"]);
     }

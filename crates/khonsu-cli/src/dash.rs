@@ -139,12 +139,50 @@ pub fn check(args: CheckArgs) -> Result<Value, CliError> {
 
 /// A query on the window's graph, for when the window holds the lease.
 pub fn query_via_window(db: &Path, language: Language, text: &str, max_rows: usize) -> Option<Result<Value, CliError>> {
-    let answer = remote::request(&Message::Query(QueryRequest {
+    write_via_window(db, language, text, max_rows, false, serde_json::Map::new())
+}
+
+/// A query on the window's graph, a write included with `write` (when the
+/// window opened the graph for writing), with its parameters.
+pub fn write_via_window(
+    db: &Path,
+    language: Language,
+    text: &str,
+    max_rows: usize,
+    write: bool,
+    params: serde_json::Map<String, Value>,
+) -> Option<Result<Value, CliError>> {
+    via_window(Message::Query(QueryRequest {
         graph: normalize_path(db).display().to_string(),
         language,
         text: text.to_string(),
         max_rows,
-    }))?;
+        write,
+        params,
+    }))
+}
+
+pub fn schema_via_window(db: &Path) -> Option<Result<Value, CliError>> {
+    via_window(Message::Schema(remote::GraphRequest {
+        graph: normalize_path(db).display().to_string(),
+    }))
+}
+
+pub fn explain_via_window(db: &Path, language: Language, text: &str) -> Option<Result<Value, CliError>> {
+    via_window(Message::Explain(QueryRequest {
+        graph: normalize_path(db).display().to_string(),
+        language,
+        text: text.to_string(),
+        max_rows: 0,
+        write: false,
+        params: serde_json::Map::new(),
+    }))
+}
+
+/// Ask the window holding the graph; `None` when none runs. The answer says
+/// it came `via_window`.
+fn via_window(message: Message) -> Option<Result<Value, CliError>> {
+    let answer = remote::request(&message)?;
     Some(window_answer(Some(answer)).map(|mut value| {
         value["via_window"] = json!(true);
         value
@@ -153,11 +191,13 @@ pub fn query_via_window(db: &Path, language: Language, text: &str, max_rows: usi
 
 /// A sync into the window's graph, for when the window holds the lease. `None`
 /// when no window is running. The plugin's progress stays in the window.
-pub fn sync_via_window(source: &khonsu_core::settings::Source, incremental: bool, append: bool) -> Option<Result<Value, CliError>> {
+pub fn sync_via_window(source: &khonsu_core::settings::Source, incremental: bool, append: bool, quiet: bool) -> Option<Result<Value, CliError>> {
     if !remote::window_running() {
         return None;
     }
-    eprintln!("{}", json!({"kind": "progress", "message": "the KhonsuGraph window has the graph open; syncing there"}));
+    if !quiet {
+        eprintln!("{}", json!({"kind": "progress", "message": "the KhonsuGraph window has the graph open; syncing there"}));
+    }
     let answer = remote::request(&Message::Sync(SyncRequest {
         graph: normalize_path(&source.graph).display().to_string(),
         source: source.id.clone(),

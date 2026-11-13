@@ -267,7 +267,12 @@ pub(super) fn load(path: &Path, picks: &HashMap<String, Pick>, reuse: &Outcomes)
     for query in &spec.queries {
         let sql = match model::writing_keyword(query.language, &query.text) {
             Some(word) => Err(trf("dashboard.query_writes", &[&query.name, &word])),
-            None => Ok(crate::spec::filter::apply(&query.text, query.language, &picks_for(&spec, query, picks))),
+            None => Ok(crate::spec::filter::apply(
+                &query.text,
+                query.language,
+                &picks_for(&spec, query, picks),
+                &spec.targets_of(query),
+            )),
         };
         let entry = match sql {
             Err(error) => (String::new(), Err(error)),
@@ -454,6 +459,8 @@ filter "channel" {
                 language: khonsu_core::Language::Cypher,
                 text: write.into(),
                 max_rows: 10,
+                write: false,
+                params: Default::default(),
             }));
             assert_eq!(answer["error"]["kind"], "read_only", "{write}: {answer}");
         }
@@ -463,6 +470,8 @@ filter "channel" {
             language: khonsu_core::Language::Cypher,
             text: "MATCH (o:Order) RETURN count(o) AS orders".into(),
             max_rows: 10,
+            write: false,
+            params: Default::default(),
         }));
         assert_eq!(read["rows"][0][0], 4, "{read}");
 

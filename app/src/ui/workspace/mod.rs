@@ -87,6 +87,9 @@ impl WorkspaceTab {
 
 pub struct Workspace {
     state: Entity<AppState>,
+    /// The graph the tabs belong to, and are remembered under: during a
+    /// switch the state already names the next one.
+    tabs_graph: Option<std::path::PathBuf>,
     tabs: Vec<WorkspaceTab>,
     active: usize,
     next_tab_id: u64,
@@ -123,6 +126,7 @@ impl Workspace {
         ];
         Self {
             state,
+            tabs_graph: None,
             tabs: Vec::new(),
             active: 0,
             next_tab_id: 1,

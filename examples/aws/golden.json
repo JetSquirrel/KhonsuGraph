@@ -865,6 +865,7 @@
   },
   "dashboard": {
     "ok": true,
+    "warnings": [],
     "queries": [
       {
         "name": "open_groups",

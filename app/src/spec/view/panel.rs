@@ -287,13 +287,23 @@ impl Dashboard {
                 }
                 "graph" => {
                     let graph = plot.graph.as_ref();
-                    trf(
+                    let nodes = graph.map_or(0, |g| g.nodes.len());
+                    let mut counts = trf(
                         "dashboard.graph.counts",
-                        &[
-                            &graph.map_or(0, |g| g.nodes.len()).to_string(),
-                            &graph.map_or(0, |g| g.edges.len()).to_string(),
-                        ],
-                    )
+                        &[&nodes.to_string(), &graph.map_or(0, |g| g.edges.len()).to_string()],
+                    );
+                    // Say when the picture is not the whole result: rows the
+                    // dashboard dropped, or nodes past what the canvas draws.
+                    if let Some(rows) = plot.graph_rows_cut {
+                        counts = crate::i18n::join(&counts, &trf("dashboard.graph.rows_cut", &[&rows.to_string()]));
+                    }
+                    if nodes > crate::ui::canvas::NODE_LIMIT {
+                        counts = crate::i18n::join(
+                            &counts,
+                            &trf("canvas.truncated", &[&crate::ui::canvas::NODE_LIMIT.to_string(), &nodes.to_string()]),
+                        );
+                    }
+                    counts
                 }
                 "timeline" => {
                     let events = plot.timeline.as_ref().map_or(0, |t| t.events.len());
