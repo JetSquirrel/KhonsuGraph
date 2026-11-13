@@ -113,6 +113,20 @@ pub enum PluginError {
     Other(String),
 }
 
+/// Where Cargo put the plugins when `dir` holds a test binary: the profile
+/// folder, `target/<profile>`. A test binary is in `target/<profile>/deps`,
+/// or, with newer Cargo's build directory layout, in
+/// `target/<profile>/build/<package>/<hash>/out`.
+fn test_profile_dir(dir: &Path) -> Option<PathBuf> {
+    if dir.ends_with("deps") {
+        return dir.parent().map(Path::to_path_buf);
+    }
+    if dir.ends_with("out") {
+        return dir.ancestors().skip(1).find(|at| at.ends_with("build")).and_then(Path::parent).map(Path::to_path_buf);
+    }
+    None
+}
+
 /// Directories searched for built-in plugins, nearest first.
 fn builtin_dirs() -> Vec<PathBuf> {
     let mut dirs = Vec::new();
@@ -128,12 +142,7 @@ fn builtin_dirs() -> Vec<PathBuf> {
     for exe in exes {
         if let Some(dir) = exe.parent() {
             dirs.push(dir.to_path_buf());
-            // Test binaries live in target/<profile>/deps.
-            if dir.ends_with("deps") {
-                if let Some(parent) = dir.parent() {
-                    dirs.push(parent.to_path_buf());
-                }
-            }
+            dirs.extend(test_profile_dir(dir));
             // macOS bundles keep extra binaries in Contents/Resources.
             dirs.push(dir.join("../Resources"));
         }
@@ -1180,6 +1189,16 @@ fn scrub_error(error: PluginError, secrets: &serde_json::Map<String, serde_json:
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_test_binary_finds_the_plugins_in_either_cargo_layout() {
+        let profile = Path::new("target").join("debug");
+        assert_eq!(test_profile_dir(&profile.join("deps")), Some(profile.clone()));
+        let out = profile.join("build").join("khonsu-core").join("0c8cc84fd4fe06a9").join("out");
+        assert_eq!(test_profile_dir(&out), Some(profile.clone()));
+        assert_eq!(test_profile_dir(&profile), None);
+        assert_eq!(test_profile_dir(&Path::new("Applications").join("out")), None);
+    }
 
     #[test]
     fn an_error_a_plugin_caused_is_masked_too() {
