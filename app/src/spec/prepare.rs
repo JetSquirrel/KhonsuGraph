@@ -79,6 +79,9 @@ pub struct PreparedPlot {
     /// A `graph`'s nodes and relationships, and the node property it
     /// captions and groups them by.
     pub graph: Option<Arc<khonsu_core::GraphData>>,
+    /// Rows the graph was drawn from when the query returned more than the
+    /// dashboard keeps: the panel says the graph is cut, not whole.
+    pub graph_rows_cut: Option<usize>,
     pub caption: Option<String>,
     pub group: Option<String>,
     /// A `graph`'s `labels` and `highlight`, as the spec names them.
@@ -218,6 +221,7 @@ pub(crate) fn prepare<R: std::borrow::Borrow<QueryResult>>(
         tone: plot.tone.clone(),
         text: None,
         graph: None,
+        graph_rows_cut: None,
         caption: plot.caption.clone(),
         group: plot.group.clone(),
         labels: plot.labels.clone(),
@@ -262,6 +266,7 @@ pub(crate) fn prepare<R: std::borrow::Borrow<QueryResult>>(
     if plot.kind == "graph" {
         return PreparedPlot {
             graph: result.graph.clone().map(Arc::new),
+            graph_rows_cut: result.truncated.then_some(result.rows.len()),
             ..base(None)
         };
     }
@@ -640,6 +645,7 @@ pub(crate) fn prepare<R: std::borrow::Borrow<QueryResult>>(
         tone: plot.tone.clone(),
         text: None,
         graph: None,
+        graph_rows_cut: None,
         caption: None,
         group: None,
         labels: None,

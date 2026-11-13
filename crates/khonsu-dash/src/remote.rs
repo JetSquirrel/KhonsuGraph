@@ -56,6 +56,9 @@ pub enum Message {
     Query(QueryRequest),
     /// `khonsu check` on the window's open graph, for the same reason.
     Check(CheckRequest),
+    /// `khonsu schema` and `khonsu explain` on the window's open graph.
+    Schema(GraphRequest),
+    Explain(QueryRequest),
     /// `khonsu plugin sync` into the window's open graph, for the same
     /// reason. The window reruns its open dashboards afterwards.
     Sync(SyncRequest),
@@ -79,6 +82,17 @@ pub struct QueryRequest {
     pub language: Language,
     pub text: String,
     pub max_rows: usize,
+    /// `--write`: the window runs a write when it opened the graph for one.
+    #[serde(default)]
+    pub write: bool,
+    #[serde(default)]
+    pub params: serde_json::Map<String, Json>,
+}
+
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct GraphRequest {
+    /// The graph the command meant; the window refuses if it has another.
+    pub graph: String,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -517,7 +531,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let (port, heard, connections) = impostor();
         let stale = register(dir.path(), "999-stale", port);
-        let query = Message::Query(QueryRequest { graph: "g".into(), language: Language::Cypher, text: "MATCH (secret) RETURN secret".into(), max_rows: 1 });
+        let query = Message::Query(QueryRequest { graph: "g".into(), language: Language::Cypher, text: "MATCH (secret) RETURN secret".into(), max_rows: 1, write: false, params: Default::default() });
         assert!(request_in(dir.path(), &query).is_none(), "no live window");
         assert!(!notify_in(dir.path(), &query));
         assert!(!stale.exists() && !lock_beside(&stale).exists(), "the stale registration is gone");
@@ -535,7 +549,7 @@ mod tests {
         // Held, as a running window's would be.
         let lock = OpenOptions::new().write(true).open(lock_beside(&path)).unwrap();
         lock.try_lock().unwrap();
-        let query = Message::Query(QueryRequest { graph: "g".into(), language: Language::Cypher, text: "MATCH (secret) RETURN secret".into(), max_rows: 1 });
+        let query = Message::Query(QueryRequest { graph: "g".into(), language: Language::Cypher, text: "MATCH (secret) RETURN secret".into(), max_rows: 1, write: false, params: Default::default() });
         assert!(request_in(dir.path(), &query).is_none());
         assert_eq!(connections.load(Ordering::SeqCst), 1);
         std::thread::sleep(Duration::from_millis(500));
@@ -577,7 +591,7 @@ mod tests {
 
         // A request line past the cap is refused after the handshake.
         let mut reader = open(&window).unwrap();
-        let big = Message::Query(QueryRequest { graph: "g".into(), language: Language::Cypher, text: "x".repeat(MAX_REQUEST_BYTES + 1), max_rows: 1 });
+        let big = Message::Query(QueryRequest { graph: "g".into(), language: Language::Cypher, text: "x".repeat(MAX_REQUEST_BYTES + 1), max_rows: 1, write: false, params: Default::default() });
         let _ = send(reader.get_mut(), &window.token, &big);
         let mut line = String::new();
         let _ = reader.read_line(&mut line);

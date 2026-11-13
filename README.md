@@ -100,7 +100,9 @@ for earlier database compatibility checks.
   sources.
 
 - One process per graph directory, readers included. While the app has a
-  graph open, `khonsu query` and `khonsu check` run through the app.
+  graph open, `khonsu query` (writes too, with `--write`), `schema`,
+  `explain`, `check` and `plugin sync` run through the app, which refreshes
+  what it shows after a write.
 - On Windows, a graph can go anywhere in your user folder. Elsewhere, opening
   one for writing flushes every directory up to the drive root, which needs
   write access to the root itself. Ordinary users cannot write to `C:\`, so a
@@ -114,8 +116,10 @@ for earlier database compatibility checks.
   and list comprehensions work since 0.21–0.22; `shortestPath`, temporal types
   and `toString`-style conversions by 0.24. Dates and times come back as ISO
   8601 strings. `labels()`, path variables outside `shortestPath` and string
-  concatenation still fail, and SQL still refuses `WHERE true`. Dashboard
-  filters remove an unpicked condition instead.
+  concatenation still fail, and SQL still refuses `WHERE true`. So an
+  unpicked dashboard filter is `true` in Cypher, and in SQL
+  `("col" IS NULL OR "col" IS NOT NULL)` on the column a pick compares:
+  true for every row either way, as DuckLocal's `TRUE`.
 - HawDB's `LOAD CSV` stays off, so a query or a dashboard cannot read files
   from disk; CSV files come in through a data source.
 - SQL numbers are exact decimals since 0.25 (`SELECT 1.5`, `DECIMAL`

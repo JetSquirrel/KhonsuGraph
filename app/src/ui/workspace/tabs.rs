@@ -66,10 +66,28 @@ impl Workspace {
         }
     }
 
-    /// The open graph changed: bring back its tabs, or start one.
+    /// The open graph changed: bring back its tabs, or start one. The last
+    /// graph's were remembered as they changed and come back when it is
+    /// opened again; a switch says so, since they leave the window.
     pub(super) fn restore_tabs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let next = self.state.read(cx).graph.as_ref().map(|g| g.path.clone());
+        if let (Some(previous), Some(_)) = (self.tabs_graph.as_ref().filter(|p| Some(*p) != next.as_ref()), &next) {
+            let kept = self
+                .tabs
+                .iter()
+                .filter(|t| match t {
+                    WorkspaceTab::Query(q) => is_work(q.language, &q.editor.read(cx).value()),
+                    WorkspaceTab::Dashboard(_) => true,
+                })
+                .count();
+            if kept > 0 {
+                let name = previous.file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
+                window.push_notification(trf("workspace.tabs_kept", &[&name, &kept.to_string()]), cx);
+            }
+        }
         self.tabs.clear();
         self.active = 0;
+        self.tabs_graph = next;
         let Some(graph) = self.state.read(cx).graph.clone() else {
             cx.notify();
             return;
@@ -110,7 +128,7 @@ impl Workspace {
     }
 
     pub(super) fn remember_tabs(&self, cx: &App) {
-        let Some(graph) = self.state.read(cx).graph.clone() else {
+        let Some(graph) = self.tabs_graph.as_ref() else {
             return;
         };
         let saved: Vec<SavedTab> = self
@@ -130,7 +148,7 @@ impl Workspace {
             })
             .collect();
         if let Ok(json) = serde_json::to_string(&saved) {
-            let _ = crate::prefs::set(&tabs_key(&graph.path), &json);
+            let _ = crate::prefs::set(&tabs_key(graph), &json);
         }
     }
 

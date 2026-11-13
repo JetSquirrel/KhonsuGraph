@@ -93,6 +93,13 @@ impl KhonsuApp {
                                 crate::ui::sources::show_progress(state, name, progress, window, cx)
                             }
                             crate::remote::SyncNotice::Ended(result) => crate::ui::sources::finish(state, *result, window, cx),
+                            // What the window shows of the graph is stale.
+                            crate::remote::SyncNotice::Wrote(word) => {
+                                state.update(cx, |s, cx| s.reload_lists(cx));
+                                crate::ui::reload_schema(state.clone(), window, cx);
+                                state.update(cx, |s, cx| s.graph_written(cx));
+                                window.push_notification(trf("notify.remote.wrote", &[&word]), cx);
+                            }
                         }
                     }
                     for (message, answer) in pending {
@@ -167,7 +174,7 @@ impl KhonsuApp {
                 }
                 json!({"delivered": true, "opened": opened})
             }
-            Message::Query(_) | Message::Check(_) | Message::Sync(_) => json!({"error": {"kind": "internal", "message": "answered by the listener"}}),
+            Message::Query(_) | Message::Check(_) | Message::Sync(_) | Message::Schema(_) | Message::Explain(_) => json!({"error": {"kind": "internal", "message": "answered by the listener"}}),
         }
     }
 }

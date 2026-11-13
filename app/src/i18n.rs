@@ -615,7 +615,10 @@ static STRINGS: &[(&str, &str, &str)] = &[
     ("workspace.open_dashboard", "打开 Dashboard", "Open dashboard"),
 
     // ── dashboards (KhonsuGraph) ──────────────────────────────────────────
+    ("workspace.tabs_kept", "已保存 {} 的 {} 个标签页，再次打开它时会恢复", "{}'s {} tabs are saved and come back when you open it again"),
+    ("notify.remote.wrote", "命令行写入了这张图（{}），已刷新结构和看板", "A command wrote to this graph ({}); the schema and dashboards were refreshed"),
     ("dashboard.graph.counts", "{} 个节点，{} 条关系", "{} nodes, {} relationships"),
+    ("dashboard.graph.rows_cut", "只画了前 {} 行，查询还有更多", "drawn from the first {} rows; the query returned more"),
     ("dashboard.needs_graph", "先打开一个图库：仪表盘查询的是当前打开的图库。", "Open a graph first: a dashboard queries the open graph."),
     ("dashboard.query_writes", "查询 {} 会写入（{}）；仪表盘只读取图库", "query {} writes ({}); a dashboard only reads the graph"),
     ("dashboard.restore.gone_path", "上次打开的仪表盘已不存在：{}", "A dashboard open last time is gone: {}"),

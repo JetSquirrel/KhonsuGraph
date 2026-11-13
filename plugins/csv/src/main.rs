@@ -155,16 +155,28 @@ fn describe() -> Describe {
         config: vec![
             field("node_file", "Node file", FieldKind::File, "CSV with one node per row"),
             field("node_label", "Node label", FieldKind::String, "Label for every node row, e.g. Host"),
+            field(
+                "node_label_column",
+                "Node label column",
+                FieldKind::String,
+                "Column holding each row's label, for a file of mixed labels; instead of Node label",
+            ),
             field("node_id_column", "Node ID column", FieldKind::String, "Stable ID column (default: id, else the first column)"),
             field("edge_file", "Edge file", FieldKind::File, "CSV with one relationship per row"),
             field("edge_type", "Relationship type", FieldKind::String, "Type for every edge row, e.g. DEPENDS_ON"),
+            field(
+                "edge_type_column",
+                "Relationship type column",
+                FieldKind::String,
+                "Column holding each row's type, for a file of mixed types; instead of Relationship type",
+            ),
             field("edge_source_column", "Source column", FieldKind::String, "Column holding the source node ID (default: source)"),
             field("edge_target_column", "Target column", FieldKind::String, "Column holding the target node ID (default: target)"),
             field(
                 "nodes",
                 "Node tables (advanced)",
                 FieldKind::Json,
-                r#"[{"path", "label" | "label_column", "id_column", "columns"}]; used instead of the single-file fields. An ID or endpoint column can be a list, joined with ':' (["game_id","play_id"])"#,
+                r#"[{"path", "label" | "label_column", "id_column", "columns"}]; several node files, the keys inside each table, used instead of the single-file fields. An ID or endpoint column can be a list, joined with ':' (["game_id","play_id"])"#,
             ),
             field(
                 "edges",
@@ -231,19 +243,27 @@ fn parse_config(request: &Request) -> Result<Config, String> {
         Some(v) => serde_json::from_value(v.clone()).map_err(|e| format!("edges: {e}"))?,
     };
     if let Some(path) = text(c, "node_file") {
+        let label_column = text(c, "node_label_column");
         nodes.push(NodeTable {
-            label: Some(text(c, "node_label").unwrap_or_else(|| label_from_path(&path))),
+            label: match label_column {
+                Some(_) => None,
+                None => Some(text(c, "node_label").unwrap_or_else(|| label_from_path(&path))),
+            },
             path,
-            label_column: None,
+            label_column,
             id_column: text(c, "node_id_column").map(Columns::One),
             columns: None,
         });
     }
     if let Some(path) = text(c, "edge_file") {
+        let type_column = text(c, "edge_type_column");
         edges.push(EdgeTable {
-            rel_type: Some(text(c, "edge_type").unwrap_or_else(|| "RELATED_TO".into())),
+            rel_type: match type_column {
+                Some(_) => None,
+                None => Some(text(c, "edge_type").unwrap_or_else(|| "RELATED_TO".into())),
+            },
             path,
-            type_column: None,
+            type_column,
             source_column: Columns::One(text(c, "edge_source_column").unwrap_or_else(|| "source".into())),
             target_column: Columns::One(text(c, "edge_target_column").unwrap_or_else(|| "target".into())),
             id_column: None,
@@ -784,6 +804,25 @@ mod tests {
         )
         .unwrap_err();
         assert!(both.contains("target_columns needs target_label"), "{both}");
+    }
+
+    #[test]
+    fn one_file_of_mixed_labels_and_types_needs_no_json() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("n.csv"), "id,kind\nip1,Ip\nnet1,Cidr\n").unwrap();
+        std::fs::write(dir.path().join("e.csv"), "source,target,rel\nip1,net1,IN\nnet1,ip1,SEEN\n").unwrap();
+        let messages = run(
+            dir.path(),
+            serde_json::json!({
+                "node_file": "n.csv", "node_label_column": "kind",
+                "edge_file": "e.csv", "edge_type_column": "rel",
+            }),
+        )
+        .unwrap();
+        let labels: Vec<&str> = messages.iter().filter_map(|m| if let Message::Node(n) = m { Some(n.label.as_str()) } else { None }).collect();
+        let types: Vec<&str> = messages.iter().filter_map(|m| if let Message::Edge(e) = m { Some(e.rel_type.as_str()) } else { None }).collect();
+        assert_eq!(labels, ["Ip", "Cidr"]);
+        assert_eq!(types, ["IN", "SEEN"]);
     }
 
     #[test]

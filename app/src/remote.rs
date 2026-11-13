@@ -18,10 +18,12 @@ use serde_json::{json, Value};
 /// Messages for the UI thread, each with where its answer goes.
 static PENDING: Mutex<Vec<(Message, Sender<Value>)>> = Mutex::new(Vec::new());
 
-/// A sync a command asked for, as the UI thread shows it.
+/// A sync or a write a command made, as the UI thread shows it.
 pub enum SyncNotice {
     Started { name: String, progress: Arc<Mutex<Option<String>>> },
     Ended(Box<Result<SyncReport, String>>),
+    /// `khonsu query --write` changed the graph; the word is its keyword.
+    Wrote(String),
 }
 
 static SYNCS: Mutex<Vec<SyncNotice>> = Mutex::new(Vec::new());
@@ -33,7 +35,11 @@ fn notice(notice: SyncNotice) {
 /// How long a command waits for the UI thread before giving up.
 const UI_ANSWER: Duration = Duration::from_secs(10);
 
-const READ_ONLY: &str = "queries through the window only read; close the graph in the window to write with --write";
+const READ_ONLY: &str = "the window opened this graph read-only; reopen it for writing there to write with --write";
+
+fn query_error(e: khonsu_core::QueryError) -> Value {
+    json!({"error": {"kind": e.kind, "message": e.message, "detail": {"line": e.line, "column": e.column}}})
+}
 
 fn error(kind: &str, message: impl Into<String>) -> Value {
     json!({"error": {"kind": kind, "message": message.into()}})
@@ -59,12 +65,46 @@ pub(crate) fn handle(message: Message) -> Value {
             if let Err(e) = is_open_graph(&request.graph) {
                 return e;
             }
-            // Read-only through the window too, and it is the engine that
-            // refuses: a write waits for --write on a graph no window holds.
-            match crate::db::run_read(request.language, &request.text, request.max_rows) {
-                Ok(result) => serde_json::to_value(result).unwrap_or(Value::Null),
-                Err(e) if e.kind == "read_only" => error("read_only", READ_ONLY),
-                Err(e) => json!({"error": {"kind": e.kind, "message": e.message, "detail": {"line": e.line, "column": e.column}}}),
+            // Without --write it only reads, and it is the engine that
+            // refuses a write; with it, the window's graph must be writable.
+            let options = khonsu_core::QueryOptions { max_rows: request.max_rows };
+            let outcome = if request.write {
+                crate::db::with_graph(|g| {
+                    if g.mode() == khonsu_core::AccessMode::ReadOnly {
+                        return Err(khonsu_core::QueryError { kind: "read_only".into(), message: READ_ONLY.into(), line: None, column: None });
+                    }
+                    g.run(request.language, &request.text, &request.params, options)
+                })
+            } else {
+                crate::db::with_graph(|g| g.run_read(request.language, &request.text, &request.params, options))
+            };
+            match outcome {
+                Ok(result) => {
+                    if let Some(word) = request.write.then(|| khonsu_dash::model::writing_keyword(request.language, &request.text)).flatten() {
+                        notice(SyncNotice::Wrote(word));
+                    }
+                    serde_json::to_value(result).unwrap_or(Value::Null)
+                }
+                Err(e) if e.kind == "read_only" && !request.write => error("read_only", format!("{}; pass --write", e.message)),
+                Err(e) => query_error(e),
+            }
+        }
+        Message::Schema(request) => {
+            if let Err(e) = is_open_graph(&request.graph) {
+                return e;
+            }
+            match crate::db::schema() {
+                Ok(schema) => serde_json::to_value(schema).unwrap_or(Value::Null),
+                Err(e) => query_error(e),
+            }
+        }
+        Message::Explain(request) => {
+            if let Err(e) = is_open_graph(&request.graph) {
+                return e;
+            }
+            match crate::db::explain(request.language, &request.text) {
+                Ok(plan) => json!({ "plan": plan }),
+                Err(e) => query_error(e),
             }
         }
         Message::Check(request) => {
