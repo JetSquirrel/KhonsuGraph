@@ -167,6 +167,16 @@ impl<'a> Index<'a> {
     }
 
     /// `ALLOWS` rules into `groups` from the internet.
+    /// Rules into `groups` from a managed prefix list, whose addresses are not read.
+    fn prefix_list_rules(&self, groups: &[&AnalysisEdge]) -> Vec<&'a AnalysisEdge> {
+        groups
+            .iter()
+            .flat_map(|protected| self.arriving_at(&protected.to, "ALLOWS"))
+            .filter(|rule| self.node(&rule.from).is_some_and(|node| has_label(node, "PrefixList")))
+            .copied()
+            .collect()
+    }
+
     fn internet_rules(&self, groups: &[&AnalysisEdge]) -> Vec<&'a AnalysisEdge> {
         groups
             .iter()
@@ -286,6 +296,19 @@ fn open_rule(index: &Index, id: &str, whose: &str, protected: &[&AnalysisEdge], 
         fields.push(field(&rule.reference, "ports", "ec2 describe-security-groups: IpPermissions[].FromPort, ToPort"));
     }
     if rules.is_empty() {
+        // A prefix list can hold 0.0.0.0/0, and its entries are not read.
+        let lists = index.prefix_list_rules(protected);
+        if !lists.is_empty() {
+            for rule in &lists {
+                fields.push(field(&rule.reference, "@from", "ec2 describe-security-groups: IpPermissions[].PrefixListIds[].PrefixListId"));
+            }
+            let names: BTreeSet<String> = lists.iter().filter_map(|rule| index.node(&rule.from)).map(|node| node.name.clone()).collect();
+            let detail = format!(
+                "No rule is from 0.0.0.0/0 or ::/0, and a rule is from the prefix list {}, whose addresses are not read.",
+                names.into_iter().collect::<Vec<_>>().join(", ")
+            );
+            return condition(id, &statement, Status::Unknown, detail, fields);
+        }
         return condition(id, &statement, Status::NotMet, "None of its security groups has a rule from 0.0.0.0/0 or ::/0.", fields);
     }
     let ports: BTreeSet<String> = rules.iter().map(|rule| ports_of(rule)).collect();
@@ -704,6 +727,22 @@ mod tests {
 
     fn hops(finding: &FindingRecord) -> Vec<(&str, bool)> {
         finding.path.as_ref().unwrap().hops.iter().map(|hop| (hop.edge.split('|').nth(1).unwrap(), hop.along)).collect()
+    }
+
+    #[test]
+    fn a_rule_from_a_prefix_list_is_unknown_not_absent() {
+        let builder = without_edge(exposed(), "ALLOWS")
+            .node("pl", "PrefixList", json!({"name": "pl-0123", "prefix_list_id": "pl-0123"}))
+            .edge("pl", "ALLOWS", "sg", json!({"protocol": "tcp", "ports": "443", "rule": "p"}));
+        let report = builder.report();
+        let finding = only(&report, "aws.exposure.direct-instance", "web");
+        let open = found_condition(finding, "open-inbound-rule");
+        assert_eq!(open.status, Status::Unknown, "{open:#?}");
+        assert!(open.detail.contains("pl-0123"), "{}", open.detail);
+        assert_eq!(finding.verdict, INSUFFICIENT_DATA);
+        // Without the prefix list it is a plain absence.
+        let report = without_edge(exposed(), "ALLOWS").report();
+        assert_eq!(found_condition(only(&report, "aws.exposure.direct-instance", "web"), "open-inbound-rule").status, Status::NotMet);
     }
 
     #[test]

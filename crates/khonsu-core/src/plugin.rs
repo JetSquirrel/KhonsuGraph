@@ -34,6 +34,8 @@ const MAX_STDERR_LINE: usize = 4096;
 const MAX_OUTPUT_BYTES: u64 = 16 * 1024 * 1024;
 /// How long `describe` may take: it says what a plugin is, and needs no network.
 const DESCRIBE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+/// How long a connection test may take: long enough for a slow login.
+const TEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(120);
 /// How long an `analyze` may take: it works on what it was sent, and needs no network.
 pub const ANALYZE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300);
 /// The most findings an `analyze` may send. Past this it fails rather than filling memory.
@@ -659,12 +661,28 @@ fn spawn(plugin: &PluginInfo, operation: &str, request: &Request) -> Result<Chil
 }
 
 pub fn test(plugin: &PluginInfo, request: &Request) -> Result<(bool, String), PluginError> {
+    test_within(plugin, request, TEST_TIMEOUT)
+}
+
+fn test_within(plugin: &PluginInfo, request: &Request, timeout: std::time::Duration) -> Result<(bool, String), PluginError> {
     let mut child = spawn(plugin, "test", request)?;
     let stderr = drain_stderr(&mut child);
-    let mut stdout = Vec::new();
-    child.stdout.take().expect("stdout is piped").take(MAX_OUTPUT_BYTES).read_to_end(&mut stdout)?;
+    let out = child.stdout.take().expect("stdout is piped");
+    let (tx, rx) = std::sync::mpsc::channel();
+    thread::spawn(move || {
+        let mut text = Vec::new();
+        let read = out.take(MAX_OUTPUT_BYTES).read_to_end(&mut text);
+        let _ = tx.send(read.map(|_| text));
+    });
+    // A plugin that never answers, or keeps its output open after it has, is
+    // ended rather than waited on.
+    let read = rx.recv_timeout(timeout);
     let _ = child.kill();
-    child.wait()?;
+    let _ = child.wait();
+    let Ok(read) = read else {
+        return Err(failure(plugin, format!("test took more than {} seconds", timeout.as_secs()), &stderr));
+    };
+    let stdout = read?;
     for line in String::from_utf8_lossy(&stdout).lines() {
         match parse_line(line) {
             Some(Ok(Message::TestResult { ok, message })) => return Ok((ok, scrub(&message, &request.secrets))),
