@@ -56,6 +56,11 @@ const READ_PAGE: usize = 90_000;
 /// rewrites the graph's files whatever changed, adding hundreds of MB to a large
 /// graph, so a sync of a few changes leaves it to HawDB.
 const CHECKPOINT_AFTER: u64 = 10_000;
+/// Records written since the last checkpoint that force one mid-sync. HawDB
+/// keeps every version written since its last checkpoint, within a budget: a
+/// sync of 200,000 nodes and 400,000 relationships ran out of it at about
+/// 440,000 writes, and failed there.
+const CHECKPOINT_EVERY: usize = 200_000;
 
 /// A relationship shape `(source label)-[type]->(target label)`.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -146,6 +151,8 @@ pub struct Merger<'g> {
     /// written with. Read before the first write, and kept up with them.
     written_nodes: Option<HashMap<(String, String), WrittenNode>>,
     page: usize,
+    /// Records written since the last checkpoint.
+    unpublished: usize,
     stats: MergeStats,
 }
 
@@ -166,8 +173,20 @@ impl<'g> Merger<'g> {
             node_index: None,
             written_nodes: None,
             page: READ_PAGE,
+            unpublished: 0,
             stats: MergeStats::default(),
         }
+    }
+
+    /// Counts records written, and checkpoints once enough have gone
+    /// unpublished that HawDB would run out of room for their versions.
+    fn wrote(&mut self, records: usize) -> Result<(), QueryError> {
+        self.unpublished += records;
+        if self.unpublished >= CHECKPOINT_EVERY {
+            self.graph.checkpoint()?;
+            self.unpublished = 0;
+        }
+        Ok(())
     }
 
     /// Rows per read-back page; small pages let tests cross page bounds.
@@ -283,7 +302,13 @@ impl<'g> Merger<'g> {
                 self.stats.edges_written += 1;
             }
         }
-        self.graph.create_relationships(batch)?;
+        let mut batch = batch.into_iter().peekable();
+        while batch.peek().is_some() {
+            let chunk: Vec<_> = batch.by_ref().take(CHECKPOINT_EVERY).collect();
+            let written = chunk.len();
+            self.graph.create_relationships(chunk)?;
+            self.wrote(written)?;
+        }
         if remove_stale {
             self.remove_stale_nodes()?;
         }
@@ -538,7 +563,9 @@ impl<'g> Merger<'g> {
             self.graph.write_batch(&indexes)?;
         }
         self.stats.nodes_written += upserts.len() as u64;
+        let written = upserts.len();
         self.graph.merge_nodes(upserts)?;
+        self.wrote(written)?;
         // New nodes have IDs the index does not know yet.
         self.node_index = None;
         Ok(())
