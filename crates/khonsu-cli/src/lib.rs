@@ -13,6 +13,7 @@ mod dash;
 mod evidence;
 mod explore;
 mod investigation;
+mod marketplace;
 mod plugin_analysis;
 mod report;
 mod snapshot;
@@ -30,7 +31,7 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 
 const PROGRAM: &str = "khonsu CLI";
-const NOT_ENFORCED: &str = "A plugin runs as you and is not sandboxed: its declared permissions are not enforced.";
+pub(crate) const NOT_ENFORCED: &str = "A plugin runs as you and is not sandboxed: its declared permissions are not enforced.";
 
 #[derive(Parser)]
 #[command(name = "khonsu", version, about = "KhonsuGraph command line: query HawDB graphs and sync data sources, with JSON output")]
@@ -111,6 +112,11 @@ enum Command {
         #[command(subcommand)]
         command: PluginCommand,
     },
+    /// Where plugins are found: list, add and remove marketplaces.
+    Marketplace {
+        #[command(subcommand)]
+        command: marketplace::MarketplaceCommand,
+    },
     /// Configured data sources.
     Source {
         #[command(subcommand)]
@@ -158,13 +164,37 @@ enum PluginCommand {
     List,
     /// A plugin's configuration fields, permissions and output types.
     Describe { id: String },
-    /// Install a plugin from a local directory or .zip containing khonsu-plugin.json. It is third-party code, and is not sandboxed.
+    /// Plugins the marketplaces offer, with what is installed here and whether a newer version is listed.
+    Search {
+        /// Words to look for in a plugin's ID, name or description.
+        query: Option<String>,
+        /// Look in this marketplace only.
+        #[arg(long)]
+        marketplace: Option<String>,
+    },
+    /// Install a plugin by name from a marketplace (`sql`, or `sql@official`), or from a local directory or .zip containing khonsu-plugin.json. It is third-party code, and is not sandboxed.
     Install {
-        dir: PathBuf,
+        /// A plugin ID, `id@marketplace`, a directory or a .zip.
+        plugin: String,
         /// Approve the permissions the plugin declares (required to sync with it).
         #[arg(long)]
         yes: bool,
     },
+    /// Bring plugins installed from a marketplace up to the version it lists now. An updated plugin needs approval again.
+    Update {
+        /// One plugin; without it, every plugin that came from a marketplace.
+        id: Option<String>,
+        /// Say what would change, and install nothing.
+        #[arg(long)]
+        dry_run: bool,
+        /// Approve each updated plugin as it then is.
+        #[arg(long)]
+        yes: bool,
+    },
+    /// Pack a plugin folder as `<id>-<version>-<target>.zip`, with its SHA-256, ready to hand over or to list.
+    Pack(marketplace::PackArgs),
+    /// Pack a plugin into a marketplace folder and list it in that folder's marketplace.json.
+    Publish(marketplace::PublishArgs),
     /// Approve an installed plugin as it is now, after reading what it declares. It is not sandboxed: it runs with your access.
     Approve { id: String },
     /// Remove an installed plugin.
@@ -443,6 +473,7 @@ fn execute(command: Command) -> Result<Value, CliError> {
             Ok(serde_json::to_value(report).expect("report serializes"))
         }
         Command::Plugin { command } => run_plugin(command),
+        Command::Marketplace { command } => marketplace::run(command),
         Command::Source { command } => run_source(command),
         Command::Check(args) => dash::check(args),
         Command::Comments(args) => dash::comments(args),
@@ -486,8 +517,17 @@ fn run_plugin(command: PluginCommand) -> Result<Value, CliError> {
             let info = plugin::find(&id)?;
             Ok(serde_json::to_value(plugin::describe(&info)?).expect("describe serializes"))
         }
-        PluginCommand::Install { dir, yes } => {
-            let info = plugin::install(&dir)?;
+        PluginCommand::Search { query, marketplace } => marketplace::search(query.as_deref(), marketplace.as_deref()),
+        PluginCommand::Update { id, dry_run, yes } => marketplace::update(id.as_deref(), dry_run, yes),
+        PluginCommand::Pack(args) => marketplace::pack(args),
+        PluginCommand::Publish(args) => marketplace::publish(args),
+        PluginCommand::Install { plugin: what, yes } => {
+            // A folder or archive here; otherwise a name to look up.
+            if !std::path::Path::new(&what).exists() {
+                return marketplace::install(&what, yes);
+            }
+            let info = plugin::install(std::path::Path::new(&what))?;
+            let _ = khonsu_core::marketplace::forget_origin(info.id());
             if yes {
                 plugin::approve(&info)?;
             }

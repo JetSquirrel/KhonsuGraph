@@ -15,6 +15,8 @@ khonsu-plugin-protocol.workspace = true
 keyring = { version = "3", features = ["apple-native", "windows-native", "linux-native"] }
 zip = { version = "2", default-features = false, features = ["deflate"] }
 sha2 = "0.10"
+# Only a marketplace given as a URL is fetched; see docs/marketplace.md.
+ureq = { version = "3", default-features = false, features = ["rustls"] }
 
 [dev-dependencies]
 tempfile.workspace = true

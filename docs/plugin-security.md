@@ -92,7 +92,10 @@ approving once more. Built-in plugins ship with the app and need no approval.
 
 ## Network access
 
-KhonsuGraph makes no network calls for a plugin. The AWS plugin calls AWS through the
+KhonsuGraph makes no network calls for a plugin as it runs. It contacts a
+[marketplace](marketplace.md) only when you search, install by name or update, and a
+package it downloads must match the hash the marketplace lists. That says the package
+is the one listed, not that the plugin is safe. The AWS plugin calls AWS through the
 `aws` CLI only when a source is configured with a profile or access key. With
 `fixture_dir` it reads local files only.
 

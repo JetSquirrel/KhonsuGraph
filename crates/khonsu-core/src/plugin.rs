@@ -41,7 +41,7 @@ pub const ANALYZE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(
 /// The most findings an `analyze` may send. Past this it fails rather than filling memory.
 const MAX_FINDINGS: usize = 100_000;
 /// The most an archive may unpack to, and how many entries it may hold.
-const MAX_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
+pub(crate) const MAX_ARCHIVE_BYTES: u64 = 512 * 1024 * 1024;
 const MAX_ARCHIVE_ENTRIES: usize = 10_000;
 
 /// IDs of plugins shipped with KhonsuGraph.
@@ -187,7 +187,7 @@ pub fn read_manifest(dir: &Path) -> Result<Manifest, PluginError> {
     Ok(manifest)
 }
 
-fn is_valid_id(id: &str) -> bool {
+pub(crate) fn is_valid_id(id: &str) -> bool {
     !id.is_empty() && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
 }
 
@@ -367,10 +367,24 @@ pub fn find(id: &str) -> Result<PluginInfo, PluginError> {
 /// Installs a plugin from a local directory, or a `.zip` of one, by copying
 /// it into the user plugin directory. Returns the installed plugin.
 pub fn install(from: &Path) -> Result<PluginInfo, PluginError> {
+    install_expecting(from, None)
+}
+
+/// [`install`], refusing a plugin that is not the `(id, version)` expected:
+/// what a marketplace listed is what gets installed, or nothing does.
+pub fn install_expecting(from: &Path, expect: Option<(&str, &str)>) -> Result<PluginInfo, PluginError> {
     if from.is_file() {
-        return install_archive(from);
+        return install_archive(from, expect);
     }
     let manifest = read_manifest(from)?;
+    if let Some((id, version)) = expect {
+        if manifest.id != id || manifest.version != version {
+            return Err(PluginError::Invalid {
+                path: from.join(MANIFEST_FILE),
+                message: format!("expected {id} {version}, and the package holds {} {}", manifest.id, manifest.version),
+            });
+        }
+    }
     if BUILTIN_PLUGINS.contains(&manifest.id.as_str()) {
         return Err(PluginError::Other(format!("{} is a built-in plugin ID", manifest.id)));
     }
@@ -419,12 +433,13 @@ pub fn uninstall(id: &str) -> Result<(), PluginError> {
         return Err(PluginError::NotFound(id.to_string()));
     }
     fs::remove_dir_all(dir)?;
+    let _ = crate::marketplace::forget_origin(id);
     Ok(())
 }
 
 /// Unpacks a `.zip` holding a plugin folder (the manifest at its top, or in
 /// its one top-level folder) and installs that folder.
-fn install_archive(archive: &Path) -> Result<PluginInfo, PluginError> {
+fn install_archive(archive: &Path, expect: Option<(&str, &str)>) -> Result<PluginInfo, PluginError> {
     let invalid = |message: String| PluginError::Invalid {
         path: archive.to_path_buf(),
         message,
@@ -449,7 +464,7 @@ fn install_archive(archive: &Path) -> Result<PluginInfo, PluginError> {
                 _ => return Err(invalid(format!("no {MANIFEST_FILE} at the top of the archive or in its one folder"))),
             }
         };
-        install(&root)
+        install_expecting(&root, expect)
     })();
     let _ = fs::remove_dir_all(&staging);
     result

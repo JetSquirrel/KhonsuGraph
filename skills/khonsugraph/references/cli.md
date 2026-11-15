@@ -206,6 +206,12 @@ Which graph: the whole graph by default; `--label` keeps nodes with those labels
 khonsu plugin list                                # built-in and installed, with permissions
 khonsu plugin describe csv                        # config fields, permissions, output types
 khonsu plugin install ./my-plugin --yes           # copy into the user plugin folder; --yes approves its permissions
+khonsu plugin search sql                          # what the marketplaces offer, and what is installed or out of date
+khonsu plugin install sql --yes                   # by name from a marketplace (sql@official to say which), hash-checked
+khonsu plugin update [ID] [--dry-run] [--yes]     # bring marketplace plugins up to date; an updated one needs approval again
+khonsu marketplace list | add LOCATION [--name N] | remove NAME | restore
+khonsu plugin pack DIR [-o OUT] [--target T] [--bin FILE]        # <id>-<version>-<target>.zip and its SHA-256
+khonsu plugin publish DIR --to FOLDER [--bin FILE] [--base-url URL]  # pack into a marketplace folder and list it
 khonsu source add --db DIR --plugin csv --name "Lab" \
   -c node_file=hosts.csv -c node_label=Host -c node_id_column=id \
   -c edge_file=deps.csv -c edge_type=DEPENDS_ON -c edge_source_column=source -c edge_target_column=target --test

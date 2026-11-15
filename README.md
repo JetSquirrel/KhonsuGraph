@@ -18,6 +18,7 @@ HawDB product.
 | `plugins/csv` | The built-in CSV plugin |
 | `plugins/aws` | The official AWS plugin: VPCs, subnets, security groups, instances, load balancers and IAM roles, read through the `aws` CLI |
 | `plugins/neo4j` | The official Neo4j plugin: copies a Neo4j database, such as one [Cartography](https://github.com/cartography-cncf/cartography) fills, over its HTTP API |
+| [khonsugraph-marketplace](https://github.com/JetSquirrel/khonsugraph-marketplace) | A separate repository: the official plugins installed by name ([marketplace](docs/marketplace.md)) rather than bundled, such as `sql` (PostgreSQL, MySQL, SQLite) and `ducklocal` (Parquet, CSV, DuckDB), with the CI that builds and releases them |
 | `skills/khonsugraph` | The agent skill: how to query, author dashboards and review them with a person |
 | `examples/` | Five user-story dashboards on public datasets, the scripts that build their graphs, an AWS exposure dashboard, a blast-radius investigation template and a Python plugin |
 

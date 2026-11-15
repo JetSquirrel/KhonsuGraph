@@ -57,7 +57,7 @@ pub fn empty_graph_prompt(state: Entity<AppState>, cx: &App) -> impl IntoElement
         )
 }
 
-fn permission_lines(permissions: &Permissions) -> Vec<String> {
+pub(crate) fn permission_lines(permissions: &Permissions) -> Vec<String> {
     let mut lines = Vec::new();
     if !permissions.network.is_empty() {
         lines.push(trf("permissions.network", &[&permissions.network.join(", ")]));
@@ -171,6 +171,17 @@ fn show_plugin_picker(
             .footer(
                 DialogFooter::new()
                     .gap_2()
+                    .child({
+                        let state = state.clone();
+                        Button::new("marketplace")
+                            .outline()
+                            .icon(IconName::Plus)
+                            .label(tr("marketplace.more"))
+                            .on_click(move |_, window, cx| {
+                                window.close_dialog(cx);
+                                crate::ui::marketplace::open(state.clone(), window, cx);
+                            })
+                    })
                     .child(
                         Button::new("install-plugin")
                             .outline()
@@ -231,7 +242,7 @@ fn describe_then_form(state: Entity<AppState>, info: PluginInfo, existing: Optio
 /// Confirm a third-party plugin's permissions once per version, then
 /// configure the source. Until it is approved nothing of the plugin runs: the
 /// dialog shows what its manifest declares.
-fn begin_configure(state: Entity<AppState>, info: PluginInfo, existing: Option<Source>, window: &mut Window, cx: &mut App) {
+pub(crate) fn begin_configure(state: Entity<AppState>, info: PluginInfo, existing: Option<Source>, window: &mut Window, cx: &mut App) {
     if approved(&info) {
         describe_then_form(state, info, existing, window, cx);
         return;

@@ -7,6 +7,7 @@ pub mod explorer;
 pub mod geo;
 pub mod graph_dialog;
 pub mod grid;
+pub mod marketplace;
 pub mod palette;
 pub mod results;
 pub mod scale;
