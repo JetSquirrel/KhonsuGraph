@@ -5,7 +5,7 @@ runs it as a separate program, talks to it in JSON lines over stdin/stdout,
 and writes what it reports into the graph. A plugin never opens the graph
 itself, so it can be written in any language and cannot corrupt a graph.
 
-The official plugins are worked examples: `plugins/csv` (local files),
+The official plugins are worked examples: `plugins/csv` (local files), [`sql`](https://github.com/JetSquirrel/khonsugraph-marketplace/tree/main/plugins/sql) (a database, in the marketplace repository),
 `plugins/aws` (a cloud account through the `aws` CLI) and
 [`plugins/neo4j`](../plugins/neo4j/README.md) (another graph database). The smallest complete
 plugin is `examples/plugins/folders`, about a hundred lines of Python with no
@@ -297,6 +297,9 @@ khonsu plugin sync --source repo
 khonsu query --db graphs/files --cypher \
   "MATCH (d:Folder)-[:CONTAINS]->(f:File) RETURN d.name AS folder, count(f) AS files ORDER BY files DESC LIMIT 5"
 ```
+
+To let others install it by name, publish it to a [marketplace](marketplace.md):
+`khonsu plugin publish examples/plugins/folders --to <folder>`.
 
 `install` copies the folder into KhonsuGraph's plugin directory, so edit the
 source and install again to update. It also takes a `.zip` with the manifest

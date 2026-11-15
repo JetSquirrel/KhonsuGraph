@@ -10,6 +10,7 @@ pub mod explore;
 pub mod investigation;
 pub mod location;
 pub mod lock;
+pub mod marketplace;
 pub mod merge;
 pub mod plugin;
 pub mod plugin_analysis;
