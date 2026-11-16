@@ -8,6 +8,10 @@
 //! result can be listed best first, or written back as a node property for
 //! dashboards and the canvas to sort, color and group by.
 //!
+//! [`Profiles`] answers a different question, which networkx does not: given
+//! one node that matters, which others behave like it, and which nodes are
+//! unlike the rest of their label.
+//!
 //! The algorithms follow networkx's definitions and defaults, so a result
 //! can be checked against it: a directed graph stays directed unless asked
 //! otherwise, and an algorithm networkx only defines for undirected graphs
@@ -16,7 +20,9 @@
 mod algorithms;
 mod load;
 mod network;
+mod profile;
 
 pub use algorithms::*;
 pub use load::{describe_nodes, load, CypherReader, LoadSpec, NodeInfo};
 pub use network::Network;
+pub use profile::{load_profiles, FeatureCount, Outlier, Outliers, Profiles, Scored, Similar, SmallGroup, MEASURE, MIN_GROUP};

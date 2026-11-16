@@ -130,7 +130,7 @@ enum Command {
     Presence(dash::PresenceArgs),
     /// Show a graph, a .dash file or a query in the window, or read what it shows (--state).
     Open(dash::OpenArgs),
-    /// Graph algorithms after networkx: PageRank, betweenness, components, communities, paths and more.
+    /// Graph algorithms after networkx: PageRank, betweenness, components, communities, paths and more; and nodes similar to one, or unlike their label.
     Analyze(analyze::AnalyzeArgs),
     /// Follow relationships from chosen nodes, within caps, and say when a cap or a filter limited the answer.
     Explore(explore::ExploreArgs),

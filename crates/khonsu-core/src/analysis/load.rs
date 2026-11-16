@@ -157,7 +157,7 @@ fn weight(value: Option<&Json>, property: &str, relationship: i64) -> Result<f64
 
 /// A label, type or property name as Cypher reads it: backquoted unless a
 /// plain identifier.
-fn ident(name: &str) -> String {
+pub(super) fn ident(name: &str) -> String {
     let plain = name.chars().next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
         && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_');
     if plain {

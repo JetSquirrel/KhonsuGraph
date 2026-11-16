@@ -68,6 +68,19 @@ khonsu analyze pagerank --db graphs/audit --type TRUSTS --top 10
 khonsu analyze communities --db graphs/investigation
 ```
 
+Two more ask what networkx does not, once one record is known to matter:
+`similar --node ID` lists the nodes of the same label whose relationships
+look most like that node's, and `outliers` lists the nodes least like the
+rest of their label. Both compare what a node does: its relationships
+counted by direction, type and the label at the other end. Every candidate
+is scored, the same graph gives the same answer, and each row carries the
+counts behind its distance.
+
+```sh
+khonsu analyze similar --db graphs/audit --node 407    # accounts rated the way #472 is
+khonsu analyze outliers --db graphs/audit --top 10     # accounts unlike the rest
+```
+
 ## Investigations
 
 `khonsu explore` follows relationships from a node within caps, `khonsu
