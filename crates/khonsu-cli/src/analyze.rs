@@ -34,6 +34,10 @@ pub enum Algorithm {
     Kcore,
     /// A shortest path between --from and --to.
     Path,
+    /// Nodes whose relationships look most like --node's: same label unless --label says otherwise.
+    Similar,
+    /// Nodes least like the rest of their label, by their relationships.
+    Outliers,
 }
 
 #[derive(Args)]
@@ -80,6 +84,9 @@ pub struct AnalyzeArgs {
     /// Path: the end node's ID.
     #[arg(long)]
     to: Option<i64>,
+    /// Similar: the node to compare the others with, by ID.
+    #[arg(long)]
+    node: Option<i64>,
 }
 
 /// Graphs above this many nodes get sampled betweenness unless --sample says otherwise.
@@ -87,8 +94,13 @@ const EXACT_BETWEENNESS: usize = 5_000;
 const DEFAULT_SAMPLE: usize = 500;
 /// Members listed per component or community.
 const MEMBERS: usize = 10;
+/// Features listed to explain a distance.
+const FEATURES: usize = 5;
 
 pub fn analyze(args: AnalyzeArgs) -> Result<Value, CliError> {
+    if args.algorithm == Algorithm::Similar && args.node.is_none() {
+        return Err(CliError::usage("similar needs --node ID (a node ID: `RETURN id(n)`, or `_id` in a result)"));
+    }
     if args.algorithm == Algorithm::Path && (args.from.is_none() || args.to.is_none()) {
         return Err(CliError::usage("path needs --from ID and --to ID (node IDs: `RETURN id(n)`, or `_id` in a result)"));
     }
@@ -106,6 +118,24 @@ pub fn analyze(args: AnalyzeArgs) -> Result<Value, CliError> {
         weight: args.weight.clone(),
     };
     let started = Instant::now();
+    if matches!(args.algorithm, Algorithm::Similar | Algorithm::Outliers) {
+        let profiles = analysis::load_profiles(reader.as_mut(), &spec)?;
+        let loaded_ms = started.elapsed().as_millis() as u64;
+        let mut out = match args.algorithm {
+            Algorithm::Similar => similar(&args, &profiles, reader.as_mut())?,
+            _ => outliers(&args, &profiles, reader.as_mut())?,
+        };
+        out["algorithm"] = json!(args.algorithm.to_possible_value().map(|v| v.get_name().to_string()));
+        out["measure"] = json!(analysis::MEASURE);
+        out["graph"] = json!({
+            "nodes": profiles.node_count(),
+            "relationships": profiles.relationship_count(),
+            "features": profiles.feature_count(),
+        });
+        out["load_ms"] = json!(loaded_ms);
+        out["elapsed_ms"] = json!(started.elapsed().as_millis() as u64);
+        return Ok(out);
+    }
     let net = analysis::load(reader.as_mut(), &spec)?;
     let loaded_ms = started.elapsed().as_millis() as u64;
     let directed = !args.undirected;
@@ -192,6 +222,7 @@ fn run(args: &AnalyzeArgs, net: &Network, directed: bool, weighted: bool, reader
             out["modularity"] = json!(modularity);
             out
         }
+        Algorithm::Similar | Algorithm::Outliers => unreachable!("answered from profiles before a network is read"),
         Algorithm::Path => {
             let (from, to) = (args.from.unwrap_or_default(), args.to.unwrap_or_default());
             let index = |id: i64| {
@@ -209,6 +240,82 @@ fn run(args: &AnalyzeArgs, net: &Network, directed: bool, weighted: bool, reader
             }
         }
     })
+}
+
+/// The nodes most like --node, every candidate scored, each with the counts
+/// behind its distance.
+fn similar(args: &AnalyzeArgs, profiles: &analysis::Profiles, reader: &mut dyn CypherReader) -> Result<Value, CliError> {
+    let id = args.node.unwrap_or_default();
+    let reference = profiles
+        .index_of(id)
+        .ok_or_else(|| CliError::new("not_found", format!("node {id} is not in the analyzed graph")))?;
+    let found = profiles.similar(reference, &args.label).ok_or_else(|| {
+        CliError::new("no_profile", format!("node {id} has no relationships in the analyzed graph, so there is nothing to compare"))
+    })?;
+    let shown = &found.rows[..found.rows.len().min(args.top)];
+    let ids: Vec<i64> = shown.iter().map(|r| profiles.id(r.node)).chain([id]).collect();
+    let info = analysis::describe_nodes(reader, &ids)?;
+    let describe = |node: usize| {
+        let id = profiles.id(node);
+        let node = info.get(&id).cloned().unwrap_or_default();
+        json!({ "id": id, "labels": node.labels, "name": node.name })
+    };
+    let rows = shown
+        .iter()
+        .map(|scored| {
+            let mut row = describe(scored.node);
+            row["distance"] = json!(scored.distance);
+            row["features"] = counts(&profiles.compare(scored.node, reference, FEATURES), "reference");
+            row
+        })
+        .collect::<Vec<_>>();
+    let mut reference_row = describe(reference);
+    reference_row["profile"] =
+        profiles.profile(reference).into_iter().map(|(feature, count)| json!({ "feature": feature, "count": count })).collect();
+    Ok(json!({
+        "reference": reference_row,
+        "rows": rows,
+        "candidates": found.candidates,
+        "without_profile": found.without_profile,
+    }))
+}
+
+/// Nodes least like the rest of their label, with the counts that set each
+/// apart from what is typical there.
+fn outliers(args: &AnalyzeArgs, profiles: &analysis::Profiles, reader: &mut dyn CypherReader) -> Result<Value, CliError> {
+    let found = profiles.outliers(&args.label, args.top, FEATURES);
+    let ids: Vec<i64> = found.rows.iter().map(|r| profiles.id(r.node)).collect();
+    let info = analysis::describe_nodes(reader, &ids)?;
+    let rows = found
+        .rows
+        .iter()
+        .map(|outlier| {
+            let id = profiles.id(outlier.node);
+            let node = info.get(&id).cloned().unwrap_or_default();
+            json!({
+                "id": id,
+                "labels": node.labels,
+                "name": node.name,
+                "distance": outlier.distance,
+                "group_size": outlier.group_size,
+                "differs": counts(&outlier.differs, "typical"),
+            })
+        })
+        .collect::<Vec<_>>();
+    Ok(json!({
+        "rows": rows,
+        "scored": found.scored,
+        "without_profile": found.without_profile,
+        "skipped_groups": found.skipped,
+        "min_group": analysis::MIN_GROUP,
+    }))
+}
+
+/// Feature counts as JSON, the other side named for what it is.
+fn counts(features: &[analysis::FeatureCount], other: &str) -> Value {
+    // A count is a whole number; only a group's mean is not.
+    let number = |n: f64| if n.fract() == 0.0 { json!(n as u64) } else { json!((n * 1e4).round() / 1e4) };
+    features.iter().map(|f| json!({ "feature": f.feature, "node": number(f.node), other: number(f.other) })).collect()
 }
 
 /// Node indexes with the highest `score`, best first, ties by ID.
