@@ -11,7 +11,7 @@
 //! and unpacked beside the cache. It replaces the installed app when
 //! KhonsuGraph quits: at once on "Restart to update", else on the next quit.
 //! On Windows that is the whole folder the zip holds — the app, its
-//! `khonsu.exe` copy and the official plugins — since they are released
+//! `khonsu.exe` copy and the built-in plugins — since they are released
 //! together. Where the app cannot replace itself — a development build, a
 //! folder it may not write, a platform with no package — the status bar
 //! links to the release page instead.

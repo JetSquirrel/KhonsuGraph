@@ -5,9 +5,8 @@ runs it as a separate program, talks to it in JSON lines over stdin/stdout,
 and writes what it reports into the graph. A plugin never opens the graph
 itself, so it can be written in any language and cannot corrupt a graph.
 
-The official plugins are worked examples: `plugins/csv` (local files), [`sql`](https://github.com/JetSquirrel/khonsugraph-marketplace/tree/main/plugins/sql) (a database, in the marketplace repository),
-`plugins/aws` (a cloud account through the `aws` CLI) and
-[`plugins/neo4j`](../plugins/neo4j/README.md) (another graph database). The smallest complete
+The official plugins are worked examples: `plugins/csv` (local files), [`sql`](https://github.com/JetSquirrel/khonsugraph-marketplace/tree/main/plugins/sql) (a database), [`aws`](https://github.com/JetSquirrel/khonsugraph-marketplace/tree/main/plugins/aws) (a cloud account through the `aws` CLI) and
+[`neo4j`](https://github.com/JetSquirrel/khonsugraph-marketplace/tree/main/plugins/neo4j/README.md) (another graph database); all but `plugins/csv` are in the marketplace repository. The smallest complete
 plugin is `examples/plugins/folders`, about a hundred lines of Python with no
 dependencies.
 
@@ -155,7 +154,7 @@ values from the source's secret fields are masked before they are kept.
 
 A plugin can also say something about a graph, as well as fill one. This is
 optional, and a plugin that offers nothing goes on working as before. The AWS
-plugin's [exposure rules](../plugins/aws/README.md) are one, and
+plugin's [exposure rules](https://github.com/JetSquirrel/khonsugraph-marketplace/tree/main/plugins/aws/README.md) are one, and
 `crates/khonsu-plugin-protocol/examples/analyzer.rs` is a small one with nothing to
 do with AWS.
 

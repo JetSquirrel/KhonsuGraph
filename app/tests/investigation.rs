@@ -19,7 +19,10 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Once;
+use std::sync::{Mutex, MutexGuard, Once};
+
+#[allow(dead_code)] // each test file uses part of it
+mod aws_plugin;
 
 const INTERNET: &str = "shop/cidr:internet";
 const WEB_1: &str = "shop/123456789012:us-east-1:i-web1";
@@ -80,9 +83,11 @@ impl Env {
         build_plugins();
         let base = std::env::var_os("KHONSU_TEST_DIR").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
         std::fs::create_dir_all(&base).unwrap();
-        Self {
+        let env = Self {
             dir: tempfile::tempdir_in(base).unwrap(),
-        }
+        };
+        aws_plugin::install(&env.config());
+        env
     }
 
     fn path(&self, name: &str) -> PathBuf {
@@ -106,6 +111,16 @@ impl Env {
         let json = serde_json::from_str(stdout.trim())
             .unwrap_or_else(|e| panic!("{args:?}: {e}: {stdout}\n{}", String::from_utf8_lossy(&output.stderr)));
         (output.status.code().unwrap_or(-1), json)
+    }
+
+    /// Points this process's settings at this test's config folder, for a
+    /// test that calls the library rather than `khonsu`. Such tests take
+    /// turns, since the setting belongs to the whole process.
+    fn settings_in_process(&self) -> MutexGuard<'static, ()> {
+        static SETTINGS: Mutex<()> = Mutex::new(());
+        let guard = SETTINGS.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        std::env::set_var("KHONSU_CONFIG_DIR", self.config());
+        guard
     }
 
     fn ok(&self, args: &[&str]) -> Value {
@@ -168,13 +183,13 @@ fn repo() -> PathBuf {
 }
 
 fn fixture() -> PathBuf {
-    repo().join("plugins/aws/tests/fixture")
+    aws_plugin::fixture()
 }
 
 /// The saved responses with a positive, a negative and an undecided case, and
-/// route tables. See `plugins/aws/README.md`.
+/// route tables. See the AWS plugin's README in the marketplace.
 fn exposure_fixture() -> PathBuf {
-    repo().join("plugins/aws/tests/fixture-exposure")
+    aws_plugin::exposure_fixture()
 }
 
 fn golden_path() -> PathBuf {
@@ -195,7 +210,7 @@ fn build_plugins() {
     static BUILD: Once = Once::new();
     BUILD.call_once(|| {
         let status = Command::new(env!("CARGO"))
-            .args(["build", "-q", "--locked", "-p", "khonsu-plugin-aws", "-p", "khonsu-plugin-csv"])
+            .args(["build", "-q", "--locked", "-p", "khonsu-plugin-csv"])
             .status()
             .unwrap();
         assert!(status.success());
@@ -1451,7 +1466,8 @@ fn a_bad_reinstall_keeps_the_plugin_already_there() {
     assert!(out["error"]["message"].as_str().unwrap().contains("entry executable not found"), "{out}");
     assert_eq!(approval(&env), "approved", "still there, and still as approved");
     env.ok(&["plugin", "sync", "--source", "script"]);
-    let leftovers: Vec<String> = std::fs::read_dir(env.config().join("plugins")).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).collect();
+    // Every test installs the AWS plugin; anything else besides `scripted` is a leftover.
+    let leftovers: Vec<String> = std::fs::read_dir(env.config().join("plugins")).unwrap().flatten().map(|e| e.file_name().to_string_lossy().into_owned()).filter(|name| name != "aws").collect();
     assert_eq!(leftovers, ["scripted"], "no staging folder left behind");
 }
 
@@ -1648,9 +1664,7 @@ fn a_cancelled_sync_reports_it_and_leaves_the_graph_alone() {
     let db = env.synced_graph("graph");
     let before = env.answers(&db);
 
-    // The only test here that reads settings in this process; the others hand
-    // the directory to the `khonsu` they spawn.
-    std::env::set_var("KHONSU_CONFIG_DIR", env.config());
+    let _settings = env.settings_in_process();
     let source = settings::load_sources().into_iter().find(|source| source.id == "shop").unwrap();
     {
         let mut graph = Graph::open(&db, AccessMode::ReadWrite, "test").unwrap();
@@ -1896,6 +1910,8 @@ fn the_command_and_the_library_the_window_uses_give_the_same_findings() {
     from_command.as_object_mut().unwrap().remove("truncated");
 
     let sources: Vec<settings::Source> = serde_json::from_value(env.ok(&["source", "list"])["sources"].clone()).unwrap();
+    // The plugin is installed in this test's config folder, not built in.
+    let _settings = env.settings_in_process();
     let offered = khonsu_core::plugin_analysis::find("aws", "exposure").unwrap();
     let mut graph = Graph::open(&db, AccessMode::ReadOnly, "test").unwrap();
     let input = graph.read_analysis_input(&offered.info).unwrap();

@@ -24,11 +24,14 @@ khonsu check examples/infra/blast_radius.dash --db graphs/infra
 ```
 
 `aws/exposure.dash` shows what an AWS account's configuration opens to the
-internet. Try it on the saved responses that ship with the AWS plugin:
+internet. The AWS plugin comes from the marketplace, and its saved responses are
+in the [khonsugraph-marketplace](https://github.com/JetSquirrel/khonsugraph-marketplace)
+repository; this assumes a checkout of it beside this one:
 
 ```sh
+khonsu plugin install aws --yes
 khonsu init graphs/aws
-khonsu source add --db graphs/aws --plugin aws --name "shop account"   -c "fixture_dir=\"$PWD/plugins/aws/tests/fixture\"" -c regions=us-east-1
+khonsu source add --db graphs/aws --plugin aws --name "shop account"   -c "fixture_dir=\"$PWD/../khonsugraph-marketplace/plugins/aws/tests/fixture\"" -c regions=us-east-1
 khonsu plugin sync --source shop-account
 khonsu check examples/aws/exposure.dash --db graphs/aws
 ```
@@ -51,10 +54,10 @@ khonsu report export db.report.json --markdown db.md
 ```
 
 The AWS plugin ships `aws.exposure`, which runs on `graphs/aws` above:
-`khonsu template run plugins/aws/templates/exposure.template.json --db graphs/aws`.
+`khonsu template run aws.exposure --db graphs/aws`.
 
 For findings that explain themselves, with the rule, fields and unknowns behind
-each, follow the walkthrough in [the exposure rules](../plugins/aws/README.md).
+each, follow the walkthrough in [the exposure rules](https://github.com/JetSquirrel/khonsugraph-marketplace/tree/main/plugins/aws/README.md).
 
 ## Build a story graph
 
