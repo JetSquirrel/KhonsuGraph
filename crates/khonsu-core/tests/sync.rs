@@ -9,12 +9,22 @@ use serde_json::{json, Map, Value};
 use std::fmt::Write as _;
 use std::sync::atomic::AtomicBool;
 
-fn build_csv_plugin() {
-    let status = std::process::Command::new(env!("CARGO"))
-        .args(["build", "-q", "-p", "khonsu-plugin-csv"])
-        .status()
+/// Builds the CSV plugin and returns the folder Cargo put it in, which need
+/// not be anywhere near this test binary.
+fn build_csv_plugin() -> std::path::PathBuf {
+    let output = std::process::Command::new(env!("CARGO"))
+        .args(["build", "-q", "-p", "khonsu-plugin-csv", "--message-format=json"])
+        .stderr(std::process::Stdio::inherit())
+        .output()
         .unwrap();
-    assert!(status.success());
+    assert!(output.status.success());
+    let exe = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .filter(|message| message["reason"] == "compiler-artifact" && message["target"]["name"] == "khonsu-plugin-csv")
+        .find_map(|message| message["executable"].as_str().map(std::path::PathBuf::from))
+        .expect("cargo reports the CSV plugin executable");
+    exe.parent().unwrap().to_path_buf()
 }
 
 fn count(graph: &mut Graph, query: &str) -> i64 {
@@ -46,7 +56,7 @@ fn write_csvs(dir: &std::path::Path, hosts: usize, skip_edge: Option<usize>) -> 
 
 #[test]
 fn csv_source_syncs_counts_match_rows_and_resync_is_idempotent() {
-    build_csv_plugin();
+    std::env::set_var("KHONSU_PLUGIN_PATH", build_csv_plugin());
     let dir = TestDir::new();
     std::env::set_var("KHONSU_CONFIG_DIR", dir.0.path().join("config"));
     let data = dir.0.path().join("data");
