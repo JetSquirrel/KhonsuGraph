@@ -9,7 +9,7 @@ use khonsu_core::marketplace::{self, MarketError, Update};
 use khonsu_core::plugin;
 use serde_json::{json, Value};
 
-use crate::{CliError, NOT_ENFORCED};
+use crate::{approval, CliError, NOT_ENFORCED};
 
 #[derive(Subcommand)]
 pub enum MarketplaceCommand {
@@ -110,9 +110,11 @@ pub fn search(query: Option<&str>, only: Option<&str>) -> Result<Value, CliError
 }
 
 /// What to say after an install or update, approved or not.
-fn approval_note(id: &str, approved: bool) -> String {
+pub(crate) fn approval_note(id: &str, approved: bool) -> String {
     if approved {
         NOT_ENFORCED.to_string()
+    } else if approval::approving_agent().is_some() {
+        format!("Ask the person to approve {id} in the KhonsuGraph window before syncing; an agent may not. {NOT_ENFORCED}")
     } else {
         format!("Run `khonsu plugin approve {id}` before syncing. {NOT_ENFORCED}")
     }
@@ -140,14 +142,24 @@ pub fn install(spec: &str, yes: bool) -> Result<Value, CliError> {
     if looks_like_path {
         return Err(CliError::usage(format!("{spec}: no such directory or archive")));
     }
+    // Asked before anything is installed, and answered after: the install
+    // itself is the person's to keep or not, the approval is not the agent's.
+    let agent = approval::approving_agent().filter(|_| yes);
     let installed = marketplace::install(spec)?;
-    if yes {
+    let approve = yes && agent.is_none();
+    if approve {
         plugin::approve(&installed.plugin)?;
     }
-    Ok(installed_json(&installed, yes))
+    let out = installed_json(&installed, approve);
+    match agent {
+        Some(agent) => Err(approval::refusal(&agent, &[&installed.plugin.manifest.id], out)),
+        None => Ok(out),
+    }
 }
 
 pub fn update(only: Option<&str>, dry_run: bool, yes: bool) -> Result<Value, CliError> {
+    let agent = approval::approving_agent().filter(|_| yes && !dry_run);
+    let yes = yes && agent.is_none();
     let results = marketplace::update(only, dry_run)?;
     let mut out = Vec::new();
     for result in &results {
@@ -171,7 +183,18 @@ pub fn update(only: Option<&str>, dry_run: bool, yes: bool) -> Result<Value, Cli
             other => serde_json::to_value(other).expect("update serializes"),
         });
     }
-    Ok(json!({ "dry_run": dry_run, "plugins": out }))
+    let out = json!({ "dry_run": dry_run, "plugins": out });
+    let updated: Vec<&str> = results
+        .iter()
+        .filter_map(|result| match result {
+            Update::Updated { installed } => Some(installed.plugin.manifest.id.as_str()),
+            _ => None,
+        })
+        .collect();
+    match agent {
+        Some(agent) if !updated.is_empty() => Err(approval::refusal(&agent, &updated, out)),
+        _ => Ok(out),
+    }
 }
 
 pub fn pack(args: PackArgs) -> Result<Value, CliError> {

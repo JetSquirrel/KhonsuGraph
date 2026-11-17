@@ -1,0 +1,19 @@
+{
+  "format": "khonsu-ontology",
+  "version": 1,
+  "id": "attack",
+  "revision": "0.1.0",
+  "description": "MITRE ATT&CK as a pack over the core ontology: techniques, tactics and mitigations, and the evidence that a technique was used.",
+  "concepts": [
+    { "name": "Technique", "description": "An ATT&CK technique or sub-technique: a way an adversary achieves a goal, such as T1003.001 LSASS Memory.", "synonyms": ["attack pattern", "ttp", "sub-technique"] },
+    { "name": "Tactic", "description": "An ATT&CK tactic: the goal a technique serves, such as Credential Access.", "synonyms": ["kill chain phase"] },
+    { "name": "Mitigation", "description": "An ATT&CK mitigation: a way to stop a technique from working.", "synonyms": ["course of action", "countermeasure"] }
+  ],
+  "relationships": [
+    { "name": "indicates", "from": "Entity", "to": "Technique", "description": "Something seen in the data matches a rule for the technique. It is a lead, not proof the technique was used.", "synonyms": ["matches technique", "detected as"] },
+    { "name": "uses", "from": "Entity", "to": "Entity", "description": "ATT&CK records that a group or a piece of software uses a technique or another piece of software.", "synonyms": ["employs"] },
+    { "name": "in_tactic", "from": "Technique", "to": "Tactic", "description": "The technique serves the tactic.", "synonyms": ["part of tactic"] },
+    { "name": "mitigates", "from": "Mitigation", "to": "Technique", "description": "The mitigation works against the technique.", "synonyms": ["prevents", "counters"] },
+    { "name": "subtechnique_of", "from": "Technique", "to": "Technique", "description": "The sub-technique is a narrower form of the technique.", "synonyms": ["parent technique"] }
+  ]
+}

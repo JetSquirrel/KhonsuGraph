@@ -1,0 +1,41 @@
+{
+  "format": "khonsu-ontology",
+  "version": 1,
+  "id": "khonsu-core",
+  "revision": "0.1.0",
+  "description": "The investigation primitives every domain shares: who and what is involved, what identifies them, what happened, and where. Domain packs extend these concepts; they do not change them.",
+  "concepts": [
+    { "name": "Entity", "description": "Anything an investigation follows: a party, an account, a thing, a place or a digital object.", "synonyms": ["thing", "object"] },
+    { "name": "Agent", "extends": ["Entity"], "description": "A party that can act: a person or an organization.", "synonyms": ["party", "actor"] },
+    { "name": "Person", "extends": ["Agent"], "description": "A human being.", "synonyms": ["individual", "people", "human"] },
+    { "name": "Organization", "extends": ["Agent"], "description": "A company, group, agency or other body of people.", "synonyms": ["company", "group", "org", "organisation", "entity owner"] },
+    { "name": "Account", "extends": ["Entity"], "description": "An identity a party holds in a system: a user account, a service principal, a login.", "synonyms": ["user", "login", "principal", "identity", "user account"] },
+    { "name": "Asset", "extends": ["Entity"], "description": "Something owned or operated: a device, a cloud resource, a financial account, a vehicle.", "synonyms": ["resource"] },
+    { "name": "Device", "extends": ["Asset"], "description": "A machine: a host, server, laptop, phone or network appliance.", "synonyms": ["host", "machine", "server", "computer", "endpoint", "instance"] },
+    { "name": "Resource", "extends": ["Asset"], "description": "A resource in a cloud or service: a bucket, a database, a queue, a function.", "synonyms": ["cloud resource", "service resource"] },
+    { "name": "FinancialAccount", "extends": ["Asset"], "description": "An account that holds money: a bank account, a card, a wallet.", "synonyms": ["bank account", "wallet", "card"] },
+    { "name": "Location", "extends": ["Entity"], "description": "A place: an address, a site, a region.", "synonyms": ["place", "address", "site", "region"] },
+    { "name": "Artifact", "extends": ["Entity"], "description": "A digital object that can be observed: a file, a process, a message, a piece of software.", "synonyms": ["observable", "digital object"] },
+    { "name": "Process", "extends": ["Artifact"], "description": "A program running on a device.", "synonyms": ["program", "executable", "running process"] },
+    { "name": "Software", "extends": ["Artifact"], "description": "A program or tool as published, not one running copy of it.", "synonyms": ["tool", "malware", "application"] },
+    { "name": "Identifier", "description": "A value that identifies an entity and links records about it: an address, a name, a number, a hash.", "synonyms": ["indicator", "selector"] },
+    { "name": "IPAddress", "extends": ["Identifier"], "description": "An IPv4 or IPv6 address.", "synonyms": ["ip", "ip address", "address"] },
+    { "name": "Email", "extends": ["Identifier"], "description": "An email address.", "synonyms": ["email address", "mail"] },
+    { "name": "Domain", "extends": ["Identifier"], "description": "A DNS domain name.", "synonyms": ["domain name", "hostname", "fqdn"] },
+    { "name": "Username", "extends": ["Identifier"], "description": "A name an account logs in with.", "synonyms": ["user name", "login name"] },
+    { "name": "Event", "description": "Something that happened at a time and involved entities.", "synonyms": ["activity", "action", "occurrence"] },
+    { "name": "Observation", "extends": ["Event"], "description": "What a source saw, as it saw it, before anyone judged what it means.", "synonyms": ["sighting", "log entry", "record"] }
+  ],
+  "relationships": [
+    { "name": "member_of", "from": "Agent", "to": "Organization", "description": "The party belongs to the organization.", "synonyms": ["belongs to", "works for"] },
+    { "name": "holds", "from": "Agent", "to": "Account", "description": "The party holds or controls the account.", "synonyms": ["owns account", "controls"] },
+    { "name": "owns", "from": "Agent", "to": "Asset", "description": "The party owns or operates the asset.", "synonyms": ["operates"] },
+    { "name": "acts_on", "from": "Account", "to": "Entity", "description": "The account did something to, or with, the entity.", "synonyms": ["uses", "accessed", "started"] },
+    { "name": "runs_on", "from": "Process", "to": "Device", "description": "The process runs on the device.", "synonyms": ["ran on", "executes on"] },
+    { "name": "started", "from": "Process", "to": "Process", "description": "The process started the other process.", "synonyms": ["spawned", "parent of"] },
+    { "name": "communicated_with", "from": "Entity", "to": "Identifier", "description": "The entity sent to or received from the address.", "synonyms": ["connected to", "contacted"] },
+    { "name": "identified_by", "from": "Entity", "to": "Identifier", "description": "The identifier names the entity.", "synonyms": ["has identifier", "known as"] },
+    { "name": "located_at", "from": "Entity", "to": "Location", "description": "The entity is at the location.", "synonyms": ["at", "in"] },
+    { "name": "involves", "from": "Event", "to": "Entity", "description": "The entity took part in the event.", "synonyms": ["concerns", "about"] }
+  ]
+}

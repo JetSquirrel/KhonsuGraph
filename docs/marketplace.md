@@ -7,7 +7,7 @@ HTTPS address, and is read the same way.
 
 ```sh
 khonsu plugin search sql                 # what the marketplaces offer
-khonsu plugin install sql --yes          # download, check, install, approve
+khonsu plugin install sql --yes          # download, check, install, approve (run by a person)
 khonsu plugin update                     # bring installed plugins up to date
 ```
 
@@ -56,7 +56,9 @@ when it lists a newer version. `--dry-run` only says what would change.
 
 Installing is not approving. A plugin from a marketplace needs approval before
 it runs, and an updated one needs it again, because its files changed. `--yes`
-approves in the same step. The marketplace's `permissions` are for reading
+approves in the same step when a person runs it; run by an agent it approves
+nothing and exits 4 (see [plugin security](plugin-security.md#approval-is-a-persons)).
+The marketplace's `permissions` are for reading
 before you download: approval goes by the installed manifest.
 
 A marketplace says where a package is and what its hash is. It does not make

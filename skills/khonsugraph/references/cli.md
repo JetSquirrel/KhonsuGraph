@@ -1,6 +1,6 @@
 # khonsu CLI reference
 
-Every command prints exactly one JSON object on stdout (`--pretty` indents it). Progress of a sync goes to stderr as JSON lines. On failure the object is `{"error": {"kind", "message", "detail"?}}` and the exit status is 1, or 2 for a usage or spec mistake.
+Every command prints exactly one JSON object on stdout (`--pretty` indents it). Progress of a sync goes to stderr as JSON lines. On failure the object is `{"error": {"kind", "message", "detail"?}}` and the exit status is 1, 2 for a usage or spec mistake, or 4 (kind `needs_confirmation`) for something only a person may do: approving a plugin. `detail.done` then holds what was done without it, such as the install.
 
 ## Graph
 
@@ -16,7 +16,7 @@ khonsu query  --db DIR --write --cypher "CREATE (:Note {text: 'checked'})"
 khonsu explain --db DIR --cypher "MATCH (n:Host) RETURN n"
 ```
 
-`--db` defaults to `$KHONSU_DB`, then the graph last opened in the app. Graphs open read-only; `--write` opens for writing and takes KhonsuGraph's writer lock. `-p name=value` parameters are parsed as JSON when they parse (`-p n=3` is a number, `-p ids='["a","b"]'` a list), else text; SQL parameters are positional (`-p 1=web` for `$1`).
+`--db` defaults to `$KHONSU_DB`, then the graph last opened in the app. Graphs open read-only; `--write` opens for writing and takes KhonsuGraph's writer lock. A statement that writes with `--write` is appended to `writes.jsonl` in the config folder (when, graph, statement with key material masked, the agent when one is detected, `via`), because nothing written by hand is in a data source and `rebuild` does not carry it over. `-p name=value` parameters are parsed as JSON when they parse (`-p n=3` is a number, `-p ids='["a","b"]'` a list), else text; SQL parameters are positional (`-p 1=web` for `$1`).
 
 ### query output
 
@@ -176,6 +176,19 @@ khonsu snapshot check monday.snapshot.json --db graphs/aws
 
 `diff` gives `nodes` and `relationships`, each with `added`, `removed`, `not_seen` and `changed`, plus `node_counts`, `relationship_counts`, `truncated` (cut by `--max-changes`, 1,000 by default) and `warnings`. `removed` means the later snapshot's source was read completely; `not_seen` means it may still exist, so never report that as deleted. `check` gives `graph_state` and `differences`. A graph over 200,000 nodes or relationships fails with kind `too_large`. See `docs/snapshots.md`.
 
+## Ontology
+
+```bash
+khonsu ontology describe [--brief] [--concept NAME] [-d DIR] [--ontology PATH]   # concepts, relationships; with -d: mapped, unmapped, mapped_but_absent
+khonsu ontology resolve WORD... [--ontology PATH]                                # {words: [{word, matches, labels, types} | {word, matches: [], suggestions}]}
+khonsu ontology check -d DIR --entities a,b,c [--ontology PATH]                  # coverage; exit 3, kind not_investigable, when a term is missing
+khonsu ontology path --from C --to C [--max-hops 4] [-d DIR] [--ontology PATH]   # declared routes; with -d graph.paths[].pattern for MATCH
+khonsu query -d DIR --semantic --cypher "MATCH (d:Device)<-[:runs_on]-(p:Process) RETURN d, p"   # concepts and relationships become the graph's labels and types; result has `semantic`
+khonsu query -d DIR --validate-only --cypher "..."                                # check labels, types and pattern directions; runs nothing
+```
+
+Every answer has `ontology_versions` (`id`, `revision`, `origin`: `builtin`, `user`, `plugin:<id>`, `path`) and, when a file was left out, `problems`. A match is `{kind: concept|relationship, name, via: name|synonym|label:<L>|type:<T>, status}`. `check` gives `coverage: {terms: [{term, matches, found: [{kind, name, count}], missing?, suggestions?}], covered, total, drafts}` and `investigable`; `missing` is `unknown_term`, `no_mapping` or `not_in_graph`. `path` gives `declared` and `graph.paths` as `[{steps: [{from, via, to, reverse, means?}], pattern?}]`, fewest hops first, at most 20; `--max-hops` is 1 to 8. A concept that doesn't exist exits 1 with kind `not_found` and `detail.suggestions`. `query --semantic` (Cypher only, never with `--write`) adds `semantic: {statement, replacements: [{written, kind, means, became}], drafts, valid, issues, ontology_versions}`, and exits 3 (`not_investigable`, `detail.missing`) for a concept nothing in the graph holds. `--validate-only` prints `{statement, valid, issues}` and runs nothing. An issue is `{severity: error|warning, kind, message, suggestions?}`: errors (`unknown_label`, `unknown_type`, `wrong_direction`, `no_such_pattern`) exit 2 with kind `invalid_query`; warnings (`unbounded`, `cartesian`) do not stop it. See `docs/ontology.md`.
+
 ## Graph analysis
 
 HawDB's Cypher has no shortest paths, centrality or communities; `khonsu analyze` computes them in memory, after networkx's definitions (results match networkx on the same graph).
@@ -209,10 +222,11 @@ Which graph: the whole graph by default; `--label` keeps nodes with those labels
 ```bash
 khonsu plugin list                                # built-in and installed, with permissions
 khonsu plugin describe csv                        # config fields, permissions, output types
-khonsu plugin install ./my-plugin --yes           # copy into the user plugin folder; --yes approves its permissions
+khonsu plugin install ./my-plugin --yes           # copy into the user plugin folder; --yes approves its permissions (a person only: an agent gets exit 4)
 khonsu plugin search sql                          # what the marketplaces offer, and what is installed or out of date
 khonsu plugin install sql --yes                   # by name from a marketplace (sql@official to say which), hash-checked
 khonsu plugin update [ID] [--dry-run] [--yes]     # bring marketplace plugins up to date; an updated one needs approval again
+khonsu plugin approve ID                          # a person only: run by an agent it approves nothing and exits 4
 khonsu marketplace list | add LOCATION [--name N] | remove NAME | restore
 khonsu plugin pack DIR [-o OUT] [--target T] [--bin FILE]        # <id>-<version>-<target>.zip and its SHA-256
 khonsu plugin publish DIR --to FOLDER [--bin FILE] [--base-url URL]  # pack into a marketplace folder and list it

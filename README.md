@@ -88,6 +88,10 @@ evidence` says what supports a record, `khonsu investigation` saves a line of
 inquiry and reopens it against the graph as it is now, and `khonsu snapshot`
 says what changed between two points. See [saved investigations](docs/investigations.md),
 [snapshots](docs/snapshots.md) and [what the gates test](docs/investigation-gates.md).
+What is kept in the graph and what in files follows two rules; see
+[what goes in a graph](docs/graph-contents.md). `khonsu ontology` says what a
+graph's labels mean, whether a graph can answer a question, and how two
+concepts connect in it; see [ontology](docs/ontology.md).
 
 A template asks a question the same way each time, read-only and within caps,
 and a report keeps the answer so a reviewer can check it and run it again:

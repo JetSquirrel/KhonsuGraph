@@ -95,7 +95,7 @@ impl Env {
 
     /// Runs `khonsu` and returns (exit code, stdout JSON).
     fn khonsu(&self, args: &[&str]) -> (i32, Value) {
-        let output = Command::new(env!("CARGO_BIN_EXE_khonsugraph"))
+        let output = as_a_person(Command::new(env!("CARGO_BIN_EXE_khonsugraph")))
             .args(args)
             .env("KHONSU_CONFIG_DIR", self.config())
             .env("KHONSU_SCRIPTED_TRACE", self.path("scripted-trace.log"))
@@ -1991,4 +1991,14 @@ fn an_exact_path_that_is_not_in_the_graph_is_not_saved() {
     assert!(!file.exists());
     let (code, out) = env.khonsu(&["investigation", "save", text(&file), "-d", text(&db), "--path-refs", "nonsense"]);
     assert_eq!((code, out["error"]["kind"].as_str()), (2, Some("usage")), "{out}");
+}
+
+/// The command as a person would run it: without the variables that show an
+/// agent, which a test inherits when an agent runs it.
+fn as_a_person(mut command: Command) -> Command {
+    command.env_remove("KHONSU_AGENT");
+    for (variable, _) in khonsu_dash::presence::AGENT_VARIABLES {
+        command.env_remove(variable);
+    }
+    command
 }

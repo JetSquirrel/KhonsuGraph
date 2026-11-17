@@ -1,0 +1,30 @@
+{
+  "format": "khonsu-mapping",
+  "version": 1,
+  "id": "security-example",
+  "revision": "1",
+  "description": "What the labels and types of the security example (examples/datasets, story security) mean: ATT&CK objects and OTRF Sysmon recordings.",
+  "status": "draft",
+  "labels": [
+    { "label": "Host", "concept": "Device" },
+    { "label": "User", "concept": "Account" },
+    { "label": "Process", "concept": "Process" },
+    { "label": "IP", "concept": "IPAddress" },
+    { "label": "Group", "concept": "Organization" },
+    { "label": "Software", "concept": "Software" },
+    { "label": "Technique", "concept": "Technique" },
+    { "label": "Tactic", "concept": "Tactic" },
+    { "label": "Mitigation", "concept": "Mitigation" }
+  ],
+  "relationship_types": [
+    { "type": "RAN_ON", "relationship": "runs_on" },
+    { "type": "SPAWNED", "relationship": "started" },
+    { "type": "STARTED", "relationship": "acts_on" },
+    { "type": "CONNECTED_TO", "relationship": "communicated_with" },
+    { "type": "INDICATES", "relationship": "indicates" },
+    { "type": "USES", "relationship": "uses" },
+    { "type": "IN_TACTIC", "relationship": "in_tactic" },
+    { "type": "MITIGATES", "relationship": "mitigates" },
+    { "type": "SUBTECHNIQUE_OF", "relationship": "subtechnique_of" }
+  ]
+}

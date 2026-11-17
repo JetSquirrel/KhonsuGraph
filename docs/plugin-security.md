@@ -12,6 +12,7 @@ program you run.
 | A plugin's declared `network`, `read_files` and `commands` | **No.** They're what the plugin says about itself, shown so you can decide |
 | A plugin doesn't run until approved | Yes, wherever its process would be started: `describe`, a connection test, a preview or dry run, a sync and an analysis. Until then it is sent no configuration and no secrets, and what it declares is read from its manifest |
 | A changed plugin needs approval again | Yes, for its version, permissions and the files in its folder |
+| A person approves, not an agent | Partly: `plugin approve`, `install --yes` and `update --yes` approve nothing and exit 4 (`needs_confirmation`) when the environment shows an agent (`KHONSU_AGENT`, or the variables Claude Code, Codex, Cursor and Gemini CLI set). See below |
 | `entry` stays inside the plugin's folder | Yes, except a bare program name found on `PATH` |
 | An archive stays inside its folder and within size limits | Yes |
 | Output is limited in size | Yes |
@@ -35,9 +36,27 @@ program you run.
 | An analysis that sends too much | Refused past 16 MiB in one line or 100,000 findings |
 | An analysis that misquotes the graph | It only points at records, and KhonsuGraph reads their values itself. A reference, rule or verdict that doesn't match refuses the whole answer. See [offering an analysis](plugins.md#offering-an-analysis) |
 
+## Approval is a person's
+
+Approving a plugin lets it run as you, with your secrets, so an agent working
+for you doesn't do it. Run by an agent, `khonsu plugin approve` approves
+nothing, and `install --yes` or `update --yes` install or update without
+approving; each exits 4 with kind `needs_confirmation`, and `detail.done`
+holds what was done. The agent is told to ask you, and you approve in the
+window (**Add source**, the plugin, **Approve**, with its permissions beside the
+button) or by running `khonsu plugin approve` yourself.
+
+An agent is recognised by its environment: `KHONSU_AGENT`, or the variables
+Claude Code, Codex, Cursor and Gemini CLI set. This stops an agent that
+approves because a README says `--yes` or because it was told it may. It does
+not stop one set on getting around it: an agent can clear its environment, or
+write the approval record itself, as anything else running as you can.
+
 ## What this doesn't protect against
 
 - **A malicious plugin you approved.** It can do anything you can.
+- **An agent that hides what it is.** Approval from the command line is refused
+  only when the environment shows an agent; see above.
 - **Someone who can already write to your files.** The approval record lives beside
   the plugins, in your config folder. Change detection notices accidents and swapped
   files. It's no defense against an attacker with your account.
