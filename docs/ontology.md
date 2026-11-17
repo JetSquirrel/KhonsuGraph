@@ -77,10 +77,10 @@ The security example's ATT&CK pack and mapping are in
 ## Commands
 
 ```sh
-khonsu ontology describe [--brief] [--concept NAME] [-d DIR] [--ontology PATH]
-khonsu ontology resolve WORD... [--ontology PATH]
-khonsu ontology check -d DIR --entities account,device,ip [--ontology PATH]
-khonsu ontology path --from CONCEPT --to CONCEPT [--max-hops 4] [-d DIR] [--ontology PATH]
+khonsu graph ontology describe [--brief] [--concept NAME] [-d DIR] [--ontology PATH]
+khonsu graph ontology resolve WORD... [--ontology PATH]
+khonsu graph ontology check -d DIR --entities account,device,ip [--ontology PATH]
+khonsu graph ontology path --from CONCEPT --to CONCEPT [--max-hops 4] [-d DIR] [--ontology PATH]
 ```
 
 - **describe** lists the concepts and relationships, or one concept in full: what

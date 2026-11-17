@@ -71,7 +71,7 @@ fn rules() -> Vec<RuleInfo> {
             "A running instance whose security group allows traffic from the security group of an instance with a potential exposure finding.",
             &[
                 NOT_READ_NETWORK,
-                "Only one step is followed; use khonsu explore for longer chains.",
+                "Only one step is followed; use khonsu graph explore for longer chains.",
                 "Whether the source instance could be made to send this traffic is not assessed.",
             ],
         ),

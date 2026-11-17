@@ -22,16 +22,16 @@ Every installation starts with the `official` marketplace, served from
 ## Using one
 
 ```sh
-khonsu marketplace add acme/khonsu-plugins          # owner/repo on GitHub
-khonsu marketplace add https://plugins.example.com  # any HTTPS address
-khonsu marketplace add ~/work/team-plugins          # a folder, such as a checkout
-khonsu marketplace list
-khonsu marketplace remove team-plugins
+khonsu plugin marketplace add acme/khonsu-plugins   # owner/repo on GitHub
+khonsu plugin marketplace add https://plugins.example.com  # any HTTPS address
+khonsu plugin marketplace add ~/work/team-plugins   # a folder, such as a checkout
+khonsu plugin marketplace list
+khonsu plugin marketplace remove team-plugins
 ```
 
 A marketplace is known by the `name` in its index, or by `--name`. Adding the
-same name again replaces it. `khonsu marketplace remove official` turns the
-official one off, and `khonsu marketplace restore` brings it back.
+same name again replaces it. `khonsu plugin marketplace remove official` turns the
+official one off, and `khonsu plugin marketplace restore` brings it back.
 
 `khonsu plugin search [words]` lists every plugin with its version and declared
 permissions, the version installed here, and whether a newer one is listed. A
@@ -73,7 +73,7 @@ khonsu plugin publish ./my-plugin --to ~/work/team-plugins
 This packs the plugin into the marketplace folder and lists it in that folder's
 `marketplace.json`, which is made if it isn't there. Then share the folder:
 commit and push it, or upload it to a static host. Others add it once with
-`khonsu marketplace add`, and install by name.
+`khonsu plugin marketplace add`, and install by name.
 
 - **The same version again** replaces that platform's package and keeps the
   others, so each platform can publish its own build of one version.
@@ -144,5 +144,5 @@ publish` writes all of this. A marketplace folder also gains a
 ## Network access
 
 KhonsuGraph contacts a marketplace only when you run `plugin search`, `plugin
-install <id>`, `plugin update` or `marketplace add`, and only the addresses of
+install <id>`, `plugin update` or `plugin marketplace add`, and only the addresses of
 the marketplaces you have. Nothing is fetched in the background.

@@ -5,18 +5,18 @@ Every command prints exactly one JSON object on stdout (`--pretty` indents it). 
 ## Graph
 
 ```bash
-khonsu init DIR                                   # a new, empty graph
-khonsu rebuild --db DIR [--quiet]                 # an old-format graph (kind old_format), again from its data sources
+khonsu graph init DIR                             # a new, empty graph
+khonsu graph rebuild --db DIR [--quiet]           # an old-format graph (kind old_format), again from its data sources
 khonsu schema --db DIR                            # labels, types, properties, tables
 khonsu query  --db DIR --cypher "MATCH (n:Host) RETURN n LIMIT 20"
 khonsu query  --db DIR --sql "SELECT * FROM assets LIMIT 20"
 khonsu query  --db DIR --file query.cypher        # .sql files run as SQL; - is stdin
 khonsu query  --db DIR --cypher "MATCH (n:Host) WHERE n.name = \$name RETURN n" -p name=web-1
 khonsu query  --db DIR --write --cypher "CREATE (:Note {text: 'checked'})"
-khonsu explain --db DIR --cypher "MATCH (n:Host) RETURN n"
+khonsu graph explain --db DIR --cypher "MATCH (n:Host) RETURN n"
 ```
 
-`--db` defaults to `$KHONSU_DB`, then the graph last opened in the app. Graphs open read-only; `--write` opens for writing and takes KhonsuGraph's writer lock. A statement that writes with `--write` is appended to `writes.jsonl` in the config folder (when, graph, statement with key material masked, the agent when one is detected, `via`), because nothing written by hand is in a data source and `rebuild` does not carry it over. `-p name=value` parameters are parsed as JSON when they parse (`-p n=3` is a number, `-p ids='["a","b"]'` a list), else text; SQL parameters are positional (`-p 1=web` for `$1`).
+`--db` defaults to `$KHONSU_DB`, then the graph last opened in the app. Graphs open read-only; `--write` opens for writing and takes KhonsuGraph's writer lock. A statement that writes with `--write` is appended to `writes.jsonl` in the config folder (when, graph, statement with key material masked, the agent when one is detected, `via`), because nothing written by hand is in a data source and `graph rebuild` does not carry it over. `-p name=value` parameters are parsed as JSON when they parse (`-p n=3` is a number, `-p ids='["a","b"]'` a list), else text; SQL parameters are positional (`-p 1=web` for `$1`).
 
 ### query output
 
@@ -40,7 +40,7 @@ khonsu explain --db DIR --cypher "MATCH (n:Host) RETURN n"
 ## Explore
 
 ```sh
-khonsu explore --db graphs/aws --from shop/cidr:internet --to shop/123456789012:us-east-1:i-web1 --type ROUTES_TO,FORWARDS_TO
+khonsu graph explore --db graphs/aws --from shop/cidr:internet --to shop/123456789012:us-east-1:i-web1 --type ROUTES_TO,FORWARDS_TO
 ```
 
 | Option | Meaning | Default |
@@ -58,7 +58,7 @@ The output holds `complete`, `limits` (`hops`, `nodes`, `edges`), `depth_reached
 ## Evidence
 
 ```sh
-khonsu evidence --db graphs/aws --node shop/123456789012:us-east-1:i-web1
+khonsu graph evidence --db graphs/aws --node shop/123456789012:us-east-1:i-web1
 ```
 
 `--node` and `--rel` each take a `khonsu_id` or a numeric ID and can be repeated. The output is `{"evidence": [...]}`, in the order: nodes, then relationships. A record that is not there exits 1 with kind `not_found`, and naming no record exits 2.
@@ -95,7 +95,7 @@ khonsu plugin analyze aws exposure --db graphs/aws --verdict potential-exposure 
 | `unknowns`, `assumptions` | What could not be evaluated, and what the rule does not read |
 | `path` | The candidate path as a derived evidence record, or null when its records do not exist |
 | `path_refs` | That path as stable references: `edge` and `along` for each hop |
-| `walk` | `from`, `to`, `direction`, `types`, `max_hops` for `khonsu explore`, or null |
+| `walk` | `from`, `to`, `direction`, `types`, `max_hops` for `khonsu graph explore`, or null |
 | `depends_on` | The finding a lateral step rests on |
 | `incomplete_sources` | Sources behind it whose last sync wasn't complete. A verdict that would be `not_indicated` becomes `insufficient_data` |
 | `contributing`, `evidence` | Evidence IDs of every record used, and those records |
@@ -105,9 +105,9 @@ See `plugins/aws/README.md` for the rules and a walkthrough.
 ## Saved investigations
 
 ```sh
-khonsu investigation save web.investigation --db graphs/aws --from shop/cidr:internet --to shop/123456789012:us-east-1:i-web1 --type ROUTES_TO,FORWARDS_TO
-khonsu investigation save finding.investigation --db graphs/aws --path-refs "$PATH_REFS_FROM_A_FINDING"
-khonsu investigation reopen web.investigation
+khonsu investigate save web.investigation --db graphs/aws --from shop/cidr:internet --to shop/123456789012:us-east-1:i-web1 --type ROUTES_TO,FORWARDS_TO
+khonsu investigate save finding.investigation --db graphs/aws --path-refs "$PATH_REFS_FROM_A_FINDING"
+khonsu investigate reopen web.investigation
 ```
 
 `save` takes `explore`'s filters, plus `--name`, `--cypher` or `--sql` (saved as typed), `--dashboard` and `--force`. It writes nothing to the graph, and an existing file exits 1 with kind `exists` without `--force`. `reopen` takes `-d` to use another graph.
@@ -128,9 +128,9 @@ Errors have kind `graph_missing`, `not_found`, `invalid` or `too_new`. See `docs
 ## Templates
 
 ```sh
-khonsu template list                              # your templates folder and each plugin's; --dir adds a folder
-khonsu template check TEMPLATE --db DIR           # is the file usable, does the graph hold what it needs, may its plugins run
-khonsu template run TEMPLATE --db DIR -p name=value --report FILE.report.json --snapshot FILE.snapshot.json
+khonsu investigate template list                  # your templates folder and each plugin's; --dir adds a folder
+khonsu investigate template check TEMPLATE --db DIR  # is the file usable, does the graph hold what it needs, may its plugins run
+khonsu investigate template run TEMPLATE --db DIR -p name=value --report FILE.report.json --snapshot FILE.snapshot.json
 ```
 
 `TEMPLATE` is a file or an ID from `list` (`blast-radius` in `examples/sre`, `aws.exposure` with the AWS plugin). `run` takes `--max-findings` (200), `--timeout` seconds (300; stops further steps from starting) and `--force` to replace the report and snapshot files. It opens the graph read-only and runs queries in read transactions: a template cannot write.
@@ -145,7 +145,7 @@ khonsu template run TEMPLATE --db DIR -p name=value --report FILE.report.json --
 | `template`, `parameters`, `fingerprint`, `sources` | What ran, with what, on what the graph held, and each source's last sync |
 | `summary`, `max_findings`, `truncated` | Findings by step, the cap, and how many it left out |
 | `findings` | `{finding_id, step, rule_id, verdict, class: observation\|derived, resource, resource_name, summary, values?, path?: {evidence_id, derivation, confidence, claim, hops, supporting, refs}, conditions?, unknowns?, assumptions?, evidence_ids}`. `verdict`, `resource` and `resource_name` are `{"status":"known","value":…}` or `{"status":"unknown"}` |
-| `evidence` | Every record a finding cites, as `khonsu evidence` gives it |
+| `evidence` | Every record a finding cites, as `khonsu graph evidence` gives it |
 | `report` | With `--report`: `{saved, result_id, digest, snapshot}` |
 
 Errors: `unsupported_source` (the graph lacks `detail.missing`; nothing ran), `not_found` (no such template, or a node parameter names no node), `invalid` or `too_new` (the template file), `exists` (a report or snapshot file, without `--force`), and exit 2 with kind `usage` for a missing, unknown or mistyped parameter. A step's own failure is in `steps[].error` (`read_only` for a query that writes, `parse` or `semantic` for one HawDB cannot run, `plugin` for an analysis). See `docs/templates.md`.
@@ -153,13 +153,13 @@ Errors: `unsupported_source` (the graph lacks `detail.missing`; nothing ran), `n
 ## Reports
 
 ```sh
-khonsu report verify FILE.report.json             # digest, result ID, cited records; exit 1 and `problems` when it fails
-khonsu report export FILE.report.json --markdown FILE.md
-khonsu report export FILE.report.json --investigation F.investigation --finding FINDING_ID   # then: khonsu open F.investigation
-khonsu report replay FILE.report.json             # -d for another graph, -p to change or re-give a parameter
-khonsu report note FILE.report.json --hypothesis "…" --by NAME [--finding FINDING_ID]
-khonsu report note FILE.report.json --conclusion "…" --by NAME
-khonsu report review FILE.report.json --finding FINDING_ID --state confirmed|rejected|needs-more --by NAME [--note "…"]
+khonsu investigate report verify FILE.report.json  # digest, result ID, cited records; exit 1 and `problems` when it fails
+khonsu investigate report export FILE.report.json --markdown FILE.md
+khonsu investigate report export FILE.report.json --investigation F.investigation --finding FINDING_ID  # then: khonsu open F.investigation
+khonsu investigate report replay FILE.report.json  # -d for another graph, -p to change or re-give a parameter
+khonsu investigate report note FILE.report.json --hypothesis "…" --by NAME [--finding FINDING_ID]
+khonsu investigate report note FILE.report.json --conclusion "…" --by NAME
+khonsu investigate report review FILE.report.json --finding FINDING_ID --state confirmed|rejected|needs-more --by NAME [--note "…"]
 ```
 
 A report is `{format: "khonsu-report", version, result_id, created_at, created_by, template, run, snapshot?, actions, notes, reviews, digest}`. `result_id` is the same for the same template, parameters and graph contents. `actions` lists the run, each step and every note and review in order: `{seq, at, actor, action: run|step|note|review, id, outcome, caps?, error?}`.
@@ -169,9 +169,9 @@ A report is `{format: "khonsu-report", version, result_id, created_at, created_b
 ## Snapshots and diff
 
 ```sh
-khonsu snapshot save monday.snapshot.json --db graphs/aws
-khonsu snapshot diff monday.snapshot.json tuesday.snapshot.json
-khonsu snapshot check monday.snapshot.json --db graphs/aws
+khonsu graph snapshot save monday.snapshot.json --db graphs/aws
+khonsu graph snapshot diff monday.snapshot.json tuesday.snapshot.json
+khonsu graph snapshot check monday.snapshot.json --db graphs/aws
 ```
 
 `diff` gives `nodes` and `relationships`, each with `added`, `removed`, `not_seen` and `changed`, plus `node_counts`, `relationship_counts`, `truncated` (cut by `--max-changes`, 1,000 by default) and `warnings`. `removed` means the later snapshot's source was read completely; `not_seen` means it may still exist, so never report that as deleted. `check` gives `graph_state` and `differences`. A graph over 200,000 nodes or relationships fails with kind `too_large`. See `docs/snapshots.md`.
@@ -179,10 +179,10 @@ khonsu snapshot check monday.snapshot.json --db graphs/aws
 ## Ontology
 
 ```bash
-khonsu ontology describe [--brief] [--concept NAME] [-d DIR] [--ontology PATH]   # concepts, relationships; with -d: mapped, unmapped, mapped_but_absent
-khonsu ontology resolve WORD... [--ontology PATH]                                # {words: [{word, matches, labels, types} | {word, matches: [], suggestions}]}
-khonsu ontology check -d DIR --entities a,b,c [--ontology PATH]                  # coverage; exit 3, kind not_investigable, when a term is missing
-khonsu ontology path --from C --to C [--max-hops 4] [-d DIR] [--ontology PATH]   # declared routes; with -d graph.paths[].pattern for MATCH
+khonsu graph ontology describe [--brief] [--concept NAME] [-d DIR] [--ontology PATH]  # concepts, relationships; with -d: mapped, unmapped, mapped_but_absent
+khonsu graph ontology resolve WORD... [--ontology PATH]                          # {words: [{word, matches, labels, types} | {word, matches: [], suggestions}]}
+khonsu graph ontology check -d DIR --entities a,b,c [--ontology PATH]            # coverage; exit 3, kind not_investigable, when a term is missing
+khonsu graph ontology path --from C --to C [--max-hops 4] [-d DIR] [--ontology PATH]  # declared routes; with -d graph.paths[].pattern for MATCH
 khonsu query -d DIR --semantic --cypher "MATCH (d:Device)<-[:runs_on]-(p:Process) RETURN d, p"   # concepts and relationships become the graph's labels and types; result has `semantic`
 khonsu query -d DIR --validate-only --cypher "..."                                # check labels, types and pattern directions; runs nothing
 ```
@@ -191,22 +191,22 @@ Every answer has `ontology_versions` (`id`, `revision`, `origin`: `builtin`, `us
 
 ## Graph analysis
 
-HawDB's Cypher has no shortest paths, centrality or communities; `khonsu analyze` computes them in memory, after networkx's definitions (results match networkx on the same graph).
+HawDB's Cypher has no shortest paths, centrality or communities; `khonsu graph analyze` computes them in memory, after networkx's definitions (results match networkx on the same graph).
 
 ```bash
-khonsu analyze summary     --db DIR                        # size, density, components, clustering, max core, diameter
-khonsu analyze degree      --db DIR --top 20
-khonsu analyze pagerank    --db DIR --type TRUSTS          # --alpha 0.85, --weight PROP
-khonsu analyze betweenness --db DIR --label Service        # --sample K (default: all ≤ 5,000 nodes, else 500)
-khonsu analyze closeness   --db DIR --type NEXT_TO --undirected
-khonsu analyze components  --db DIR [--strong]
-khonsu analyze communities --db DIR                        # Louvain; --resolution 1.0, --seed 42
-khonsu analyze clustering  --db DIR
-khonsu analyze kcore       --db DIR
-khonsu analyze path        --db DIR --from 8 --to 11       # node IDs: RETURN id(n), or _id in a result
-khonsu analyze pagerank    --db DIR --cypher "MATCH (a:Process)-[r:SPAWNED]->(b:Process) RETURN a, r, b"
-khonsu analyze similar     --db DIR --node 407             # nodes of the same label that behave like node 407
-khonsu analyze outliers    --db DIR --label Host           # nodes least like the rest of their label
+khonsu graph analyze summary     --db DIR                  # size, density, components, clustering, max core, diameter
+khonsu graph analyze degree      --db DIR --top 20
+khonsu graph analyze pagerank    --db DIR --type TRUSTS    # --alpha 0.85, --weight PROP
+khonsu graph analyze betweenness --db DIR --label Service  # --sample K (default: all ≤ 5,000 nodes, else 500)
+khonsu graph analyze closeness   --db DIR --type NEXT_TO --undirected
+khonsu graph analyze components  --db DIR [--strong]
+khonsu graph analyze communities --db DIR                  # Louvain; --resolution 1.0, --seed 42
+khonsu graph analyze clustering  --db DIR
+khonsu graph analyze kcore       --db DIR
+khonsu graph analyze path        --db DIR --from 8 --to 11  # node IDs: RETURN id(n), or _id in a result
+khonsu graph analyze pagerank    --db DIR --cypher "MATCH (a:Process)-[r:SPAWNED]->(b:Process) RETURN a, r, b"
+khonsu graph analyze similar     --db DIR --node 407       # nodes of the same label that behave like node 407
+khonsu graph analyze outliers    --db DIR --label Host     # nodes least like the rest of their label
 ```
 
 Which graph: the whole graph by default; `--label` keeps nodes with those labels and the relationships between them; `--type` keeps those relationships and (without `--label`) only the nodes they join; `--cypher` analyzes exactly the nodes and relationships a query returns, whole. Relationships are directed unless `--undirected`; clustering, cores and communities always read them both ways. `--weight PROP` reads a numeric relationship property as weight (PageRank) or length (paths, betweenness, closeness); missing is 1.
@@ -227,7 +227,7 @@ khonsu plugin search sql                          # what the marketplaces offer,
 khonsu plugin install sql --yes                   # by name from a marketplace (sql@official to say which), hash-checked
 khonsu plugin update [ID] [--dry-run] [--yes]     # bring marketplace plugins up to date; an updated one needs approval again
 khonsu plugin approve ID                          # a person only: run by an agent it approves nothing and exits 4
-khonsu marketplace list | add LOCATION [--name N] | remove NAME | restore
+khonsu plugin marketplace list | add LOCATION [--name N] | remove NAME | restore
 khonsu plugin pack DIR [-o OUT] [--target T] [--bin FILE]        # <id>-<version>-<target>.zip and its SHA-256
 khonsu plugin publish DIR --to FOLDER [--bin FILE] [--base-url URL]  # pack into a marketplace folder and list it
 khonsu source add --db DIR --plugin csv --name "Lab" \
@@ -251,15 +251,15 @@ The Neo4j plugin copies a database over its HTTP API, including one Cartography 
 ## Dashboards and the window
 
 ```bash
-khonsu check dash.dash --db DIR [--summary]
-khonsu comments dash.dash [--all]
-khonsu comments dash.dash --reply c1 --text "Sorted by count" [--resolve]
-khonsu comments dash.dash --add callers --text "Is this the whole chain?"
-khonsu comments dash.dash --resolve c1 | --reopen c1
-khonsu presence dash.dash --doing editing|reading|idle [--plot a,b] [--agent NAME]
+khonsu dash check dash.dash --db DIR [--summary]
+khonsu dash comments dash.dash [--all]
+khonsu dash comments dash.dash --reply c1 --text "Sorted by count" [--resolve]
+khonsu dash comments dash.dash --add callers --text "Is this the whole chain?"
+khonsu dash comments dash.dash --resolve c1 | --reopen c1
+khonsu dash presence dash.dash --doing editing|reading|idle [--plot a,b] [--agent NAME]
 khonsu open dash.dash | DIR [--no-launch]
 khonsu open --cypher "MATCH (n) RETURN n LIMIT 50" --run
 khonsu open --state [dash.dash] [--active]
 ```
 
-`check` success: `{file, ok, warnings: [...], queries: [{name, language, line, rows, columns: [{name, type}], graph?: {nodes, relationships, sampled_rows?}}], filters: [{name, plot, column, match, queries}], plots: [...]}`. Comments live in `FILE.comments.json` beside the spec. `presence` and `comments` tell a running window what you are doing (`{"delivered": false}` when none runs; not an error). `open --state` reports the window's graph and its tabs: each query tab's text and result summary (columns, counts, first 20 rows, or the error), each dashboard's plots, failures and picks.
+`dash check` success: `{file, ok, warnings: [...], queries: [{name, language, line, rows, columns: [{name, type}], graph?: {nodes, relationships, sampled_rows?}}], filters: [{name, plot, column, match, queries}], plots: [...]}`. Comments live in `FILE.comments.json` beside the spec. `dash presence` and `dash comments` tell a running window what you are doing (`{"delivered": false}` when none runs; not an error). `open --state` reports the window's graph and its tabs: each query tab's text and result summary (columns, counts, first 20 rows, or the error), each dashboard's plots, failures and picks.

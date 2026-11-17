@@ -15,22 +15,22 @@ comes from public datasets, downloaded and converted by `datasets/`:
 14 relationships), the quickest one to try:
 
 ```sh
-khonsu init graphs/infra
+khonsu graph init graphs/infra
 khonsu source add --db graphs/infra --plugin csv --name infra \
   -c "nodes=[{\"path\":\"$PWD/examples/csv/assets.csv\",\"label_column\":\"kind\",\"id_column\":\"id\"}]" \
   -c "edges=[{\"path\":\"$PWD/examples/csv/links.csv\",\"type_column\":\"type\",\"source_column\":\"source\",\"target_column\":\"target\",\"id_column\":\"id\"}]"
 khonsu plugin sync --source infra
-khonsu check examples/infra/blast_radius.dash --db graphs/infra
+khonsu dash check examples/infra/blast_radius.dash --db graphs/infra
 ```
 
 `aws/exposure.dash` shows what an AWS account's configuration opens to the
 internet. Try it on the saved responses that ship with the AWS plugin:
 
 ```sh
-khonsu init graphs/aws
+khonsu graph init graphs/aws
 khonsu source add --db graphs/aws --plugin aws --name "shop account"   -c "fixture_dir=\"$PWD/plugins/aws/tests/fixture\"" -c regions=us-east-1
 khonsu plugin sync --source shop-account
-khonsu check examples/aws/exposure.dash --db graphs/aws
+khonsu dash check examples/aws/exposure.dash --db graphs/aws
 ```
 
 For a real account, drop `fixture_dir` and set `profile` to a read-only
@@ -45,13 +45,13 @@ CSV demo as an [investigation template](../docs/templates.md), and keeps the
 answer in a report:
 
 ```sh
-khonsu template run examples/sre/blast-radius.template.json --db graphs/infra \
+khonsu investigate template run examples/sre/blast-radius.template.json --db graphs/infra \
   -p service=infra/svc-db --report db.report.json
-khonsu report export db.report.json --markdown db.md
+khonsu investigate report export db.report.json --markdown db.md
 ```
 
 The AWS plugin ships `aws.exposure`, which runs on `graphs/aws` above:
-`khonsu template run plugins/aws/templates/exposure.template.json --db graphs/aws`.
+`khonsu investigate template run plugins/aws/templates/exposure.template.json --db graphs/aws`.
 
 For findings that explain themselves, with the rule, fields and unknowns behind
 each, follow the walkthrough in [the exposure rules](../plugins/aws/README.md).
@@ -62,12 +62,12 @@ each, follow the walkthrough in [the exposure rules](../plugins/aws/README.md).
 sh examples/datasets/fetch.sh scratch/datasets/raw
 node examples/datasets/build.mjs security scratch/datasets/raw scratch/datasets/security
 
-khonsu init graphs/security
+khonsu graph init graphs/security
 khonsu source add --db graphs/security --plugin csv --name "security data" \
   -c 'nodes=[{"path":"'"$PWD"'/scratch/datasets/security/nodes.csv","label_column":"label","id_column":"id"}]' \
   -c 'edges=[{"path":"'"$PWD"'/scratch/datasets/security/edges.csv","type_column":"type","source_column":"source","target_column":"target","id_column":"id"}]'
 khonsu plugin sync --source security-data
-khonsu check examples/security/attack_chain.dash --db graphs/security
+khonsu dash check examples/security/attack_chain.dash --db graphs/security
 khonsu open graphs/security && khonsu open examples/security/attack_chain.dash
 ```
 
@@ -79,10 +79,10 @@ rows of its CSVs.
 ## Working with an agent
 
 The dashboards are written for the review loop the `khonsugraph` skill
-describes: an agent edits the spec and runs `khonsu check`, the person
-comments on a plot in the window, the agent reads `khonsu comments`, changes
+describes: an agent edits the spec and runs `khonsu dash check`, the person
+comments on a plot in the window, the agent reads `khonsu dash comments`, changes
 the spec and replies. While the window has the graph open, the agent's
-`query` and `check` run through the window.
+`query` and `dash check` run through the window.
 
 ## Licenses
 

@@ -122,7 +122,7 @@ access. It holds one case for each verdict. Run it from the repository root. In
 Git Bash on Windows, use `$(pwd -W)` in place of `$PWD`.
 
 ```sh
-khonsu init graphs/exposure
+khonsu graph init graphs/exposure
 khonsu source add --db graphs/exposure --plugin aws --name shop \
   -c "fixture_dir=\"$PWD/plugins/aws/tests/fixture-exposure\"" -c regions=us-east-1
 khonsu plugin sync --source shop
@@ -144,7 +144,7 @@ stored field and, in `source_field`, the AWS field it came from. `path.hops` sho
 **2. Open it in Path Explorer.** A finding's `walk` holds the arguments:
 
 ```sh
-khonsu explore --db graphs/exposure --from shop/cidr:internet --to shop/123456789012:us-east-1:i-web1 \
+khonsu graph explore --db graphs/exposure --from shop/cidr:internet --to shop/123456789012:us-east-1:i-web1 \
   --direction both --type ALLOWS,PROTECTED_BY --max-hops 2
 ```
 
@@ -154,7 +154,7 @@ To see more around it, raise `--max-hops` or drop `--type`.
 `node:` or `rel:` prefix:
 
 ```sh
-khonsu evidence --db graphs/exposure --node shop/123456789012:us-east-1:i-web1
+khonsu graph evidence --db graphs/exposure --node shop/123456789012:us-east-1:i-web1
 ```
 
 **4. A security group rule that is not exposure.** `batch-1` has port 22 open to

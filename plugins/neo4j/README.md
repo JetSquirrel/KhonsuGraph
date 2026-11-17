@@ -16,7 +16,7 @@ output.
 ## Try it
 
 ```sh
-khonsu init graphs/infra
+khonsu graph init graphs/infra
 khonsu source add --db graphs/infra --plugin neo4j --name infra \
   -c url=http://127.0.0.1:7474 -c password=... --test
 khonsu plugin sync --source infra

@@ -1,4 +1,4 @@
-//! `khonsu template`: list, check and run investigation templates. See
+//! `khonsu investigate template`: list, check and run investigation templates. See
 //! `khonsu_core::template` and `docs/templates.md`.
 
 use std::path::{Path, PathBuf};
@@ -33,7 +33,7 @@ pub struct ListArgs {
 
 #[derive(Args)]
 pub struct CheckArgs {
-    /// A template's ID (see `khonsu template list`), or a file.
+    /// A template's ID (see `khonsu investigate template list`), or a file.
     template: String,
     /// The graph to check against. Without one, only the file is checked.
     #[arg(long, short = 'd')]
@@ -45,7 +45,7 @@ pub struct CheckArgs {
 
 #[derive(Args)]
 pub struct RunArgs {
-    /// A template's ID (see `khonsu template list`), or a file.
+    /// A template's ID (see `khonsu investigate template list`), or a file.
     template: String,
     #[command(flatten)]
     db: DbArg,
@@ -58,7 +58,7 @@ pub struct RunArgs {
     /// Stop starting steps after this many seconds. A step already running finishes first.
     #[arg(long, default_value_t = 300)]
     timeout: u64,
-    /// Also keep the run in a report file, e.g. `web-tier.report.json` (see `khonsu report`).
+    /// Also keep the run in a report file, e.g. `web-tier.report.json` (see `khonsu investigate report`).
     #[arg(long)]
     report: Option<PathBuf>,
     /// With --report: also keep the graph's records in this snapshot file, to say later what changed.

@@ -6,9 +6,9 @@ findings that each point at the records behind them, with the caps that applied
 and anything that stopped the answer from being whole.
 
 ```sh
-khonsu template list
-khonsu template check examples/sre/blast-radius.template.json --db graphs/infra
-khonsu template run examples/sre/blast-radius.template.json --db graphs/infra \
+khonsu investigate template list
+khonsu investigate template check examples/sre/blast-radius.template.json --db graphs/infra
+khonsu investigate template run examples/sre/blast-radius.template.json --db graphs/infra \
   -p service=infra/svc-db --report db.report.json
 ```
 
@@ -19,7 +19,7 @@ Two templates ship, and both run offline on the example data:
 | `blast-radius` | `examples/sre/blast-radius.template.json` | Which services depend on a service, what runs it, and which alerts fired on it. Runs on the CSV demo in `examples/csv` |
 | `aws.exposure` | `plugins/aws/templates/exposure.template.json` | What the AWS plugin's exposure rules say about each instance, and which security group rules allow the whole internet. Runs on `plugins/aws/tests/fixture` |
 
-`template run` and `template check` take a file, or an ID that `template list`
+`investigate template run` and `investigate template check` take a file, or an ID that `investigate template list`
 shows. Templates are looked for in `templates/` in your settings folder, and in
 each plugin's `templates/` folder; `--dir` adds a folder. A plugin's templates
 are files that are read, never programs that are run.
@@ -32,7 +32,7 @@ These hold whatever a template file says:
   writes is refused by the engine (kind `read_only`), not by anything that reads
   its text. Nothing in a template can change a graph or a source. To change
   either, a person runs `khonsu query --write` or `khonsu plugin sync` themselves.
-- **Every step has a cap.** A walk is bounded as `khonsu explore` is (16 hops,
+- **Every step has a cap.** A walk is bounded as `khonsu graph explore` is (16 hops,
   2,000 nodes, 5,000 relationships at most), a query by `max_rows` (5,000 at
   most), an analysis by the plugin time limit, and the run by `--max-findings`.
   When a cap is reached the step says so in `limits`, and the run's `complete`
@@ -59,7 +59,7 @@ that isn't there means nothing.
 | `fingerprint`, `sources` | What the graph held, and how much of each source its last sync covered |
 | `parameters` | The parameters as used, with defaults filled in and secrets masked |
 | `findings` | See below. `truncated` counts those `--max-findings` left out |
-| `evidence` | Every record a finding rests on, as `khonsu evidence` gives it |
+| `evidence` | Every record a finding rests on, as `khonsu graph evidence` gives it |
 
 A finding:
 
@@ -71,7 +71,7 @@ A finding:
 | `resource`, `resource_name` | The evidence ID of what it is about, and what people call it. Unknown when a row names none |
 | `summary` | The finding in a line |
 | `values` | A query row by column, with secrets masked and whole records named by their evidence IDs |
-| `path` | For a walk or a rule: `hops` in words, `supporting` evidence IDs, `confidence`, and `refs`, which `khonsu investigation save --path-refs` takes |
+| `path` | For a walk or a rule: `hops` in words, `supporting` evidence IDs, `confidence`, and `refs`, which `khonsu investigate save --path-refs` takes |
 | `conditions`, `unknowns`, `assumptions` | A plugin's conditions as the host checked them, what could not be read, and what is assumed |
 | `evidence_ids` | Every record it rests on. Each is in the run's `evidence` |
 
@@ -131,14 +131,14 @@ runs`) when a finding should cite them: each becomes evidence. A value that is
 not a record is kept as it is, masked when its column name or its shape is a
 secret's.
 
-`khonsu template check FILE` says what is wrong with a file, and with `--db`
+`khonsu investigate template check FILE` says what is wrong with a file, and with `--db`
 whether a graph holds what it needs and whether its plugins may run.
 
 ## What is not there
 
 - No loops, conditions or steps that read another step's findings. A template is
   a list.
-- No SQL steps, and no `khonsu analyze` algorithms as steps.
+- No SQL steps, and no `khonsu graph analyze` algorithms as steps.
 - No window for templates: they run from the command line, and a finding's path
   opens in the window through [a report](reports.md).
 - KhonsuGraph runs no model and calls no AI service. An agent runs these

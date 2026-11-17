@@ -54,9 +54,9 @@ pub enum Message {
     /// Run a query on the window's open graph: HawDB leases a graph to one
     /// process, so while the window has it, a command asks the window.
     Query(QueryRequest),
-    /// `khonsu check` on the window's open graph, for the same reason.
+    /// `khonsu dash check` on the window's open graph, for the same reason.
     Check(CheckRequest),
-    /// `khonsu schema` and `khonsu explain` on the window's open graph.
+    /// `khonsu schema` and `khonsu graph explain` on the window's open graph.
     Schema(GraphRequest),
     Explain(QueryRequest),
     /// `khonsu plugin sync` into the window's open graph, for the same

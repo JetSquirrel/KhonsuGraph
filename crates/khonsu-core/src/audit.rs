@@ -1,7 +1,7 @@
 //! A log of what was written to a graph by hand.
 //!
 //! Everything a data source writes can be made again from the source; a
-//! statement run with `khonsu query --write` cannot, and `khonsu rebuild`
+//! statement run with `khonsu query --write` cannot, and `khonsu graph rebuild`
 //! does not carry it over. Each such statement is appended to `writes.jsonl`
 //! in the config directory as one JSON line: when, which graph, the
 //! statement, who ran it and how it reached the graph. Key material in the

@@ -500,7 +500,7 @@ pub struct FindingPath {
     pub hops: Vec<String>,
     /// The evidence IDs it rests on, start to end.
     pub supporting: Vec<String>,
-    /// The same path as `khonsu investigation save --path-refs` takes it.
+    /// The same path as `khonsu investigate save --path-refs` takes it.
     pub refs: Vec<HopRef>,
 }
 

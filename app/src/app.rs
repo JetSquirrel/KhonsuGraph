@@ -75,7 +75,7 @@ impl KhonsuApp {
             crate::ui::open_graph_at(state.clone(), path, false, false, window, cx);
         }
 
-        // `khonsu open`, `presence` and `--state` reach the views from here:
+        // `khonsu open`, `dash presence` and `--state` reach the views from here:
         // drained on a slow poll, as DuckLocal's window does.
         cx.spawn_in(window, async move |this, cx| loop {
             smol::Timer::after(std::time::Duration::from_millis(200)).await;

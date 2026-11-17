@@ -2,7 +2,7 @@
 //! corner while it works, and its edits marked on the plots until the person
 //! has seen them.
 //!
-//! Every command that names a spec (`check`, `comments`, `presence`) tells
+//! Every command that names a spec (`dash check`, `dash comments`, `dash presence`) tells
 //! the running window, as one fire-and-forget line over [`crate::remote`].
 //! The window works the rest out itself: it compares plots before and after
 //! a change on disk and credits them to the agent heard from last.

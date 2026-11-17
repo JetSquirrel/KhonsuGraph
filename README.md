@@ -54,7 +54,7 @@ packages and publishes a GitHub release.
 
 ## Graph analysis
 
-`khonsu analyze` adds what HawDB's Cypher lacks, after networkx: `summary`,
+`khonsu graph analyze` adds what HawDB's Cypher lacks, after networkx: `summary`,
 `degree`, `pagerank`, `betweenness`, `closeness`, `components` (weak or
 `--strong`), `communities` (Louvain), `clustering`, `kcore` and shortest
 `path`, over the whole graph, `--label`/`--type`, or a `--cypher` subgraph.
@@ -63,9 +63,9 @@ accounts, 35,592 ratings) the summary, components, clustering, cores,
 diameter and PageRank equal networkx's exactly.
 
 ```sh
-khonsu analyze summary --db graphs/audit
-khonsu analyze pagerank --db graphs/audit --type TRUSTS --top 10
-khonsu analyze communities --db graphs/investigation
+khonsu graph analyze summary --db graphs/audit
+khonsu graph analyze pagerank --db graphs/audit --type TRUSTS --top 10
+khonsu graph analyze communities --db graphs/investigation
 ```
 
 Two more ask what networkx does not, once one record is known to matter:
@@ -77,19 +77,19 @@ is scored, the same graph gives the same answer, and each row carries the
 counts behind its distance.
 
 ```sh
-khonsu analyze similar --db graphs/audit --node 407    # accounts rated the way #472 is
-khonsu analyze outliers --db graphs/audit --top 10     # accounts unlike the rest
+khonsu graph analyze similar --db graphs/audit --node 407  # accounts rated the way #472 is
+khonsu graph analyze outliers --db graphs/audit --top 10  # accounts unlike the rest
 ```
 
 ## Investigations
 
-`khonsu explore` follows relationships from a node within caps, `khonsu
-evidence` says what supports a record, `khonsu investigation` saves a line of
-inquiry and reopens it against the graph as it is now, and `khonsu snapshot`
+`khonsu graph explore` follows relationships from a node within caps, `khonsu
+evidence` says what supports a record, `khonsu investigate` saves a line of
+inquiry and reopens it against the graph as it is now, and `khonsu graph snapshot`
 says what changed between two points. See [saved investigations](docs/investigations.md),
 [snapshots](docs/snapshots.md) and [what the gates test](docs/investigation-gates.md).
 What is kept in the graph and what in files follows two rules; see
-[what goes in a graph](docs/graph-contents.md). `khonsu ontology` says what a
+[what goes in a graph](docs/graph-contents.md). `khonsu graph ontology` says what a
 graph's labels mean, whether a graph can answer a question, and how two
 concepts connect in it; see [ontology](docs/ontology.md).
 
@@ -97,10 +97,10 @@ A template asks a question the same way each time, read-only and within caps,
 and a report keeps the answer so a reviewer can check it and run it again:
 
 ```sh
-khonsu template run examples/sre/blast-radius.template.json --db graphs/infra \
+khonsu investigate template run examples/sre/blast-radius.template.json --db graphs/infra \
   -p service=infra/svc-db --report db.report.json
-khonsu report export db.report.json --markdown db.md
-khonsu report replay db.report.json
+khonsu investigate report export db.report.json --markdown db.md
+khonsu investigate report replay db.report.json
 ```
 
 Every finding names the records behind it, the caps that applied and what was
@@ -114,12 +114,12 @@ for earlier database compatibility checks.
 
 - Graphs written before HawDB 0.25, by every KhonsuGraph build up to v0.2.0,
   cannot be read and report `old_format`: 0.25 changed the storage format and
-  reads no older graph. `khonsu rebuild` makes them again from their data
+  reads no older graph. `khonsu graph rebuild` makes them again from their data
   sources.
 
 - One process per graph directory, readers included. While the app has a
   graph open, `khonsu query` (writes too, with `--write`), `schema`,
-  `explain`, `check` and `plugin sync` run through the app, which refreshes
+  `graph explain`, `dash check` and `plugin sync` run through the app, which refreshes
   what it shows after a write.
 - On Windows, a graph can go anywhere in your user folder. Elsewhere, opening
   one for writing flushes every directory up to the drive root, which needs

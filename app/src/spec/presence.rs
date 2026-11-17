@@ -6,8 +6,8 @@
 //! agent to narrate — agents skip a courtesy no command fails without:
 //!
 //! - Every command that names a spec says so to the running window, as one
-//!   fire-and-forget line (`remote::notify`): `check`, `comments` and
-//!   `presence`. The first starts a [`Session`]; each one after keeps it
+//!   fire-and-forget line (`remote::notify`): `dash check`, `dash comments` and
+//!   `dash presence`. The first starts a [`Session`]; each one after keeps it
 //!   going; [`QUIET_ENDS`] of silence, or `presence --doing idle`, ends it.
 //! - When the spec changes on disk, the window compares the plots before and
 //!   after and credits the changed, added and removed ones to the agent

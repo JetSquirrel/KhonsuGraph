@@ -1,4 +1,4 @@
-//! `khonsu ontology`: what the labels and relationship types of a graph mean,
+//! `khonsu graph ontology`: what the labels and relationship types of a graph mean,
 //! from the ontology library. See `khonsu_core::ontology`.
 //!
 //! Every answer names the ontology and mapping files it used
@@ -347,7 +347,7 @@ fn path(args: PathArgs) -> Result<Value, CliError> {
     let library = Library::load(&args.library.ontology);
     for name in [&args.from, &args.to] {
         if library.concept(name).is_none() {
-            let mut err = CliError::new("not_found", format!("no concept {name:?}; `khonsu ontology resolve {name}` says what it may mean"));
+            let mut err = CliError::new("not_found", format!("no concept {name:?}; `khonsu graph ontology resolve {name}` says what it may mean"));
             err.detail = Box::new(json!({ "suggestions": ontology::suggestions(&library, name) }));
             return Err(err);
         }

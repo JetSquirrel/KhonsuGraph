@@ -11,7 +11,7 @@ else.
 
 HawDB has changed its storage format without a migration three times so far
 (0.12, 0.19, 0.25), and each time the graph was made again from its sources with
-`khonsu rebuild`. Whatever was only in the graph was lost. So what a person or
+`khonsu graph rebuild`. Whatever was only in the graph was lost. So what a person or
 an agent decides about the data lives in a file, not in the graph:
 
 | What | Where |

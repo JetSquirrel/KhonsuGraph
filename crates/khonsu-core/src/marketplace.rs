@@ -120,7 +120,7 @@ pub struct Origin {
 
 #[derive(Debug, thiserror::Error)]
 pub enum MarketError {
-    #[error("no marketplace named {0:?}; see `khonsu marketplace list`")]
+    #[error("no marketplace named {0:?}; see `khonsu plugin marketplace list`")]
     UnknownMarketplace(String),
     #[error("{0}")]
     Location(String),
