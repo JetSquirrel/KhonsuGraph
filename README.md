@@ -102,16 +102,17 @@ khonsu report replay db.report.json
 Every finding names the records behind it, the caps that applied and what was
 missing. See [templates](docs/templates.md) and [reports](docs/reports.md).
 
-## HawDB 0.29.0 notes
+## HawDB 0.34.0 notes
 
-KhonsuGraph pins HawDB to 0.29.0. See the [0.27 upgrade validation](docs/hawdb-0.27-upgrade.md)
-for compatibility checks, performance and their scope, and the [0.24](docs/hawdb-0.24-upgrade.md), [0.22](docs/hawdb-0.22-upgrade.md), [0.19](docs/hawdb-0.19-upgrade.md), [0.15](docs/hawdb-0.15-upgrade.md), [0.12](docs/hawdb-0.12-upgrade.md) and [0.11 validation](docs/hawdb-0.11-upgrade.md)
+KhonsuGraph pins HawDB to 0.34.0. See the [0.34 upgrade validation](docs/hawdb-0.34-upgrade.md)
+for compatibility checks and their scope, and the [0.27](docs/hawdb-0.27-upgrade.md), [0.24](docs/hawdb-0.24-upgrade.md), [0.22](docs/hawdb-0.22-upgrade.md), [0.19](docs/hawdb-0.19-upgrade.md), [0.15](docs/hawdb-0.15-upgrade.md), [0.12](docs/hawdb-0.12-upgrade.md) and [0.11 validation](docs/hawdb-0.11-upgrade.md)
 for earlier database compatibility checks.
 
-- Graphs written before HawDB 0.25, by every KhonsuGraph build up to v0.2.0,
-  cannot be read and report `old_format`: 0.25 changed the storage format and
-  reads no older graph. `khonsu rebuild` makes them again from their data
-  sources.
+- Graphs written before HawDB 0.31, by every KhonsuGraph build up to v0.3.0,
+  cannot be read and report `old_format`: 0.31 changed the storage format
+  (persistent format version 2) and reads no older graph. `khonsu rebuild`
+  makes them again from their data sources; anything written by hand rather
+  than synced is not carried over.
 
 - One process per graph directory, readers included. While the app has a
   graph open, `khonsu query` (writes too, with `--write`), `schema`,
