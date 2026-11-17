@@ -6,8 +6,6 @@ members = [
     "crates/khonsu-plugin-protocol",
     "crates/khonsu-dash",
     "plugins/csv",
-    "plugins/aws",
-    "plugins/neo4j",
     "app",
 ]
 
@@ -20,7 +18,7 @@ rust-version = "1.97.1"
 
 [workspace.dependencies]
 # Engine access is pinned to one version and wrapped in khonsu-core::engine.
-hawdb = "=0.29.0"
+hawdb = "=0.34.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 thiserror = "2"

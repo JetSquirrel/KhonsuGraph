@@ -9,6 +9,12 @@ cargo test --locked --workspace --test investigation
 cargo test --locked --workspace --test templates
 ```
 
+The AWS plugin, its saved responses and its `aws.exposure` template live in
+[khonsugraph-marketplace](https://github.com/JetSquirrel/khonsugraph-marketplace).
+These tests build the plugin from a checkout of it, `../khonsugraph-marketplace`
+beside this repository or wherever `KHONSU_MARKETPLACE` points, and install it
+into each test's own config folder. Without a checkout they fail and say so.
+
 ## What is checked
 
 | Area | How |
@@ -22,7 +28,7 @@ cargo test --locked --workspace --test templates
 | Corrupt input | A malformed response, a missing folder, a bad dashboard and a damaged graph each fail with a reason |
 | Cycles | A shortest path and a variable-length pattern both end on a cycle |
 | Evidence | `khonsu evidence` and `explore --to` give stable IDs, state what is unknown, and mask secrets; the golden file holds a node and a relationship |
-| Exposure rules | `plugins/aws/tests/fixture-exposure` has a positive, a negative and an undecided case; the golden file holds its whole report, and rule IDs and verdicts for the shop fixture. See [the rules](../plugins/aws/README.md) |
+| Exposure rules | the AWS plugin's `tests/fixture-exposure` (in the marketplace repository) has a positive, a negative and an undecided case; the golden file holds its whole report, and rule IDs and verdicts for the shop fixture. See [the rules](https://github.com/JetSquirrel/khonsugraph-marketplace/tree/main/plugins/aws/README.md) |
 | Plugin analyses | An example analyzer with nothing to do with AWS gives findings on a graph of its own; a forged reference, a missing end, a failure, an endless line and output that isn't the protocol are each refused; one that hangs is ended; a changed plugin doesn't run; a plugin with no analyses goes on syncing |
 | Saved investigations | Reopening restores a walk and path on unchanged data, and flags a changed source, a missing record, a missing graph and a bad file; the golden file holds a reopened walk and the fixture's fingerprint. See [saved investigations](investigations.md) |
 | Sync coverage | A scripted plugin fails midway, stops without `done`, reports gaps, sends duplicates and missing endpoints, and moves its cursor; none of it removes records or moves the cursor unless the sync was complete |
