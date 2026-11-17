@@ -17,7 +17,7 @@ Two templates ship, and both run offline on the example data:
 | Template | File | Asks |
 |---|---|---|
 | `blast-radius` | `examples/sre/blast-radius.template.json` | Which services depend on a service, what runs it, and which alerts fired on it. Runs on the CSV demo in `examples/csv` |
-| `aws.exposure` | `plugins/aws/templates/exposure.template.json` | What the AWS plugin's exposure rules say about each instance, and which security group rules allow the whole internet. Runs on `plugins/aws/tests/fixture` |
+| `aws.exposure` | `templates/exposure.template.json` in the [AWS plugin](https://github.com/JetSquirrel/khonsugraph-marketplace/tree/main/plugins/aws), installed with it | What the AWS plugin's exposure rules say about each instance, and which security group rules allow the whole internet. Runs on the plugin's `tests/fixture` |
 
 `template run` and `template check` take a file, or an ID that `template list`
 shows. Templates are looked for in `templates/` in your settings folder, and in

@@ -5,7 +5,7 @@
 #
 # Contents/MacOS: khonsugraph (the app, and the `khonsu` command when called
 # by that name or with a subcommand).
-# Contents/Resources/plugins/<id>/: khonsu-plugin-<id> for each official
+# Contents/Resources/plugins/<id>/: khonsu-plugin-<id> for each built-in
 # plugin, with its manifest so its declared permissions travel with it.
 # Not under MacOS: codesign takes every file there for code and refuses
 # the manifest.
@@ -14,7 +14,7 @@ set -euo pipefail
 BIN="$1"
 APP="$2"
 VERSION="${3:-}"
-PLUGINS="csv aws neo4j"
+PLUGINS="csv"
 
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"

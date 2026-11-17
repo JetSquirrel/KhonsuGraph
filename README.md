@@ -16,16 +16,14 @@ HawDB product.
 | `crates/khonsu-cli` | `khonsu`, the windowless JSON CLI for agents and scripts; the app runs it when called as `khonsu` or with a subcommand |
 | `crates/khonsu-plugin-protocol` | The data-source plugin protocol (JSON lines over stdio); see [docs/plugins.md](docs/plugins.md) to write a plugin in any language |
 | `plugins/csv` | The built-in CSV plugin |
-| `plugins/aws` | The official AWS plugin: VPCs, subnets, security groups, instances, load balancers and IAM roles, read through the `aws` CLI |
-| `plugins/neo4j` | The official Neo4j plugin: copies a Neo4j database, such as one [Cartography](https://github.com/cartography-cncf/cartography) fills, over its HTTP API |
-| [khonsugraph-marketplace](https://github.com/JetSquirrel/khonsugraph-marketplace) | A separate repository: the official plugins installed by name ([marketplace](docs/marketplace.md)) rather than bundled, such as `sql` (PostgreSQL, MySQL, SQLite) and `ducklocal` (Parquet, CSV, DuckDB), with the CI that builds and releases them |
+| [khonsugraph-marketplace](https://github.com/JetSquirrel/khonsugraph-marketplace) | A separate repository: the official plugins installed by name ([marketplace](docs/marketplace.md)) rather than bundled, such as `sql` (PostgreSQL, MySQL, SQLite), `ducklocal` (Parquet, CSV, DuckDB), `aws` (an AWS account through the `aws` CLI) and `neo4j` (a Neo4j database, such as one [Cartography](https://github.com/cartography-cncf/cartography) fills), with the CI that builds and releases them |
 | `skills/khonsugraph` | The agent skill: how to query, author dashboards and review them with a person |
 | `examples/` | Five user-story dashboards on public datasets, the scripts that build their graphs, an AWS exposure dashboard, a blast-radius investigation template and a Python plugin |
 
 ## Build
 
 ```sh
-cargo build --workspace            # app, CLI, CSV, AWS and Neo4j plugins
+cargo build --workspace            # app, CLI and the CSV plugin
 cargo test --workspace
 ```
 
@@ -44,7 +42,7 @@ One executable is both the app and the `khonsu` CLI: with no arguments it
 opens the window; called as `khonsu`, or with a subcommand or a flag
 (`khonsugraph query …`, `khonsugraph --help`), it runs the command and exits.
 So `cargo run -p khonsugraph -- query …` works from a checkout. Every package
-holds it and the official plugins under `plugins/<id>/` beside it, which is
+holds it and the built-in CSV plugin under `plugins/csv/` beside it, which is
 where it looks for built-in plugins; the Windows zip adds a `khonsu.exe` copy,
 since Windows finds a command by file name. The robot button in the title bar
 (Command line & AI) puts `khonsu` on your `PATH` and adds the agent skill to

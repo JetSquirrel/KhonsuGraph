@@ -4628,14 +4628,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "khonsu-plugin-aws"
-version = "0.3.0"
-dependencies = [
- "khonsu-plugin-protocol",
- "serde_json",
-]
-
-[[package]]
 name = "khonsu-plugin-csv"
 version = "0.3.0"
 dependencies = [
@@ -4644,17 +4636,6 @@ dependencies = [
  "serde",
  "serde_json",
  "tempfile",
-]
-
-[[package]]
-name = "khonsu-plugin-neo4j"
-version = "0.3.0"
-dependencies = [
- "base64 0.22.1",
- "khonsu-plugin-protocol",
- "serde",
- "serde_json",
- "ureq",
 ]
 
 [[package]]

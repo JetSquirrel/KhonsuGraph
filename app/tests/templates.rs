@@ -8,6 +8,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Once;
 
+#[allow(dead_code)] // each test file uses part of it
+mod aws_plugin;
+
 struct Env {
     dir: tempfile::TempDir,
 }
@@ -17,7 +20,9 @@ impl Env {
         build_plugins();
         let base = std::env::var_os("KHONSU_TEST_DIR").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
         std::fs::create_dir_all(&base).unwrap();
-        Self { dir: tempfile::tempdir_in(base).unwrap() }
+        let env = Self { dir: tempfile::tempdir_in(base).unwrap() };
+        aws_plugin::install(&env.path("config"));
+        env
     }
 
     fn path(&self, name: &str) -> PathBuf {
@@ -64,7 +69,7 @@ impl Env {
     fn aws(&self, name: &str) -> PathBuf {
         let db = self.path(name);
         self.ok(&["init", text(&db)]);
-        let fixture = repo().join("plugins/aws/tests/fixture");
+        let fixture = aws_plugin::fixture();
         self.ok(&[
             "source", "add", "-d", text(&db), "--plugin", "aws", "--name", "shop",
             "-c", &format!("fixture_dir={}", serde_json::to_string(text(&fixture)).unwrap()),
@@ -110,7 +115,7 @@ fn blast_radius() -> PathBuf {
 }
 
 fn aws_exposure() -> PathBuf {
-    repo().join("plugins/aws/templates/exposure.template.json")
+    aws_plugin::exposure_template()
 }
 
 /// `cargo test` builds a plugin only as a test harness; the CLI looks for the
@@ -118,7 +123,7 @@ fn aws_exposure() -> PathBuf {
 fn build_plugins() {
     static BUILD: Once = Once::new();
     BUILD.call_once(|| {
-        let status = Command::new(env!("CARGO")).args(["build", "-q", "--locked", "-p", "khonsu-plugin-aws", "-p", "khonsu-plugin-csv"]).status().unwrap();
+        let status = Command::new(env!("CARGO")).args(["build", "-q", "--locked", "-p", "khonsu-plugin-csv"]).status().unwrap();
         assert!(status.success());
     });
 }
@@ -257,7 +262,8 @@ fn a_graph_without_what_a_template_needs_is_refused_and_a_bad_request_says_why()
     // Templates are found by ID in a folder, and a broken one is listed, not hidden.
     std::fs::copy(blast_radius(), env.path("blast-radius.template.json")).unwrap();
     let listed = env.ok(&["template", "list", "--dir", text(env.dir.path())]);
-    let found: Vec<(Option<&str>, bool)> = listed["templates"].as_array().unwrap().iter().map(|listed| (listed["template"]["id"].as_str(), listed["error"].is_string())).collect();
+    // Only the folder's: installed plugins, such as the AWS one, add their own.
+    let found: Vec<(Option<&str>, bool)> = listed["templates"].as_array().unwrap().iter().filter(|listed| listed["origin"] == "folder").map(|listed| (listed["template"]["id"].as_str(), listed["error"].is_string())).collect();
     assert_eq!(found, [(Some("blast-radius"), false), (None, true)]);
     let by_id = env.ok(&["template", "run", "blast-radius", "--dir", text(env.dir.path()), "-d", text(&db), "-p", "service=infra/svc-db"]);
     assert_eq!(by_id["summary"]["dependents"], 2);
