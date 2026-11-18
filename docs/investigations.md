@@ -5,17 +5,17 @@ starting points and filters, the path you chose, a query and a dashboard. Saving
 writes nothing to the graph.
 
 ```sh
-khonsu investigation save web.investigation --db graphs/aws \
+khonsu investigate save web.investigation --db graphs/aws \
   --from shop/cidr:internet --to shop/123456789012:us-east-1:i-web1 \
   --type ROUTES_TO,FORWARDS_TO --max-hops 4
-khonsu investigation reopen web.investigation
+khonsu investigate reopen web.investigation
 ```
 
 To keep a finding's path exactly, pass its `path_refs`. A walk finds the fewest hops,
 which isn't always the path a finding describes, so these are looked up one by one:
 
 ```sh
-khonsu investigation save db.investigation --db graphs/aws \
+khonsu investigate save db.investigation --db graphs/aws \
   --path-refs '[{"edge": "rel:...", "along": true}]'
 ```
 
@@ -94,7 +94,7 @@ again adds another tab.
 
 ## Limits
 
-- `khonsu investigation` needs the graph free. It fails with kind `locked` while
+- `khonsu investigate` needs the graph free. It fails with kind `locked` while
   the window has it open, so use the window for a graph that's open there.
 - The window saves no dashboard or layout. A saved file's `dashboard` is not opened
   on reopening, and node positions start over.

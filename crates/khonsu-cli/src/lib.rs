@@ -92,18 +92,42 @@ enum Command {
         #[arg(long = "ontology")]
         ontology: Vec<PathBuf>,
     },
-    /// Show the plan HawDB chooses for a query.
-    Explain {
-        #[command(flatten)]
-        db: DbArg,
-        #[command(flatten)]
-        text: QueryText,
-    },
     /// Labels, relationship types, properties and tables. Read this before querying.
     Schema {
         #[command(flatten)]
         db: DbArg,
     },
+    /// Show a graph, a .dash file or a query in the window, or read what it shows (--state).
+    Open(dash::OpenArgs),
+    /// A graph itself: create and rebuild it, explain a query, walk, analyze and snapshot it, and what its labels mean.
+    Graph {
+        #[command(subcommand)]
+        command: GraphCommand,
+    },
+    /// .dash dashboards: check them, review their threads, and say where you are editing.
+    Dash {
+        #[command(subcommand)]
+        command: DashCommand,
+    },
+    /// Data-source plugins, and the marketplaces they come from.
+    Plugin {
+        #[command(subcommand)]
+        command: PluginCommand,
+    },
+    /// Configured data sources.
+    Source {
+        #[command(subcommand)]
+        command: SourceCommand,
+    },
+    /// Save and reopen investigations, run investigation templates, and work with the reports they keep.
+    Investigate {
+        #[command(subcommand)]
+        command: InvestigateCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum GraphCommand {
     /// Create a new, empty graph directory.
     Init { path: PathBuf },
     /// Make a graph written by an older HawDB (kind `old_format`) again from
@@ -118,50 +142,19 @@ enum Command {
         #[arg(long, short = 'q')]
         quiet: bool,
     },
-    /// Data-source plugins.
-    Plugin {
-        #[command(subcommand)]
-        command: PluginCommand,
+    /// Show the plan HawDB chooses for a query.
+    Explain {
+        #[command(flatten)]
+        db: DbArg,
+        #[command(flatten)]
+        text: QueryText,
     },
-    /// Where plugins are found: list, add and remove marketplaces.
-    Marketplace {
-        #[command(subcommand)]
-        command: marketplace::MarketplaceCommand,
-    },
-    /// Configured data sources.
-    Source {
-        #[command(subcommand)]
-        command: SourceCommand,
-    },
-    /// Validate a .dash dashboard and run every query read-only.
-    Check(dash::CheckArgs),
-    /// Review threads on a .dash dashboard's plots: list, reply, resolve.
-    Comments(dash::CommentsArgs),
-    /// Tell the running window where you are about to edit a dashboard.
-    Presence(dash::PresenceArgs),
-    /// Show a graph, a .dash file or a query in the window, or read what it shows (--state).
-    Open(dash::OpenArgs),
     /// Graph algorithms after networkx: PageRank, betweenness, components, communities, paths and more; and nodes similar to one, or unlike their label.
     Analyze(analyze::AnalyzeArgs),
     /// Follow relationships from chosen nodes, within caps, and say when a cap or a filter limited the answer.
     Explore(explore::ExploreArgs),
     /// What supports a node or relationship: its source, plugin and times, with unknowns stated and secrets masked.
     Evidence(evidence::EvidenceArgs),
-    /// Save a walk, path and query to a file, and reopen them later, with any change in the graph flagged.
-    Investigation {
-        #[command(subcommand)]
-        command: investigation::InvestigationCommand,
-    },
-    /// Investigation templates: a question asked the same way each time, read-only and within caps, with the records behind each finding.
-    Template {
-        #[command(subcommand)]
-        command: template::TemplateCommand,
-    },
-    /// A kept template run: verify it, export it for a person to read, review its findings, and make the run again.
-    Report {
-        #[command(subcommand)]
-        command: report::ReportCommand,
-    },
     /// Keep a graph's records in a file, and say what changed between two. A record is only called removed when its source was read completely.
     Snapshot {
         #[command(subcommand)]
@@ -171,6 +164,33 @@ enum Command {
     Ontology {
         #[command(subcommand)]
         command: ontology::OntologyCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum DashCommand {
+    /// Validate a .dash dashboard and run every query read-only.
+    Check(dash::CheckArgs),
+    /// Review threads on a .dash dashboard's plots: list, reply, resolve.
+    Comments(dash::CommentsArgs),
+    /// Tell the running window where you are about to edit a dashboard.
+    Presence(dash::PresenceArgs),
+}
+
+#[derive(Subcommand)]
+enum InvestigateCommand {
+    /// `save` and `reopen`: a walk, path and query kept in a file, with any change in the graph flagged.
+    #[command(flatten)]
+    Investigation(investigation::InvestigationCommand),
+    /// Investigation templates: a question asked the same way each time, read-only and within caps, with the records behind each finding.
+    Template {
+        #[command(subcommand)]
+        command: template::TemplateCommand,
+    },
+    /// A kept template run: verify it, export it for a person to read, review its findings, and make the run again.
+    Report {
+        #[command(subcommand)]
+        command: report::ReportCommand,
     },
 }
 
@@ -241,6 +261,11 @@ enum PluginCommand {
         /// Count and sample records without writing.
         #[arg(long)]
         dry_run: bool,
+    },
+    /// Where plugins are found: list, add and remove marketplaces.
+    Marketplace {
+        #[command(subcommand)]
+        command: marketplace::MarketplaceCommand,
     },
 }
 
@@ -480,18 +505,6 @@ fn execute(command: Command) -> Result<Value, CliError> {
             log("cli");
             Ok(with_check(serde_json::to_value(result).expect("result serializes")))
         }
-        Command::Explain { db, text } => {
-            let path = resolve_db(&db)?;
-            let (language, text) = read_text(&text)?;
-            let mut graph = match Graph::open(&path, AccessMode::ReadOnly, PROGRAM) {
-                Ok(graph) => graph,
-                Err(OpenError::Locked(owner)) => {
-                    return dash::explain_via_window(&path, language, &text).unwrap_or_else(|| Err(OpenError::Locked(owner).into()));
-                }
-                Err(e) => return Err(e.into()),
-            };
-            Ok(json!({ "plan": graph.explain(language, &text)? }))
-        }
         Command::Schema { db } => {
             let path = resolve_db(&db)?;
             let mut graph = match Graph::open(&path, AccessMode::ReadOnly, PROGRAM) {
@@ -503,11 +516,42 @@ fn execute(command: Command) -> Result<Value, CliError> {
             };
             Ok(serde_json::to_value(graph.schema()?).expect("schema serializes"))
         }
-        Command::Init { path } => {
+        Command::Open(args) => dash::open(args),
+        Command::Graph { command } => run_graph(command),
+        Command::Dash { command } => match command {
+            DashCommand::Check(args) => dash::check(args),
+            DashCommand::Comments(args) => dash::comments(args),
+            DashCommand::Presence(args) => dash::presence(args),
+        },
+        Command::Plugin { command } => run_plugin(command),
+        Command::Source { command } => run_source(command),
+        Command::Investigate { command } => match command {
+            InvestigateCommand::Investigation(command) => investigation::investigation(command),
+            InvestigateCommand::Template { command } => template::template(command),
+            InvestigateCommand::Report { command } => report::report(command),
+        },
+    }
+}
+
+fn run_graph(command: GraphCommand) -> Result<Value, CliError> {
+    match command {
+        GraphCommand::Explain { db, text } => {
+            let path = resolve_db(&db)?;
+            let (language, text) = read_text(&text)?;
+            let mut graph = match Graph::open(&path, AccessMode::ReadOnly, PROGRAM) {
+                Ok(graph) => graph,
+                Err(OpenError::Locked(owner)) => {
+                    return dash::explain_via_window(&path, language, &text).unwrap_or_else(|| Err(OpenError::Locked(owner).into()));
+                }
+                Err(e) => return Err(e.into()),
+            };
+            Ok(json!({ "plan": graph.explain(language, &text)? }))
+        }
+        GraphCommand::Init { path } => {
             let graph = Graph::create(&path, PROGRAM)?;
             Ok(json!({ "created": graph.path() }))
         }
-        Command::Rebuild { db, quiet } => {
+        GraphCommand::Rebuild { db, quiet } => {
             let path = resolve_db(&db)?;
             let cancel = AtomicBool::new(false);
             let report = khonsu_core::rebuild::rebuild(&path, PROGRAM, &cancel, |source, event| {
@@ -531,21 +575,11 @@ fn execute(command: Command) -> Result<Value, CliError> {
             })?;
             Ok(serde_json::to_value(report).expect("report serializes"))
         }
-        Command::Plugin { command } => run_plugin(command),
-        Command::Marketplace { command } => marketplace::run(command),
-        Command::Source { command } => run_source(command),
-        Command::Check(args) => dash::check(args),
-        Command::Comments(args) => dash::comments(args),
-        Command::Presence(args) => dash::presence(args),
-        Command::Open(args) => dash::open(args),
-        Command::Analyze(args) => analyze::analyze(args),
-        Command::Explore(args) => explore::explore(args),
-        Command::Evidence(args) => evidence::evidence(args),
-        Command::Investigation { command } => investigation::investigation(command),
-        Command::Template { command } => template::template(command),
-        Command::Report { command } => report::report(command),
-        Command::Snapshot { command } => snapshot::snapshot(command),
-        Command::Ontology { command } => ontology::ontology(command),
+        GraphCommand::Analyze(args) => analyze::analyze(args),
+        GraphCommand::Explore(args) => explore::explore(args),
+        GraphCommand::Evidence(args) => evidence::evidence(args),
+        GraphCommand::Snapshot { command } => snapshot::snapshot(command),
+        GraphCommand::Ontology { command } => ontology::ontology(command),
     }
 }
 
@@ -626,6 +660,7 @@ fn run_plugin(command: PluginCommand) -> Result<Value, CliError> {
             }))
         }
         PluginCommand::Analyze(args) => plugin_analysis::analyze(args),
+        PluginCommand::Marketplace { command } => marketplace::run(command),
         PluginCommand::Uninstall { id } => {
             plugin::uninstall(&id)?;
             Ok(json!({ "uninstalled": id }))

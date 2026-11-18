@@ -3,7 +3,7 @@
 //!
 //! The threads live beside the spec, in `NAME.dash.comments.json`, rather than
 //! in the window or the history store: an agent reads and answers them with
-//! `khonsu comments` (or just reads the file) without a window running,
+//! `khonsu dash comments` (or just reads the file) without a window running,
 //! and they travel with the spec the way its `source` files do. The window
 //! writes a comment the moment it is posted and watches the file, so a reply
 //! the agent writes shows up on the plot it is about.

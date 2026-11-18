@@ -5,11 +5,11 @@ needs to check it and run it again. A screenshot or a summary can't be
 re-run. This can.
 
 ```sh
-khonsu template run blast-radius --db graphs/infra -p service=infra/svc-db \
+khonsu investigate template run blast-radius --db graphs/infra -p service=infra/svc-db \
   --report db.report.json --snapshot db.snapshot.json
-khonsu report verify db.report.json
-khonsu report export db.report.json --markdown db.md
-khonsu report replay db.report.json
+khonsu investigate report verify db.report.json
+khonsu investigate report export db.report.json --markdown db.md
+khonsu investigate report replay db.report.json
 ```
 
 ## What is in the file
@@ -39,9 +39,9 @@ A report that blurs these cannot be checked:
 | Human conclusions | `reviews`, and `notes` of kind `conclusion` | A person |
 
 ```sh
-khonsu report note db.report.json --hypothesis "redis may hide this" --by agent --finding finding:d5d2c110aaa171e6
-khonsu report review db.report.json --finding finding:d5d2c110aaa171e6 --state confirmed --by jet --note "no fallback"
-khonsu report note db.report.json --conclusion "postgres failing takes the storefront down" --by jet
+khonsu investigate report note db.report.json --hypothesis "redis may hide this" --by agent --finding finding:d5d2c110aaa171e6
+khonsu investigate report review db.report.json --finding finding:d5d2c110aaa171e6 --state confirmed --by jet --note "no fallback"
+khonsu investigate report note db.report.json --conclusion "postgres failing takes the storefront down" --by jet
 ```
 
 A review's `--state` is `confirmed`, `rejected` or `needs-more`. A later review
@@ -53,7 +53,7 @@ unless a person told it what they decided: those are the person's.
 
 ## Checking it
 
-`khonsu report verify FILE` recomputes the digest, and checks that the template
+`khonsu investigate report verify FILE` recomputes the digest, and checks that the template
 in the file is the one the run names, that the result ID matches the run, and
 that every record a finding cites is in the file. It exits 1 when any of that
 fails, and `problems` says what. `note` and `review` refuse to build on a file
@@ -65,7 +65,7 @@ digest somewhere they can't change.
 
 ## Running it again
 
-`khonsu report replay FILE` makes the run again, with the saved template and
+`khonsu investigate report replay FILE` makes the run again, with the saved template and
 parameters, and compares finding IDs. `--db` uses another graph; `-p` changes a
 parameter, or gives again one the report masked.
 
@@ -79,14 +79,14 @@ parameter, or gives again one the report masked.
 
 On a graph that holds what it did, `same` is true. When `graph_state` is
 `changed`, `added` and `removed` say what that did to the answer, and
-`khonsu snapshot check` or `snapshot diff` against the report's snapshot says
+`khonsu graph snapshot check` or `graph snapshot diff` against the report's snapshot says
 what changed in the data. Replay does not change the report: keep the new run
 with `template run --report`.
 
 ## Showing a finding in the window
 
 ```sh
-khonsu report export db.report.json --investigation web.investigation --finding finding:d5d2c110aaa171e6
+khonsu investigate report export db.report.json --investigation web.investigation --finding finding:d5d2c110aaa171e6
 khonsu open web.investigation
 ```
 
@@ -99,7 +99,7 @@ AI service is involved in any of this.
 
 - **Source configuration and credentials.** The file names sources by ID and
   holds their last sync's ID and status, nothing of how they connect.
-- **Secrets in records.** Properties are masked as in `khonsu evidence`, by name
+- **Secrets in records.** Properties are masked as in `khonsu graph evidence`, by name
   (`password`, `token`, `api_key` and the like) and by shape (AWS access key
   IDs, PEM blocks), and the names are listed in `redacted`. A query row's values
   are masked the same way.

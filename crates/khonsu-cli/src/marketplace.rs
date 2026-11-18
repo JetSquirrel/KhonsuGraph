@@ -1,4 +1,4 @@
-//! `khonsu marketplace` and the `khonsu plugin` commands that go through one:
+//! `khonsu plugin marketplace` and the `khonsu plugin` commands that go through one:
 //! search, install by name, update, pack and publish. See
 //! `khonsu_core::marketplace` and `docs/marketplace.md`.
 
@@ -206,7 +206,7 @@ pub fn publish(args: PublishArgs) -> Result<Value, CliError> {
     let published = marketplace::publish(&args.dir, &args.to, args.target.as_deref(), &args.extra, args.base_url.as_deref())?;
     let mut out = serde_json::to_value(&published).expect("published serializes");
     out["next"] = json!(format!(
-        "Share the folder {} (commit and push it, or upload it); others run `khonsu marketplace add <its address>` once, then `khonsu plugin install {}`.",
+        "Share the folder {} (commit and push it, or upload it); others run `khonsu plugin marketplace add <its address>` once, then `khonsu plugin install {}`.",
         args.to.display(),
         published.packed.id
     ));

@@ -26,7 +26,7 @@ cargo test --workspace -- --ignored
   0.15 without a rebuild. 0.12 could still read it after 0.15 had written to
   it, so a downgrade within 0.12–0.15 also works.
 - **0.8–0.11 graphs** are still rejected (`HAWDB_BRANCH_PROJECT_V1` header)
-  and still report `old_format`; `khonsu rebuild` applies as described in
+  and still report `old_format`; `khonsu graph rebuild` applies as described in
   the [0.12 upgrade](hawdb-0.12-upgrade.md).
 
 ## Cypher

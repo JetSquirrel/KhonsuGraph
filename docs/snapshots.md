@@ -5,11 +5,11 @@ what changed. HawDB has no time travel, and this doesn't add any: a snapshot exi
 only if you took it.
 
 ```sh
-khonsu snapshot save monday.snapshot.json --db graphs/aws
+khonsu graph snapshot save monday.snapshot.json --db graphs/aws
 khonsu plugin sync --source shop
-khonsu snapshot save tuesday.snapshot.json --db graphs/aws
-khonsu snapshot diff monday.snapshot.json tuesday.snapshot.json --pretty
-khonsu snapshot check monday.snapshot.json --db graphs/aws
+khonsu graph snapshot save tuesday.snapshot.json --db graphs/aws
+khonsu graph snapshot diff monday.snapshot.json tuesday.snapshot.json --pretty
+khonsu graph snapshot check monday.snapshot.json --db graphs/aws
 ```
 
 ## What a diff says
@@ -62,7 +62,7 @@ treat it as you would the graph.
 
 ## Staleness
 
-`khonsu snapshot check` compares a snapshot with the graph and gives `graph_state`, as
+`khonsu graph snapshot check` compares a snapshot with the graph and gives `graph_state`, as
 reopening an investigation does.
 
 A saved investigation pins the source runs it was evaluated against, along with the

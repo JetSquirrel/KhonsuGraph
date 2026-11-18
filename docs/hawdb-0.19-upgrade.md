@@ -24,7 +24,7 @@ Validated on Windows 11 on 2026-10-29.
 version 2`. There is no migration. The graph still opens; the refusal comes
 with the first statement, so opening a graph now runs `SELECT 1` and maps
 `HawDBError::UnsupportedStorageFormat` to `old_format`, the same kind as
-0.8–0.11 graphs. `khonsu rebuild` accepts both.
+0.8–0.11 graphs. `khonsu graph rebuild` accepts both.
 
 Opening a 0.15 graph with 0.19, including a refused write, left it readable
 by 0.15. A graph made and synced by the 0.1.0 CLI (CSV source, 12 nodes,

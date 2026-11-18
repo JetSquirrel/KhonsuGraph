@@ -1,4 +1,4 @@
-//! `khonsu check FILE --db GRAPH`: validate a spec and run every query.
+//! `khonsu dash check FILE --db GRAPH`: validate a spec and run every query.
 //!
 //! As in DuckLocal: parse, validate, then run each query read-only — the way
 //! opening the dashboard runs it, with nothing picked — and compare every

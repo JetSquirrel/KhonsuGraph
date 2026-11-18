@@ -107,7 +107,7 @@ fn window_answer(answer: Option<Result<Value, String>>) -> Result<Value, CliErro
     }
 }
 
-/// `khonsu check`: on the graph directly, or through the window when the
+/// `khonsu dash check`: on the graph directly, or through the window when the
 /// window has the graph open.
 pub fn check(args: CheckArgs) -> Result<Value, CliError> {
     let db = resolve_db(&args.db)?;
@@ -223,7 +223,7 @@ pub fn comments(args: CommentsArgs) -> Result<Value, CliError> {
     };
     let failed = |message: String| {
         if message.starts_with("No comment thread") {
-            CliError::usage(format!("{message}; list the threads with `khonsu comments {} --all`", file.display()))
+            CliError::usage(format!("{message}; list the threads with `khonsu dash comments {} --all`", file.display()))
         } else {
             CliError::new("io", message)
         }

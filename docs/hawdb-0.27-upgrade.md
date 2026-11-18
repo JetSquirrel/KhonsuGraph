@@ -10,7 +10,7 @@ Validated on macOS 26.6 (Apple M5) on 2026-11-06.
   hawdb#1429 and #1474) and reads no version 2 graph, which every KhonsuGraph
   build up to v0.2.0 wrote; HawDB offers no migration and its release notes do
   not mention it. Such a graph reports `old_format`, now worded "before 0.25",
-  and `khonsu rebuild` makes it again from its data sources. With no users
+  and `khonsu graph rebuild` makes it again from its data sources. With no users
   yet, KhonsuGraph does not carry a migration. One was built and checked
   (HawDB 0.24 linked beside 0.27, every record copied and compared; the
   `audit` story and two real graphs came across with no difference), then left

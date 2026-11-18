@@ -570,7 +570,7 @@ pub fn core_number(net: &Network) -> Vec<usize> {
     core
 }
 
-/// What `khonsu analyze summary` reports.
+/// What `khonsu graph analyze summary` reports.
 #[derive(Debug, Clone, Serialize, PartialEq)]
 pub struct Summary {
     pub nodes: usize,

@@ -8,7 +8,7 @@ Validated on Windows 11 on 2026-11-02.
 - **Temporal values become ISO 8601 strings in JSON.** 0.24 adds `Value::Date`,
   `LocalTime`, `LocalDateTime`, `DateTime` and `Duration`. `value_to_json` writes
   them as HawDB prints them (`2026-10-30`, `2026-10-30T12:34:56+01:00`,
-  `P1Y2M3DT5H`). The schema command and `khonsu check` see them as text.
+  `P1Y2M3DT5H`). The schema command and `khonsu dash check` see them as text.
 - **`LOAD CSV` stays off.** It is new in 0.24 and only runs when the host sets
   `csv_import_root`. KhonsuGraph does not set it, so read-only queries and
   dashboards cannot read files from disk. A test holds this in place.
@@ -45,7 +45,7 @@ Five shipped dashboards were checked on 0.24 against graphs synced from their
 data sources into new directories. The `infra` and `aws` examples were not
 checked, because no synced graph for them was at hand.
 
-| Dashboard | Nodes | Relationships | Sync (debug build) | `khonsu check` |
+| Dashboard | Nodes | Relationships | Sync (debug build) | `khonsu dash check` |
 |---|---:|---:|---:|---|
 | `audit/trust_network` | 5,881 | 35,592 | 4.4 s | ok |
 | `investigation/offshore_network` | 5,577 | 6,515 | 1.3 s | ok |

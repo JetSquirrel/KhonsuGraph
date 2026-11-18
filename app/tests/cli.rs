@@ -66,7 +66,7 @@ fn path(p: &Path) -> &str {
 fn init_write_query_schema_and_explain() {
     let env = Env::new();
     let db = env.graph();
-    let (ok, out) = env.khonsu(&["init", path(&db)]);
+    let (ok, out) = env.khonsu(&["graph", "init", path(&db)]);
     assert!(ok, "{out}");
 
     let (ok, out) = env.khonsu(&["query", "-d", path(&db), "--cypher", "CREATE (:Host {name: 'web'})"]);
@@ -94,7 +94,7 @@ fn init_write_query_schema_and_explain() {
     let labels: Vec<&str> = out["labels"].as_array().unwrap().iter().map(|l| l["name"].as_str().unwrap()).collect();
     assert_eq!(labels, ["Host", "Service"]);
 
-    let (ok, out) = env.khonsu(&["explain", "-d", path(&db), "--cypher", "MATCH (n:Host) RETURN n"]);
+    let (ok, out) = env.khonsu(&["graph", "explain", "-d", path(&db), "--cypher", "MATCH (n:Host) RETURN n"]);
     assert!(ok);
     assert!(out["plan"].as_str().unwrap().contains("label:Host"));
 
@@ -147,7 +147,7 @@ fn csv_source_add_and_sync() {
     build_csv_plugin();
     let env = Env::new();
     let db = env.graph();
-    env.khonsu(&["init", path(&db)]);
+    env.khonsu(&["graph", "init", path(&db)]);
     let data = env.dir.path().join("data");
     std::fs::create_dir_all(&data).unwrap();
     std::fs::write(data.join("hosts.csv"), "id,name\nh1,web\nh2,db\nh3,cache\n").unwrap();
@@ -236,7 +236,7 @@ fn an_agent_installs_but_does_not_approve() {
 fn writes_by_hand_are_logged() {
     let env = Env::new();
     let db = env.graph();
-    let (ok, out) = env.khonsu(&["init", path(&db)]);
+    let (ok, out) = env.khonsu(&["graph", "init", path(&db)]);
     assert!(ok, "{out}");
     let log = env.dir.path().join("config").join("writes.jsonl");
 
