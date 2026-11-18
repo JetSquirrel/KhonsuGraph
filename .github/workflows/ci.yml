@@ -24,6 +24,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # The investigation and template gates run the AWS plugin, which lives
+      # in the marketplace with its saved responses (app/tests/aws_plugin).
+      - uses: actions/checkout@v4
+        with:
+          repository: JetSquirrel/khonsugraph-marketplace
+          path: khonsugraph-marketplace
+
+      - name: Point the tests at the marketplace
+        shell: bash
+        run: echo "KHONSU_MARKETPLACE=$GITHUB_WORKSPACE/khonsugraph-marketplace" >> "$GITHUB_ENV"
+
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy

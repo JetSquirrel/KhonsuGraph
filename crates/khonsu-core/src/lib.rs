@@ -34,4 +34,4 @@ pub use result::{GraphData, GraphEdge, GraphNode, QueryResult};
 pub use schema::GraphSchema;
 
 /// The HawDB release this build links, for crash reports and About.
-pub const HAWDB_VERSION: &str = "0.29.0";
+pub const HAWDB_VERSION: &str = "0.34.0";

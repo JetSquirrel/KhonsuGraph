@@ -67,9 +67,9 @@ pub enum OpenError {
     NotEmpty(PathBuf),
     #[error("{0} does not exist")]
     Missing(PathBuf),
-    /// Written by a HawDB before 0.25, whose formats the pinned HawDB rejects
+    /// Written by a HawDB before 0.31, whose formats the pinned HawDB rejects
     /// and does not migrate; `graph rebuild` makes it again from its data sources.
-    #[error("{} was written by an older HawDB (before 0.25), which HawDB {} cannot read. Rebuild it from its data sources with `khonsu graph rebuild --db {}`; the old files are kept beside it", .0.display(), crate::HAWDB_VERSION, .0.display())]
+    #[error("{} was written by an older HawDB (before 0.31), which HawDB {} cannot read. Rebuild it from its data sources with `khonsu graph rebuild --db {}`; the old files are kept beside it", .0.display(), crate::HAWDB_VERSION, .0.display())]
     OldFormat(PathBuf),
     #[error("cannot open graph: {message}")]
     Engine { message: String, hint: Option<String> },
@@ -254,9 +254,9 @@ impl Graph {
         }
         let mut graph = Self::open_inner(path, mode, program)?;
         // HawDB reads storage on the first statement, and only then refuses
-        // an older relational codec: 0.12–0.15 wrote version 1, 0.19–0.24
-        // version 2, and 0.25 reads neither. Other failures are left for the
-        // queries that follow to report.
+        // an older format: 0.25 reads no relational codec 0.12–0.24 wrote,
+        // and 0.31 (persistent format version 2) no graph 0.25–0.29 wrote.
+        // Other failures are left for the queries that follow to report.
         if let Err(HawDBError::UnsupportedStorageFormat(_)) = graph.db.query_sql("SELECT 1") {
             return Err(OpenError::OldFormat(graph.path));
         }

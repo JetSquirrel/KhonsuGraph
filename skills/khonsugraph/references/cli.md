@@ -100,7 +100,7 @@ khonsu plugin analyze aws exposure --db graphs/aws --verdict potential-exposure 
 | `incomplete_sources` | Sources behind it whose last sync wasn't complete. A verdict that would be `not_indicated` becomes `insufficient_data` |
 | `contributing`, `evidence` | Evidence IDs of every record used, and those records |
 
-See `plugins/aws/README.md` for the rules and a walkthrough.
+See the AWS plugin's README (https://github.com/JetSquirrel/khonsugraph-marketplace/tree/main/plugins/aws/README.md) for the rules and a walkthrough.
 
 ## Saved investigations
 
@@ -246,7 +246,7 @@ One CSV file of mixed labels or types needs no JSON: `-c node_label_column=kind`
 
 The AWS plugin reads an account through the `aws` CLI with read-only calls: `-c profile=readonly -c regions=us-east-1,eu-west-1` (or keys stored as secrets: `access_key_id`, `secret_access_key`, `session_token`). Labels: Account, Region, Vpc, Subnet, SecurityGroup, Cidr, Instance, InternetGateway, LoadBalancer, TargetGroup, Role. Relationships: `(Cidr)-[:ALLOWS {protocol, ports}]->(SecurityGroup)`, `(SecurityGroup)-[:ALLOWS]->(SecurityGroup)`, `(Instance)-[:PROTECTED_BY]->(SecurityGroup)`, `(Instance)-[:IN_SUBNET]->(Subnet)-[:IN_VPC]->(Vpc)-[:IN_REGION]->(Region)`, `(Instance)-[:ASSUMES]->(Role)`, `(Cidr)-[:ROUTES_TO]->(LoadBalancer)-[:FORWARDS_TO]->(TargetGroup)-[:ROUTES_TO {health}]->(Instance)`, `(Account)-[:OWNS]->(...)`. The internet is the Cidr node with `cidr = '0.0.0.0/0'`. Ask the person before syncing a real account; `-c fixture_dir=...` reads saved `aws --output json` responses instead.
 
-The Neo4j plugin copies a database over its HTTP API, including one Cartography fills: `-c url=http://127.0.0.1:7474 -c database=neo4j -c username=neo4j -c password=...` (the password is stored as a secret), with `-c id_property=id`, `-c exclude_properties=lastupdated,_module_version` and `-c label_priority=AWSPrincipal,...` as its defaults or options. It keeps Neo4j's labels and relationship types, but each node has one label here, usually its rarest, and all of them are in `neo4j_labels`. **A label query can come back empty rather than fail:** when `MATCH (p:AWSPrincipal)` finds nothing, try `MATCH (p) WHERE 'AWSPrincipal' IN p.neo4j_labels`. Queries written for Neo4j may need changes; see `plugins/neo4j/README.md`.
+The Neo4j plugin copies a database over its HTTP API, including one Cartography fills: `-c url=http://127.0.0.1:7474 -c database=neo4j -c username=neo4j -c password=...` (the password is stored as a secret), with `-c id_property=id`, `-c exclude_properties=lastupdated,_module_version` and `-c label_priority=AWSPrincipal,...` as its defaults or options. It keeps Neo4j's labels and relationship types, but each node has one label here, usually its rarest, and all of them are in `neo4j_labels`. **A label query can come back empty rather than fail:** when `MATCH (p:AWSPrincipal)` finds nothing, try `MATCH (p) WHERE 'AWSPrincipal' IN p.neo4j_labels`. Queries written for Neo4j may need changes; see the Neo4j plugin's README (https://github.com/JetSquirrel/khonsugraph-marketplace/tree/main/plugins/neo4j/README.md). Install it with `khonsu plugin install neo4j --yes`.
 
 ## Dashboards and the window
 
