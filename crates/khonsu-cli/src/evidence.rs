@@ -1,4 +1,4 @@
-//! `khonsu evidence`: what supports a node or relationship. See
+//! `khonsu graph evidence`: what supports a node or relationship. See
 //! `khonsu_core::evidence`.
 
 use clap::Args;

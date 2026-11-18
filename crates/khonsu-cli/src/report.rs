@@ -1,4 +1,4 @@
-//! `khonsu report`: check a kept template run, read it, review it, and make
+//! `khonsu investigate report`: check a kept template run, read it, review it, and make
 //! it again. See `khonsu_core::report` and `docs/reports.md`.
 
 use std::path::PathBuf;

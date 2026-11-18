@@ -2,7 +2,7 @@
 //! corner while it works, and its edits marked on the plots until the person
 //! has seen them.
 //!
-//! Every command that names a spec (`check`, `comments`, `presence`) tells
+//! Every command that names a spec (`dash check`, `dash comments`, `dash presence`) tells
 //! the running window, as one fire-and-forget line over [`crate::remote`].
 //! The window works the rest out itself: it compares plots before and after
 //! a change on disk and credits them to the agent heard from last.
@@ -55,24 +55,34 @@ pub struct Update {
 /// An agent's work ends this long after its last command.
 pub const QUIET_ENDS: Duration = Duration::from_secs(30);
 
+/// The environment variables that give an agent away, and its name.
+pub const AGENT_VARIABLES: &[(&str, &str)] = &[
+    ("CLAUDECODE", "Claude"),
+    ("CLAUDE_CODE_ENTRYPOINT", "Claude"),
+    ("CODEX_SANDBOX", "Codex"),
+    ("CODEX_HOME", "Codex"),
+    ("CURSOR_AGENT", "Cursor"),
+    ("CURSOR_TRACE_ID", "Cursor"),
+    ("GEMINI_CLI", "Gemini"),
+];
+
+/// The agent running this command, when one says so (`KHONSU_AGENT`) or its
+/// environment gives it away. `None` is not proof that a person is typing:
+/// an agent can leave these unset.
+pub fn detected_agent() -> Option<String> {
+    if let Some(name) = std::env::var("KHONSU_AGENT").ok().filter(|name| !name.trim().is_empty()) {
+        return Some(name.trim().to_string());
+    }
+    AGENT_VARIABLES
+        .iter()
+        .find(|(variable, _)| std::env::var_os(variable).is_some())
+        .map(|(_, name)| (*name).to_string())
+}
+
 /// The name the window shows for whoever runs this command: `KHONSU_AGENT`
 /// when set, else the agent the environment gives away, else "Agent".
 pub fn agent_name() -> String {
-    if let Some(name) = std::env::var("KHONSU_AGENT").ok().filter(|name| !name.trim().is_empty()) {
-        return name.trim().to_string();
-    }
-    let set = |name: &str| std::env::var_os(name).is_some();
-    if set("CLAUDECODE") || set("CLAUDE_CODE_ENTRYPOINT") {
-        "Claude".into()
-    } else if set("CODEX_SANDBOX") || set("CODEX_HOME") {
-        "Codex".into()
-    } else if set("CURSOR_AGENT") || set("CURSOR_TRACE_ID") {
-        "Cursor".into()
-    } else if set("GEMINI_CLI") {
-        "Gemini".into()
-    } else {
-        "Agent".into()
-    }
+    detected_agent().unwrap_or_else(|| "Agent".into())
 }
 
 fn absolute(spec: &Path) -> String {

@@ -6,7 +6,7 @@ Oct 15, 2026 · @jet（Nov 10, 2026 更新方向与待确认项）
 
 KhonsuGraph 的主线是**本地图调查**：把分散的数据接成一张图，沿关系找出路径、影响面和证据，把这次调查存下来，数据变化后重新打开，看结论还成不成立。查询、画布、插件都为这条主线服务。
 
-这是对 10 月版定位（"HawDB 图工作台"）的修正。0.1 到 0.3 实际做出来的重心已经是调查：Path Explorer（`khonsu explore`）、证据（`khonsu evidence`）、图分析（`khonsu analyze`）、保存与重开调查（`khonsu investigation`）、快照与差异、插件分析和时间线面板。PRD 跟上代码，而不是反过来。
+这是对 10 月版定位（"HawDB 图工作台"）的修正。0.1 到 0.3 实际做出来的重心已经是调查：Path Explorer（`khonsu graph explore`）、证据（`khonsu graph evidence`）、图分析（`khonsu graph analyze`）、保存与重开调查（`khonsu investigate`）、快照与差异、插件分析和时间线面板。PRD 跟上代码，而不是反过来。
 
 **主线怎么定边界**
 
@@ -15,7 +15,7 @@ KhonsuGraph 的主线是**本地图调查**：把分散的数据接成一张图�
 
 **仪表盘 BI 冻结**
 
-- `.dash` 仪表盘保留现有能力，继续修 bug、跟 HawDB 升级、保持 agent 协作（`khonsu check`、评论、在场标记）可用。
+- `.dash` 仪表盘保留现有能力，继续修 bug、跟 HawDB 升级、保持 agent 协作（`khonsu dash check`、评论、在场标记）可用。
 - 不再新增 BI 方向的能力：新的图表类型、面板类型、筛选交互、布局和样式选项都不做。
 - 仪表盘在主线里的位置是"展示调查结论"；展示上的新需求，先看能否放进调查视图（画布、路径、证据、时间线），再考虑仪表盘。
 
@@ -73,7 +73,7 @@ V1 只做"打开图库、查询、看图、用插件接入数据、命令行查�
 - 插件系统和两个官方插件：CSV（内置）与 AWS（资源拓扑）；第三方可按同一接口开发
 - 无窗口 JSON CLI，面向 agent
 - 查询历史、EXPLAIN、深浅色主题、中英文界面（沿用 DuckLocal）
-- `.dash` 仪表盘（沿用 DuckLocal 的 DSL，查询换成 Cypher 或 SQL，新增 `graph` 面板；保留 AI 协作：`khonsu check`、评论线程、在场标记、`khonsu open`）。现有能力保留，BI 方向不再扩展，见"方向"一节
+- `.dash` 仪表盘（沿用 DuckLocal 的 DSL，查询换成 Cypher 或 SQL，新增 `graph` 面板；保留 AI 协作：`khonsu dash check`、评论线程、在场标记、`khonsu open`）。现有能力保留，BI 方向不再扩展，见"方向"一节
 
 **V1 不做**
 

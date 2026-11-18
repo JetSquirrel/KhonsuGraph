@@ -3,6 +3,7 @@
 //! thin layers over this crate.
 
 pub mod analysis;
+pub mod audit;
 mod cypher_columns;
 pub mod engine;
 pub mod evidence;
@@ -12,12 +13,14 @@ pub mod location;
 pub mod lock;
 pub mod marketplace;
 pub mod merge;
+pub mod ontology;
 pub mod plugin;
 pub mod plugin_analysis;
 pub mod rebuild;
 pub mod report;
 pub mod result;
 pub mod schema;
+pub mod semantic;
 pub mod secrets;
 pub mod settings;
 pub mod snapshot;

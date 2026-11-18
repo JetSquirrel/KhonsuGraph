@@ -49,7 +49,7 @@ HawDB's storage spec keeps no compatibility for earlier development formats
 and offers no migration, and the validation above ran on new databases only.
 
 KhonsuGraph reports such a graph as `old_format` and rebuilds it from its data
-sources: the window offers it when opening one fails, and `khonsu rebuild
+sources: the window offers it when opening one fails, and `khonsu graph rebuild
 --db DIR` does it from the command line. The old directory is moved aside to
 `DIR.hawdb-old`, untouched; a new graph is created at the same path, so the
 sources that name it keep working, and each syncs in full. A source that fails

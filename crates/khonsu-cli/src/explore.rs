@@ -1,4 +1,4 @@
-//! `khonsu explore`: a bounded walk from chosen nodes. See
+//! `khonsu graph explore`: a bounded walk from chosen nodes. See
 //! `khonsu_core::explore`.
 
 use std::sync::atomic::AtomicBool;

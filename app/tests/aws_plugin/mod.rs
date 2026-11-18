@@ -73,9 +73,15 @@ pub fn package() -> &'static Path {
     })
 }
 
-/// Installs and approves the plugin for the config folder `config`.
+/// Installs and approves the plugin for the config folder `config`, as a
+/// person: run by an agent, `--yes` approves nothing.
 pub fn install(config: &Path) {
-    let output = Command::new(env!("CARGO_BIN_EXE_khonsugraph"))
+    let mut command = Command::new(env!("CARGO_BIN_EXE_khonsugraph"));
+    command.env_remove("KHONSU_AGENT");
+    for (variable, _) in khonsu_dash::presence::AGENT_VARIABLES {
+        command.env_remove(variable);
+    }
+    let output = command
         .args(["plugin", "install", package().to_str().unwrap(), "--yes"])
         .env("KHONSU_CONFIG_DIR", config)
         .output()

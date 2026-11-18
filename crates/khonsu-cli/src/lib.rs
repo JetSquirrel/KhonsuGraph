@@ -9,11 +9,13 @@
 //! as `khonsu`, or with a subcommand or a flag (see the app's `main.rs`).
 
 mod analyze;
+mod approval;
 mod dash;
 mod evidence;
 mod explore;
 mod investigation;
 mod marketplace;
+mod ontology;
 mod plugin_analysis;
 mod report;
 mod snapshot;
@@ -78,21 +80,54 @@ enum Command {
         #[arg(long, default_value_t = 200)]
         max_rows: usize,
         /// Open the graph for writing (needed for CREATE, MERGE, INSERT, ...).
-        #[arg(long)]
+        #[arg(long, conflicts_with_all = ["semantic", "validate_only"])]
         write: bool,
-    },
-    /// Show the plan HawDB chooses for a query.
-    Explain {
-        #[command(flatten)]
-        db: DbArg,
-        #[command(flatten)]
-        text: QueryText,
+        /// Cypher in the ontology's words: a concept as a label (`(d:Device)`) and a relationship as a type (`[:runs_on]`) become what holds them in this graph, and the rewritten statement is checked before it runs read-only.
+        #[arg(long)]
+        semantic: bool,
+        /// Check the Cypher against the graph's labels, types and patterns, and run nothing. With --semantic, the rewritten statement is checked.
+        #[arg(long)]
+        validate_only: bool,
+        /// With --semantic: also read ontology and mapping files from this file or folder. Repeatable.
+        #[arg(long = "ontology")]
+        ontology: Vec<PathBuf>,
     },
     /// Labels, relationship types, properties and tables. Read this before querying.
     Schema {
         #[command(flatten)]
         db: DbArg,
     },
+    /// Show a graph, a .dash file or a query in the window, or read what it shows (--state).
+    Open(dash::OpenArgs),
+    /// A graph itself: create and rebuild it, explain a query, walk, analyze and snapshot it, and what its labels mean.
+    Graph {
+        #[command(subcommand)]
+        command: GraphCommand,
+    },
+    /// .dash dashboards: check them, review their threads, and say where you are editing.
+    Dash {
+        #[command(subcommand)]
+        command: DashCommand,
+    },
+    /// Data-source plugins, and the marketplaces they come from.
+    Plugin {
+        #[command(subcommand)]
+        command: PluginCommand,
+    },
+    /// Configured data sources.
+    Source {
+        #[command(subcommand)]
+        command: SourceCommand,
+    },
+    /// Save and reopen investigations, run investigation templates, and work with the reports they keep.
+    Investigate {
+        #[command(subcommand)]
+        command: InvestigateCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum GraphCommand {
     /// Create a new, empty graph directory.
     Init { path: PathBuf },
     /// Make a graph written by an older HawDB (kind `old_format`) again from
@@ -107,40 +142,46 @@ enum Command {
         #[arg(long, short = 'q')]
         quiet: bool,
     },
-    /// Data-source plugins.
-    Plugin {
-        #[command(subcommand)]
-        command: PluginCommand,
+    /// Show the plan HawDB chooses for a query.
+    Explain {
+        #[command(flatten)]
+        db: DbArg,
+        #[command(flatten)]
+        text: QueryText,
     },
-    /// Where plugins are found: list, add and remove marketplaces.
-    Marketplace {
-        #[command(subcommand)]
-        command: marketplace::MarketplaceCommand,
-    },
-    /// Configured data sources.
-    Source {
-        #[command(subcommand)]
-        command: SourceCommand,
-    },
-    /// Validate a .dash dashboard and run every query read-only.
-    Check(dash::CheckArgs),
-    /// Review threads on a .dash dashboard's plots: list, reply, resolve.
-    Comments(dash::CommentsArgs),
-    /// Tell the running window where you are about to edit a dashboard.
-    Presence(dash::PresenceArgs),
-    /// Show a graph, a .dash file or a query in the window, or read what it shows (--state).
-    Open(dash::OpenArgs),
     /// Graph algorithms after networkx: PageRank, betweenness, components, communities, paths and more; and nodes similar to one, or unlike their label.
     Analyze(analyze::AnalyzeArgs),
     /// Follow relationships from chosen nodes, within caps, and say when a cap or a filter limited the answer.
     Explore(explore::ExploreArgs),
     /// What supports a node or relationship: its source, plugin and times, with unknowns stated and secrets masked.
     Evidence(evidence::EvidenceArgs),
-    /// Save a walk, path and query to a file, and reopen them later, with any change in the graph flagged.
-    Investigation {
+    /// Keep a graph's records in a file, and say what changed between two. A record is only called removed when its source was read completely.
+    Snapshot {
         #[command(subcommand)]
-        command: investigation::InvestigationCommand,
+        command: snapshot::SnapshotCommand,
     },
+    /// What a graph's labels and relationship types mean: concepts, synonyms, coverage of a question, and how concepts connect.
+    Ontology {
+        #[command(subcommand)]
+        command: ontology::OntologyCommand,
+    },
+}
+
+#[derive(Subcommand)]
+enum DashCommand {
+    /// Validate a .dash dashboard and run every query read-only.
+    Check(dash::CheckArgs),
+    /// Review threads on a .dash dashboard's plots: list, reply, resolve.
+    Comments(dash::CommentsArgs),
+    /// Tell the running window where you are about to edit a dashboard.
+    Presence(dash::PresenceArgs),
+}
+
+#[derive(Subcommand)]
+enum InvestigateCommand {
+    /// `save` and `reopen`: a walk, path and query kept in a file, with any change in the graph flagged.
+    #[command(flatten)]
+    Investigation(investigation::InvestigationCommand),
     /// Investigation templates: a question asked the same way each time, read-only and within caps, with the records behind each finding.
     Template {
         #[command(subcommand)]
@@ -150,11 +191,6 @@ enum Command {
     Report {
         #[command(subcommand)]
         command: report::ReportCommand,
-    },
-    /// Keep a graph's records in a file, and say what changed between two. A record is only called removed when its source was read completely.
-    Snapshot {
-        #[command(subcommand)]
-        command: snapshot::SnapshotCommand,
     },
 }
 
@@ -226,6 +262,11 @@ enum PluginCommand {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Where plugins are found: list, add and remove marketplaces.
+    Marketplace {
+        #[command(subcommand)]
+        command: marketplace::MarketplaceCommand,
+    },
 }
 
 #[derive(Subcommand)]
@@ -255,7 +296,8 @@ struct CliError {
     message: String,
     /// Boxed so that `Result<_, CliError>` stays small on the success path.
     detail: Box<Value>,
-    /// Exit status: 1 for failures, 2 for a spec or argument mistake.
+    /// Exit status: 1 for failures, 2 for a spec or argument mistake, 4 for
+    /// something only a person may do (`approval::NEEDS_CONFIRMATION`).
     code: u8,
 }
 
@@ -396,18 +438,59 @@ fn execute(command: Command) -> Result<Value, CliError> {
             params,
             max_rows,
             write,
+            semantic,
+            validate_only,
+            ontology: library_paths,
         } => {
             let path = resolve_db(&db)?;
             let (language, text) = read_text(&text)?;
             let params = key_values(&params)?;
+            // In the ontology's words, or checked first: the statement that
+            // runs is the one the check passed.
+            let mut checked = None;
+            let text = if semantic || validate_only {
+                if language != Language::Cypher {
+                    return Err(CliError::usage("--semantic and --validate-only read Cypher"));
+                }
+                let (text, report) = ontology::prepare(&path, &text, semantic, &library_paths)?;
+                if validate_only {
+                    return Ok(report);
+                }
+                checked = Some(report);
+                text
+            } else {
+                text
+            };
+            let with_check = |mut value: Value| {
+                if let Some(report) = &checked {
+                    value["semantic"] = report.clone();
+                }
+                value
+            };
             let mode = if write { AccessMode::ReadWrite } else { AccessMode::ReadOnly };
+            // Only a statement that writes goes in the log of writes by hand.
+            let logged = write && khonsu_dash::model::writing_keyword(language, &text).is_some();
+            let log = |via: &str| {
+                if logged {
+                    let entry = khonsu_core::audit::Write::new(&path, language, &text, &params, khonsu_dash::presence::detected_agent(), via);
+                    if let Err(e) = khonsu_core::audit::record(&entry) {
+                        // The write happened; say the log missed it, on stderr
+                        // so stdout stays the one result.
+                        eprintln!("{}", json!({ "warning": "audit", "message": format!("the write was not logged in {}: {e}", khonsu_core::audit::path().display()) }));
+                    }
+                }
+            };
             let mut graph = match Graph::open(&path, mode, PROGRAM) {
                 Ok(graph) => graph,
                 // The window holds the graph: HawDB leases it to one process,
                 // so the query, a write included, goes through the window.
                 Err(OpenError::Locked(owner)) => {
-                    return dash::write_via_window(&path, language, &text, max_rows, write, params)
+                    let answer = dash::write_via_window(&path, language, &text, max_rows, write, params.clone())
                         .unwrap_or_else(|| Err(OpenError::Locked(owner).into()));
+                    if answer.is_ok() {
+                        log("window");
+                    }
+                    return answer.map(with_check);
                 }
                 Err(e) => return Err(e.into()),
             };
@@ -419,19 +502,8 @@ fn execute(command: Command) -> Result<Value, CliError> {
                 }
                 err
             })?;
-            Ok(serde_json::to_value(result).expect("result serializes"))
-        }
-        Command::Explain { db, text } => {
-            let path = resolve_db(&db)?;
-            let (language, text) = read_text(&text)?;
-            let mut graph = match Graph::open(&path, AccessMode::ReadOnly, PROGRAM) {
-                Ok(graph) => graph,
-                Err(OpenError::Locked(owner)) => {
-                    return dash::explain_via_window(&path, language, &text).unwrap_or_else(|| Err(OpenError::Locked(owner).into()));
-                }
-                Err(e) => return Err(e.into()),
-            };
-            Ok(json!({ "plan": graph.explain(language, &text)? }))
+            log("cli");
+            Ok(with_check(serde_json::to_value(result).expect("result serializes")))
         }
         Command::Schema { db } => {
             let path = resolve_db(&db)?;
@@ -444,11 +516,42 @@ fn execute(command: Command) -> Result<Value, CliError> {
             };
             Ok(serde_json::to_value(graph.schema()?).expect("schema serializes"))
         }
-        Command::Init { path } => {
+        Command::Open(args) => dash::open(args),
+        Command::Graph { command } => run_graph(command),
+        Command::Dash { command } => match command {
+            DashCommand::Check(args) => dash::check(args),
+            DashCommand::Comments(args) => dash::comments(args),
+            DashCommand::Presence(args) => dash::presence(args),
+        },
+        Command::Plugin { command } => run_plugin(command),
+        Command::Source { command } => run_source(command),
+        Command::Investigate { command } => match command {
+            InvestigateCommand::Investigation(command) => investigation::investigation(command),
+            InvestigateCommand::Template { command } => template::template(command),
+            InvestigateCommand::Report { command } => report::report(command),
+        },
+    }
+}
+
+fn run_graph(command: GraphCommand) -> Result<Value, CliError> {
+    match command {
+        GraphCommand::Explain { db, text } => {
+            let path = resolve_db(&db)?;
+            let (language, text) = read_text(&text)?;
+            let mut graph = match Graph::open(&path, AccessMode::ReadOnly, PROGRAM) {
+                Ok(graph) => graph,
+                Err(OpenError::Locked(owner)) => {
+                    return dash::explain_via_window(&path, language, &text).unwrap_or_else(|| Err(OpenError::Locked(owner).into()));
+                }
+                Err(e) => return Err(e.into()),
+            };
+            Ok(json!({ "plan": graph.explain(language, &text)? }))
+        }
+        GraphCommand::Init { path } => {
             let graph = Graph::create(&path, PROGRAM)?;
             Ok(json!({ "created": graph.path() }))
         }
-        Command::Rebuild { db, quiet } => {
+        GraphCommand::Rebuild { db, quiet } => {
             let path = resolve_db(&db)?;
             let cancel = AtomicBool::new(false);
             let report = khonsu_core::rebuild::rebuild(&path, PROGRAM, &cancel, |source, event| {
@@ -472,20 +575,11 @@ fn execute(command: Command) -> Result<Value, CliError> {
             })?;
             Ok(serde_json::to_value(report).expect("report serializes"))
         }
-        Command::Plugin { command } => run_plugin(command),
-        Command::Marketplace { command } => marketplace::run(command),
-        Command::Source { command } => run_source(command),
-        Command::Check(args) => dash::check(args),
-        Command::Comments(args) => dash::comments(args),
-        Command::Presence(args) => dash::presence(args),
-        Command::Open(args) => dash::open(args),
-        Command::Analyze(args) => analyze::analyze(args),
-        Command::Explore(args) => explore::explore(args),
-        Command::Evidence(args) => evidence::evidence(args),
-        Command::Investigation { command } => investigation::investigation(command),
-        Command::Template { command } => template::template(command),
-        Command::Report { command } => report::report(command),
-        Command::Snapshot { command } => snapshot::snapshot(command),
+        GraphCommand::Analyze(args) => analyze::analyze(args),
+        GraphCommand::Explore(args) => explore::explore(args),
+        GraphCommand::Evidence(args) => evidence::evidence(args),
+        GraphCommand::Snapshot { command } => snapshot::snapshot(command),
+        GraphCommand::Ontology { command } => ontology::ontology(command),
     }
 }
 
@@ -526,25 +620,34 @@ fn run_plugin(command: PluginCommand) -> Result<Value, CliError> {
             if !std::path::Path::new(&what).exists() {
                 return marketplace::install(&what, yes);
             }
+            let agent = approval::approving_agent().filter(|_| yes);
             let info = plugin::install(std::path::Path::new(&what))?;
             let _ = khonsu_core::marketplace::forget_origin(info.id());
-            if yes {
+            let approve = yes && agent.is_none();
+            if approve {
                 plugin::approve(&info)?;
             }
-            Ok(json!({
+            let out = json!({
                 "installed": info.manifest.id,
                 "version": info.manifest.version,
                 "dir": info.dir,
                 "permissions": info.manifest.permissions,
-                "approved": yes,
+                "approved": approve,
                 "sandboxed": false,
-                "note": if yes { NOT_ENFORCED.to_string() } else { format!("Run `khonsu plugin approve {}` before syncing. {NOT_ENFORCED}", info.manifest.id) },
-            }))
+                "note": marketplace::approval_note(&info.manifest.id, approve),
+            });
+            match agent {
+                Some(agent) => Err(approval::refusal(&agent, &[&info.manifest.id], out)),
+                None => Ok(out),
+            }
         }
         PluginCommand::Approve { id } => {
             let info = plugin::find(&id)?;
             if info.builtin {
                 return Err(CliError::usage(format!("{id} is built in and needs no approval")));
+            }
+            if let Some(agent) = approval::approving_agent() {
+                return Err(approval::refusal(&agent, &[&info.manifest.id], Value::Null));
             }
             plugin::approve(&info)?;
             Ok(json!({
@@ -557,6 +660,7 @@ fn run_plugin(command: PluginCommand) -> Result<Value, CliError> {
             }))
         }
         PluginCommand::Analyze(args) => plugin_analysis::analyze(args),
+        PluginCommand::Marketplace { command } => marketplace::run(command),
         PluginCommand::Uninstall { id } => {
             plugin::uninstall(&id)?;
             Ok(json!({ "uninstalled": id }))

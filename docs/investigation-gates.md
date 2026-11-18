@@ -23,11 +23,11 @@ into each test's own config folder. Without a checkout they fail and say so.
 | Candidate paths, direction, hop cap and type filters | Named queries in the golden file; the path answers are also written out in the test |
 | Determinism | Two separate syncs give the same answers and internal IDs; a re-sync writes no relationships |
 | Limits | `--max-rows` reports `truncated`; the 100,000-row ceiling is in `crates/khonsu-core/tests/engine.rs` |
-| Path Explorer | `crates/khonsu-core/tests/explore.rs` covers direction, cycles, zero matches, each cap and cancellation; the golden file holds two `khonsu explore` walks |
+| Path Explorer | `crates/khonsu-core/tests/explore.rs` covers direction, cycles, zero matches, each cap and cancellation; the golden file holds two `khonsu graph explore` walks |
 | Cancellation | A sync cancelled partway reports it, and the graph keeps its answers |
 | Corrupt input | A malformed response, a missing folder, a bad dashboard and a damaged graph each fail with a reason |
 | Cycles | A shortest path and a variable-length pattern both end on a cycle |
-| Evidence | `khonsu evidence` and `explore --to` give stable IDs, state what is unknown, and mask secrets; the golden file holds a node and a relationship |
+| Evidence | `khonsu graph evidence` and `graph explore --to` give stable IDs, state what is unknown, and mask secrets; the golden file holds a node and a relationship |
 | Exposure rules | the AWS plugin's `tests/fixture-exposure` (in the marketplace repository) has a positive, a negative and an undecided case; the golden file holds its whole report, and rule IDs and verdicts for the shop fixture. See [the rules](https://github.com/JetSquirrel/khonsugraph-marketplace/tree/main/plugins/aws/README.md) |
 | Plugin analyses | An example analyzer with nothing to do with AWS gives findings on a graph of its own; a forged reference, a missing end, a failure, an endless line and output that isn't the protocol are each refused; one that hangs is ended; a changed plugin doesn't run; a plugin with no analyses goes on syncing |
 | Saved investigations | Reopening restores a walk and path on unchanged data, and flags a changed source, a missing record, a missing graph and a bad file; the golden file holds a reopened walk and the fixture's fingerprint. See [saved investigations](investigations.md) |
@@ -108,14 +108,14 @@ Measured on 2026-11-02 with `examples/datasets/baseline.ps1`, on HawDB 0.24.0.
 
 | Graph | Operation | Time | Peak memory |
 |---|---|---:|---:|
-| AWS fixture (16 nodes, 24 relationships) | `analyze summary` | 324 ms | 23 MB |
-| | `check exposure.dash` | 370 ms | 27 MB |
+| AWS fixture (16 nodes, 24 relationships) | `graph analyze summary` | 324 ms | 23 MB |
+| | `dash check exposure.dash` | 370 ms | 27 MB |
 | | `shortestPath` query | 319 ms | 27 MB |
 | Audit story (5,881 nodes, 35,592 relationships) | Sync into a new graph | 14.1 s (11.3–16.2 s) | 214 MB |
 | | `count(n)` query | 3.3 s | 133 MB |
 | | Two-hop `count` query | 20.4 s | 139 MB |
-| | `analyze pagerank` | 7.1 s | 177 MB |
-| | `check trust_network.dash` | 3.8 s | 145 MB |
+| | `graph analyze pagerank` | 7.1 s | 177 MB |
+| | `dash check trust_network.dash` | 3.8 s | 145 MB |
 
 On the audit graph, about 3 s of each command is spent outside the query: `count(n)`
 reported 0.5–0.7 s of its own time in a whole-process run of 3.7–3.9 s. Why was
@@ -133,18 +133,18 @@ cold-start figures.
 
 | Graph | Operation | Time | Peak memory |
 |---|---|---:|---:|
-| AWS exposure fixture (27 nodes, 45 relationships) | `analyze summary` | 175 ms | 22 MiB |
-| | `check exposure.dash` | 179 ms | 25 MiB |
+| AWS exposure fixture (27 nodes, 45 relationships) | `graph analyze summary` | 175 ms | 22 MiB |
+| | `dash check exposure.dash` | 179 ms | 25 MiB |
 | | `shortestPath` query | 185 ms | 22 MiB |
 | | `plugin analyze aws exposure` | 502 ms | 24 MiB |
-| | `explore`, both directions, 2 hops, 2 types | 202 ms | 24 MiB |
-| | `evidence` on one node | 203 ms | 22 MiB |
+| | `graph explore`, both directions, 2 hops, 2 types | 202 ms | 24 MiB |
+| | `graph evidence` on one node | 203 ms | 22 MiB |
 | Audit story (5,881 nodes, 35,592 relationships) | Sync into a new graph, one run | 4.2 s | 213 MiB |
 | | `count(n)` query | 1.2 s | 131 MiB |
 | | Two-hop `count` query | 5.1 s | 133 MiB |
-| | `analyze summary` | 2.6 s | 178 MiB |
-| | `analyze pagerank` | 2.2 s | 170 MiB |
-| | `check trust_network.dash` | 1.6 s | 139 MiB |
+| | `graph analyze summary` | 2.6 s | 178 MiB |
+| | `graph analyze pagerank` | 2.2 s | 170 MiB |
+| | `dash check trust_network.dash` | 1.6 s | 139 MiB |
 
 Don't read these as a speed-up from the debug table: the AWS graph is a different
 fixture, and the two-hop query counted 2,301,858 paths here against 1,948,728 there.

@@ -1,4 +1,4 @@
-//! `khonsu investigation`: save what is being looked at, and come back to it.
+//! `khonsu investigate`: save what is being looked at, and come back to it.
 //! See `khonsu_core::investigation`.
 
 use std::path::PathBuf;

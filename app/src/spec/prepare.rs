@@ -103,7 +103,7 @@ pub struct PreparedPlot {
     /// What was dropped or merged to keep the plot drawable.
     pub notice: Option<String>,
     /// Why there is nothing to draw: the query failed, or a column the plot
-    /// names is not in the result. (The `check` command catches the second
+    /// names is not in the result. (`khonsu dash check` catches the second
     /// ahead of time; the database can still disagree at render time.)
     pub failure: Option<String>,
 }

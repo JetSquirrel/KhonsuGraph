@@ -42,6 +42,23 @@ pub fn sha256_hex(bytes: &[u8]) -> String {
     Sha256::digest(bytes).iter().map(|byte| format!("{byte:02x}")).collect()
 }
 
+/// The number of single-character insertions, deletions and substitutions
+/// that turn `a` into `b`, for "did you mean".
+pub fn edit_distance(a: &str, b: &str) -> usize {
+    let b: Vec<char> = b.chars().collect();
+    let mut row: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.chars().enumerate() {
+        let mut previous = row[0];
+        row[0] = i + 1;
+        for (j, cb) in b.iter().enumerate() {
+            let substitution = previous + usize::from(ca != *cb);
+            previous = row[j + 1];
+            row[j + 1] = substitution.min(row[j] + 1).min(previous + 1);
+        }
+    }
+    row[b.len()]
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

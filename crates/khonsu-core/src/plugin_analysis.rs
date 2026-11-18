@@ -49,7 +49,7 @@ pub struct Condition {
     pub fields: Vec<SourceField>,
 }
 
-/// The `khonsu explore` walk that shows a finding's records in Path Explorer.
+/// The `khonsu graph explore` walk that shows a finding's records in Path Explorer.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WalkHint {
     /// A `khonsu_id`, or an internal ID when the record has none.

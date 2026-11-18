@@ -1,4 +1,4 @@
-//! `khonsu analyze`: graph algorithms HawDB's Cypher lacks, after networkx.
+//! `khonsu graph analyze`: graph algorithms HawDB's Cypher lacks, after networkx.
 //! See `khonsu_core::analysis`.
 
 use std::collections::HashMap;

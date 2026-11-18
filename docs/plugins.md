@@ -290,7 +290,7 @@ those. Leave a property out rather than sending `null`.
 ```sh
 khonsu plugin install examples/plugins/folders --yes   # --yes approves its permissions
 khonsu plugin describe folders
-khonsu init graphs/files
+khonsu graph init graphs/files
 khonsu source add --db graphs/files --plugin folders --name repo -c root=. --test
 khonsu plugin sync --source repo
 khonsu query --db graphs/files --cypher \

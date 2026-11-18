@@ -31,7 +31,7 @@ impl Env {
 
     /// Runs `khonsu` and returns (exit code, stdout JSON).
     fn khonsu(&self, args: &[&str]) -> (i32, Value) {
-        let output = Command::new(env!("CARGO_BIN_EXE_khonsugraph"))
+        let output = as_a_person(Command::new(env!("CARGO_BIN_EXE_khonsugraph")))
             .args(args)
             .env("KHONSU_CONFIG_DIR", self.path("config"))
             .env_remove("KHONSU_DB")
@@ -51,7 +51,7 @@ impl Env {
     /// A graph of the CSV demo in `examples/csv`, from the source `infra`.
     fn infra(&self, name: &str, assets: &Path) -> PathBuf {
         let db = self.path(name);
-        self.ok(&["init", text(&db)]);
+        self.ok(&["graph", "init", text(&db)]);
         let table = |path: &Path, rest: Value| {
             let mut table = json!({ "path": path });
             table.as_object_mut().unwrap().extend(rest.as_object().unwrap().clone());
@@ -68,7 +68,7 @@ impl Env {
     /// A graph of the AWS plugin's saved responses, from the source `shop`.
     fn aws(&self, name: &str) -> PathBuf {
         let db = self.path(name);
-        self.ok(&["init", text(&db)]);
+        self.ok(&["graph", "init", text(&db)]);
         let fixture = aws_plugin::fixture();
         self.ok(&[
             "source", "add", "-d", text(&db), "--plugin", "aws", "--name", "shop",
@@ -153,11 +153,11 @@ fn the_blast_radius_template_gives_the_same_findings_on_two_graphs_of_the_same_d
     // Each with settings of its own, so both have a source called `infra`.
     let other = Env::new();
     let (first, second) = (env.infra("one", &assets()), other.infra("two", &assets()));
-    let check = env.ok(&["template", "check", text(&blast_radius()), "-d", text(&first)]);
+    let check = env.ok(&["investigate", "template", "check", text(&blast_radius()), "-d", text(&first)]);
     assert_eq!(check["ready"], true, "{check}");
     assert_eq!(check["graph"]["supported"], true);
 
-    let run = |env: &Env, db: &Path| env.ok(&["template", "run", text(&blast_radius()), "-d", text(db), "-p", "service=infra/svc-db"]);
+    let run = |env: &Env, db: &Path| env.ok(&["investigate", "template", "run", text(&blast_radius()), "-d", text(db), "-p", "service=infra/svc-db"]);
     let (a, b) = (run(&env, &first), run(&other, &second));
     assert_eq!(ids(&a), ids(&b), "finding IDs follow the data, not the graph they were read from");
     assert_eq!(a["fingerprint"]["hash"], b["fingerprint"]["hash"]);
@@ -182,7 +182,7 @@ fn the_blast_radius_template_gives_the_same_findings_on_two_graphs_of_the_same_d
     assert_eq!(alert["values"]["fired_on"], "rel:infra/l13");
 
     // A parameter narrows the walk, and its cap is reported when it cuts it.
-    let near = env.ok(&["template", "run", text(&blast_radius()), "-d", text(&first), "-p", "service=infra/svc-db", "-p", "hops=1"]);
+    let near = env.ok(&["investigate", "template", "run", text(&blast_radius()), "-d", text(&first), "-p", "service=infra/svc-db", "-p", "hops=1"]);
     assert_eq!(near["summary"]["dependents"], 1);
     assert_eq!(step(&near, "dependents")["limits"], json!(["hops"]));
     assert_eq!(near["complete"], false);
@@ -193,12 +193,12 @@ fn the_blast_radius_template_gives_the_same_findings_on_two_graphs_of_the_same_d
 fn the_aws_template_passes_on_the_offline_fixture() {
     let env = Env::new();
     let db = env.aws("aws");
-    let check = env.ok(&["template", "check", text(&aws_exposure()), "-d", text(&db)]);
+    let check = env.ok(&["investigate", "template", "check", text(&aws_exposure()), "-d", text(&db)]);
     assert_eq!(check["ready"], true, "{check}");
     assert_eq!(check["plugins"], json!([{ "plugin": "aws", "ready": true }]));
 
-    let run = env.ok(&["template", "run", text(&aws_exposure()), "-d", text(&db)]);
-    let again = env.ok(&["template", "run", text(&aws_exposure()), "-d", text(&db)]);
+    let run = env.ok(&["investigate", "template", "run", text(&aws_exposure()), "-d", text(&db)]);
+    let again = env.ok(&["investigate", "template", "run", text(&aws_exposure()), "-d", text(&db)]);
     assert_eq!(ids(&run), ids(&again));
     assert_eq!(run["complete"], true, "{}", run["gaps"]);
     assert_eq!(run["summary"], json!({ "exposure": 4, "open_rules": 1 }));
@@ -218,12 +218,12 @@ fn the_aws_template_passes_on_the_offline_fixture() {
 
     // One verdict, and one resource.
     let steps = json!([{ "id": "undecided", "kind": "analysis", "plugin": "aws", "analysis": "exposure", "only_verdict": "insufficient_data" }]);
-    let narrowed = env.ok(&["template", "run", text(&env.template("narrow.template.json", steps)), "-d", text(&db), "-p", "service=shop/cidr:internet"]);
+    let narrowed = env.ok(&["investigate", "template", "run", text(&env.template("narrow.template.json", steps)), "-d", text(&db), "-p", "service=shop/cidr:internet"]);
     let verdicts: Vec<&str> = narrowed["findings"].as_array().unwrap().iter().map(|finding| finding["verdict"]["value"].as_str().unwrap()).collect();
     assert_eq!(verdicts, ["insufficient_data", "insufficient_data"]);
 
     let steps = json!([{ "id": "bad", "kind": "analysis", "plugin": "aws", "analysis": "exposure", "only_verdict": "reachable" }]);
-    let (code, out) = env.khonsu(&["template", "run", text(&env.template("bad.template.json", steps)), "-d", text(&db), "-p", "service=shop/cidr:internet"]);
+    let (code, out) = env.khonsu(&["investigate", "template", "run", text(&env.template("bad.template.json", steps)), "-d", text(&db), "-p", "service=shop/cidr:internet"]);
     assert_eq!(code, 1, "{out}");
     assert!(step(&out, "bad")["error"]["message"].as_str().unwrap().contains("no verdict"), "{out}");
 }
@@ -232,16 +232,16 @@ fn the_aws_template_passes_on_the_offline_fixture() {
 fn a_graph_without_what_a_template_needs_is_refused_and_a_bad_request_says_why() {
     let env = Env::new();
     let db = env.infra("infra", &assets());
-    let check = env.ok(&["template", "check", text(&aws_exposure()), "-d", text(&db)]);
+    let check = env.ok(&["investigate", "template", "check", text(&aws_exposure()), "-d", text(&db)]);
     assert_eq!(check["ready"], false);
     assert_eq!(check["graph"]["missing"]["node_labels"], json!(["Instance", "SecurityGroup"]));
 
-    let (code, out) = env.khonsu(&["template", "run", text(&aws_exposure()), "-d", text(&db)]);
+    let (code, out) = env.khonsu(&["investigate", "template", "run", text(&aws_exposure()), "-d", text(&db)]);
     assert_eq!(code, 1);
     assert_eq!(out["error"]["kind"], "unsupported_source", "an empty answer from the wrong graph would read as nothing found: {out}");
     assert_eq!(out["error"]["detail"]["missing"]["relationship_types"], json!(["PROTECTED_BY"]));
 
-    let run = |args: &[&str]| env.khonsu(&[&["template", "run", text(&blast_radius()), "-d", text(&db)], args].concat());
+    let run = |args: &[&str]| env.khonsu(&[&["investigate", "template", "run", text(&blast_radius()), "-d", text(&db)], args].concat());
     let (code, out) = run(&[]);
     assert_eq!((code, out["error"]["kind"].as_str()), (2, Some("usage")), "{out}");
     assert!(out["error"]["message"].as_str().unwrap().contains("-p service="));
@@ -253,19 +253,19 @@ fn a_graph_without_what_a_template_needs_is_refused_and_a_bad_request_says_why()
     let (code, out) = run(&["-p", "service=infra/svc-db", "-p", "hops=many"]);
     assert_eq!((code, out["error"]["kind"].as_str()), (2, Some("usage")), "{out}");
 
-    let (code, out) = env.khonsu(&["template", "run", "no-such-template", "-d", text(&db)]);
+    let (code, out) = env.khonsu(&["investigate", "template", "run", "no-such-template", "-d", text(&db)]);
     assert_eq!((code, out["error"]["kind"].as_str()), (1, Some("not_found")), "{out}");
     std::fs::write(env.path("broken.template.json"), "{\"format\": \"khonsu-template\", \"version\": 1}").unwrap();
-    let (code, out) = env.khonsu(&["template", "check", text(&env.path("broken.template.json"))]);
+    let (code, out) = env.khonsu(&["investigate", "template", "check", text(&env.path("broken.template.json"))]);
     assert_eq!((code, out["error"]["kind"].as_str()), (1, Some("invalid")), "{out}");
 
     // Templates are found by ID in a folder, and a broken one is listed, not hidden.
     std::fs::copy(blast_radius(), env.path("blast-radius.template.json")).unwrap();
-    let listed = env.ok(&["template", "list", "--dir", text(env.dir.path())]);
+    let listed = env.ok(&["investigate", "template", "list", "--dir", text(env.dir.path())]);
     // Only the folder's: installed plugins, such as the AWS one, add their own.
     let found: Vec<(Option<&str>, bool)> = listed["templates"].as_array().unwrap().iter().filter(|listed| listed["origin"] == "folder").map(|listed| (listed["template"]["id"].as_str(), listed["error"].is_string())).collect();
     assert_eq!(found, [(Some("blast-radius"), false), (None, true)]);
-    let by_id = env.ok(&["template", "run", "blast-radius", "--dir", text(env.dir.path()), "-d", text(&db), "-p", "service=infra/svc-db"]);
+    let by_id = env.ok(&["investigate", "template", "run", "blast-radius", "--dir", text(env.dir.path()), "-d", text(&db), "-p", "service=infra/svc-db"]);
     assert_eq!(by_id["summary"]["dependents"], 2);
 }
 
@@ -282,7 +282,7 @@ fn a_step_that_cannot_run_is_reported_and_the_rest_still_run_and_nothing_is_writ
         { "id": "one_row", "kind": "query", "cypher": "MATCH (s:Service) RETURN s AS service ORDER BY s.khonsu_id", "max_rows": 1, "resource_column": "service" },
         { "id": "works", "kind": "walk", "from": ["$service"], "direction": "in", "types": ["DEPENDS_ON"] },
     ]);
-    let (code, run) = env.khonsu(&["template", "run", text(&env.template("probe.template.json", steps)), "-d", text(&db)]);
+    let (code, run) = env.khonsu(&["investigate", "template", "run", text(&env.template("probe.template.json", steps)), "-d", text(&db)]);
     assert_eq!(code, 1, "a failed step must not look like success to a script: {run}");
     assert_eq!(run["failed"], json!(["writes", "unsupported", "no_column"]));
     assert_eq!(run["complete"], false);
@@ -304,7 +304,7 @@ fn a_step_that_cannot_run_is_reported_and_the_rest_still_run_and_nothing_is_writ
     assert_eq!(pwned["rows"][0][0], 0);
 
     // The cap on findings counts what it cut.
-    let capped = env.ok(&["template", "run", text(&blast_radius()), "-d", text(&db), "-p", "service=infra/svc-db", "--max-findings", "2"]);
+    let capped = env.ok(&["investigate", "template", "run", text(&blast_radius()), "-d", text(&db), "-p", "service=infra/svc-db", "--max-findings", "2"]);
     assert_eq!((capped["findings"].as_array().unwrap().len(), capped["truncated"].as_u64()), (2, Some(3)));
     assert_eq!(capped["complete"], false);
     assert_evidence_resolves(&capped);
@@ -316,46 +316,46 @@ fn a_report_verifies_reviews_exports_and_replays() {
     let db = env.infra("infra", &assets());
     let (report, snapshot, page, handoff) = (env.path("db.report.json"), env.path("db.snapshot.json"), env.path("db.md"), env.path("web.investigation"));
     let run = env.ok(&[
-        "template", "run", text(&blast_radius()), "-d", text(&db), "-p", "service=infra/svc-db",
+        "investigate", "template", "run", text(&blast_radius()), "-d", text(&db), "-p", "service=infra/svc-db",
         "--report", text(&report), "--snapshot", text(&snapshot),
     ]);
     let result_id = run["report"]["result_id"].as_str().unwrap().to_string();
     assert!(run["report"]["snapshot"]["snapshot_id"].as_str().unwrap().starts_with("snapshot:"));
-    let (code, out) = env.khonsu(&["template", "run", text(&blast_radius()), "-d", text(&db), "-p", "service=infra/svc-db", "--report", text(&report)]);
+    let (code, out) = env.khonsu(&["investigate", "template", "run", text(&blast_radius()), "-d", text(&db), "-p", "service=infra/svc-db", "--report", text(&report)]);
     assert_eq!((code, out["error"]["kind"].as_str()), (1, Some("exists")), "{out}");
 
-    let checked = env.ok(&["report", "verify", text(&report)]);
+    let checked = env.ok(&["investigate", "report", "verify", text(&report)]);
     assert_eq!((checked["ok"].as_bool(), checked["findings"].as_u64()), (Some(true), Some(5)), "{checked}");
     assert_eq!(checked["result_id"], result_id.as_str());
 
     // People and agents add to it, and the file still verifies.
     let storefront = run["findings"][1]["finding_id"].as_str().unwrap();
-    env.ok(&["report", "note", text(&report), "--hypothesis", "redis may hide this", "--by", "agent", "--finding", storefront]);
-    env.ok(&["report", "review", text(&report), "--finding", storefront, "--state", "confirmed", "--by", "jet", "--note", "no fallback"]);
-    env.ok(&["report", "note", text(&report), "--conclusion", "postgres failing takes the storefront down", "--by", "jet"]);
-    let (code, out) = env.khonsu(&["report", "review", text(&report), "--finding", "finding:none", "--state", "rejected", "--by", "jet"]);
+    env.ok(&["investigate", "report", "note", text(&report), "--hypothesis", "redis may hide this", "--by", "agent", "--finding", storefront]);
+    env.ok(&["investigate", "report", "review", text(&report), "--finding", storefront, "--state", "confirmed", "--by", "jet", "--note", "no fallback"]);
+    env.ok(&["investigate", "report", "note", text(&report), "--conclusion", "postgres failing takes the storefront down", "--by", "jet"]);
+    let (code, out) = env.khonsu(&["investigate", "report", "review", text(&report), "--finding", "finding:none", "--state", "rejected", "--by", "jet"]);
     assert_eq!((code, out["error"]["kind"].as_str()), (1, Some("not_found")), "{out}");
-    let checked = env.ok(&["report", "verify", text(&report)]);
+    let checked = env.ok(&["investigate", "report", "verify", text(&report)]);
     assert_eq!((checked["ok"].as_bool(), checked["reviewed"].as_u64()), (Some(true), Some(1)), "{checked}");
     assert_eq!(checked["result_id"], result_id.as_str(), "a review changes the file, not the result");
 
     // On unchanged data the run comes back the same.
-    let replay = env.ok(&["report", "replay", text(&report)]);
+    let replay = env.ok(&["investigate", "report", "replay", text(&report)]);
     assert_eq!((replay["same"].as_bool(), replay["graph_state"].as_str()), (Some(true), Some("unchanged")), "{replay}");
     assert_eq!(replay["result_id"], result_id.as_str());
-    assert_eq!(env.ok(&["snapshot", "check", text(&snapshot), "-d", text(&db)])["graph_state"], "unchanged");
+    assert_eq!(env.ok(&["graph", "snapshot", "check", text(&snapshot), "-d", text(&db)])["graph_state"], "unchanged");
 
     // For a person: Markdown. For the window: the finding's path, without an LLM anywhere.
-    let exported = env.ok(&["report", "export", text(&report), "--markdown", text(&page), "--investigation", text(&handoff), "--finding", storefront]);
+    let exported = env.ok(&["investigate", "report", "export", text(&report), "--markdown", text(&page), "--investigation", text(&handoff), "--finding", storefront]);
     assert_eq!(exported["verified"], true);
     let markdown = std::fs::read_to_string(&page).unwrap();
     for part in ["# Investigation report: Blast radius of a service", "## Data gaps", "## Human conclusions", "## Hypotheses", "## Derived findings", "## Observations", "## Evidence", "## Action log", &result_id, "**confirmed** by jet", "redis may hide this"] {
         assert!(markdown.contains(part), "the page lacks {part:?}");
     }
-    let reopened = env.ok(&["investigation", "reopen", text(&handoff)]);
+    let reopened = env.ok(&["investigate", "reopen", text(&handoff)]);
     assert_eq!((reopened["graph_state"].as_str(), reopened["path_same"].as_bool()), (Some("unchanged"), Some(true)), "{reopened}");
     assert_eq!(reopened["walk"]["hops"].as_array().unwrap().len(), 2);
-    let (code, out) = env.khonsu(&["report", "export", text(&report), "--investigation", text(&env.path("row.investigation")), "--finding", run["findings"][2]["finding_id"].as_str().unwrap()]);
+    let (code, out) = env.khonsu(&["investigate", "report", "export", text(&report), "--investigation", text(&env.path("row.investigation")), "--finding", run["findings"][2]["finding_id"].as_str().unwrap()]);
     assert_eq!((code, out["error"]["kind"].as_str()), (1, Some("invalid")), "a row has no path: {out}");
 
     // The source changes: storefront no longer runs anywhere, and gains nothing.
@@ -364,7 +364,7 @@ fn a_report_verifies_reviews_exports_and_replays() {
     std::fs::write(&edited, rows).unwrap();
     let later = Env::new();
     let changed = later.infra("changed", &edited);
-    let replay = later.ok(&["report", "replay", text(&report), "-d", text(&changed)]);
+    let replay = later.ok(&["investigate", "report", "replay", text(&report), "-d", text(&changed)]);
     assert_eq!((replay["same"].as_bool(), replay["graph_state"].as_str()), (Some(false), Some("changed")), "{replay}");
     assert_eq!(replay["removed"], json!([storefront]));
     assert_eq!(replay["added"], json!([]));
@@ -373,10 +373,20 @@ fn a_report_verifies_reviews_exports_and_replays() {
     // A file changed by hand is caught, and is not built on.
     let tampered = std::fs::read_to_string(&report).unwrap().replace("\"confirmed\"", "\"rejected\"");
     std::fs::write(&report, tampered).unwrap();
-    let (code, checked) = env.khonsu(&["report", "verify", text(&report)]);
+    let (code, checked) = env.khonsu(&["investigate", "report", "verify", text(&report)]);
     assert_eq!((code, checked["ok"].as_bool()), (1, Some(false)), "{checked}");
-    let (code, out) = env.khonsu(&["report", "note", text(&report), "--conclusion", "fine", "--by", "jet"]);
+    let (code, out) = env.khonsu(&["investigate", "report", "note", text(&report), "--conclusion", "fine", "--by", "jet"]);
     assert_eq!((code, out["error"]["kind"].as_str()), (1, Some("invalid")), "{out}");
-    let (code, out) = env.khonsu(&["report", "verify", text(&env.path("none.report.json"))]);
+    let (code, out) = env.khonsu(&["investigate", "report", "verify", text(&env.path("none.report.json"))]);
     assert_eq!((code, out["error"]["kind"].as_str()), (1, Some("not_found")), "{out}");
+}
+
+/// The command as a person would run it: without the variables that show an
+/// agent, which a test inherits when an agent runs it.
+fn as_a_person(mut command: Command) -> Command {
+    command.env_remove("KHONSU_AGENT");
+    for (variable, _) in khonsu_dash::presence::AGENT_VARIABLES {
+        command.env_remove(variable);
+    }
+    command
 }

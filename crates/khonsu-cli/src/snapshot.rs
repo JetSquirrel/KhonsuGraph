@@ -1,4 +1,4 @@
-//! `khonsu snapshot`: keep a graph's records in a file, and compare two. See
+//! `khonsu graph snapshot`: keep a graph's records in a file, and compare two. See
 //! `khonsu_core::snapshot`.
 
 use std::path::PathBuf;
