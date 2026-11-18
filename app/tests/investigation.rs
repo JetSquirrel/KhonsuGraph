@@ -205,15 +205,25 @@ fn blessing() -> bool {
 }
 
 /// `cargo test` builds a plugin only as a test harness; the CLI looks for the
-/// real executable beside itself in target/<profile>.
+/// real executable beside itself in target/<profile>. This process is not
+/// beside them (Cargo may build tests outside `target`), so the folder Cargo
+/// reports goes in `KHONSU_PLUGIN_PATH` for the tests that find a plugin here.
 fn build_plugins() {
     static BUILD: Once = Once::new();
     BUILD.call_once(|| {
-        let status = Command::new(env!("CARGO"))
-            .args(["build", "-q", "--locked", "-p", "khonsu-plugin-csv"])
-            .status()
+        let output = Command::new(env!("CARGO"))
+            .args(["build", "-q", "--locked", "-p", "khonsu-plugin-csv", "--message-format=json"])
+            .stderr(std::process::Stdio::inherit())
+            .output()
             .unwrap();
-        assert!(status.success());
+        assert!(output.status.success());
+        let csv = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+            .filter(|message| message["reason"] == "compiler-artifact" && message["target"]["name"] == "khonsu-plugin-csv")
+            .find_map(|message| message["executable"].as_str().map(PathBuf::from))
+            .expect("cargo reports the CSV plugin executable");
+        std::env::set_var("KHONSU_PLUGIN_PATH", csv.parent().unwrap());
         let status = Command::new(env!("CARGO"))
             .args(["build", "-q", "--locked", "-p", "khonsu-plugin-protocol", "--example", "scripted"])
             .status()
