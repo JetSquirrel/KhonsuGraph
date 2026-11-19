@@ -516,9 +516,6 @@ impl Dashboard {
         // rows of nothing rather than as the end of the data.
         let overflows = rows.max_offset().y > px(0.);
         let wheel = self.wheel.clone();
-        // Where the table sits, for the wheel to tell whether it is on screen.
-        let bounds: Rc<Cell<Option<Bounds<Pixels>>>> = Rc::default();
-        let record = bounds.clone();
         v_flex()
             .size_full()
             .when(truncated, |this| {
@@ -536,25 +533,27 @@ impl Dashboard {
                     .flex_1()
                     .min_h_0()
                     .relative()
-                    // Runs after the table's own scrolling and before the
-                    // stack's, so it decides whether the stack moves too.
-                    .on_scroll(move |event, window, cx| {
-                        if wheel.table_scrolled(ix, &rows, bounds.get(), event, window) {
-                            cx.stop_propagation();
-                        }
-                    })
                     .child(
                         DataTable::new(&table)
                             .small()
                             .stripe(overflows)
                             .scrollbar_visible(true, true),
                     )
+                    // Where the table sits, and a hitbox over it, for the
+                    // wheel to tell whether it is on screen and under the
+                    // pointer (see `wheel`).
                     .child(
-                        canvas(move |b, _, _| record.set(Some(b)), |_, _, _, _| {})
-                            .absolute()
-                            .top_0()
-                            .left_0()
-                            .size_full(),
+                        canvas(
+                            move |b, window, _| {
+                                let hitbox = window.insert_hitbox(b, HitboxBehavior::Normal);
+                                wheel.table_laid_out(ix, hitbox.id, b, rows.clone());
+                            },
+                            |_, _, _, _| {},
+                        )
+                        .absolute()
+                        .top_0()
+                        .left_0()
+                        .size_full(),
                     ),
             )
             .into_any_element()
