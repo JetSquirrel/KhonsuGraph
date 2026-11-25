@@ -2797,7 +2797,9 @@ dependencies = [
 
 [[package]]
 name = "gpui-graph"
-version = "0.2.3"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a8b77ccb0d5263175d059bcb9ac2b9cf9000d96b8da0049458394065a2d14e24"
 dependencies = [
  "gpui-base",
  "gpui-pre",
