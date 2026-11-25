@@ -280,17 +280,19 @@ mod tests {
 
     #[test]
     fn temporal_values_are_iso_8601_strings() {
-        use hawdb::temporal::{DateTime, Duration, NaiveDate, NaiveDateTime, NaiveTime, TimeDelta};
+        use hawdb::temporal::{
+            parse_date, parse_datetime, parse_local_datetime, parse_local_time, Duration, SignedDuration,
+        };
 
-        let date: NaiveDate = "2026-10-30".parse().unwrap();
-        let time: NaiveTime = "12:34:56".parse().unwrap();
-        let local: NaiveDateTime = "2026-10-30T12:34:56".parse().unwrap();
-        let zoned = DateTime::parse_from_rfc3339("2026-10-30T12:34:56+01:00").unwrap();
+        let date = parse_date("2026-10-30").unwrap();
+        let time = parse_local_time("12:34:56").unwrap();
+        let local = parse_local_datetime("2026-10-30T12:34:56").unwrap();
+        let zoned = parse_datetime("2026-10-30T12:34:56+01:00").unwrap();
         assert_eq!(value_to_json(&Value::Date(date)), json!("2026-10-30"));
         assert_eq!(value_to_json(&Value::LocalTime(time)), json!("12:34:56"));
         assert_eq!(value_to_json(&Value::LocalDateTime(local)), json!("2026-10-30T12:34:56"));
         assert_eq!(value_to_json(&Value::DateTime(zoned)), json!("2026-10-30T12:34:56+01:00"));
-        let duration = Value::duration(Duration::new(14, 3, TimeDelta::hours(5)));
+        let duration = Value::duration(Duration::new(14, 3, SignedDuration::hours(5)).unwrap());
         assert_eq!(value_to_json(&duration), json!("P1Y2M3DT5H"));
     }
 }
