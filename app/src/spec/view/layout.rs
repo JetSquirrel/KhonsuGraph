@@ -177,7 +177,7 @@ pub(super) fn grid_rows(widths: impl IntoIterator<Item = u8>) -> Vec<Vec<usize>>
 /// A card: its title over its one value, large. What was dropped to get to
 /// one value — the rows past the first — is said under it, small.
 /// A card's inset from its border, each side.
-pub(super) const CARD_INSET: f32 = 20.;
+pub(super) const CARD_INSET: f32 = 14.;
 
 /// What a card's share of the width loses before its value: the inset and
 /// border on both sides, and the page gap around the card.

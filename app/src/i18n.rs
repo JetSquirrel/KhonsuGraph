@@ -178,7 +178,8 @@ static STRINGS: &[(&str, &str, &str)] = &[
     ("sidebar.collapse", "收起侧边栏", "Hide sidebar"),
 
     // ── title bar ───────────────────────────────────────────────────────
-    ("title_bar.graph", "图", "Graph"),
+    ("title_bar.open", "打开", "Open"),
+    ("title_bar.new", "新建", "New"),
     ("title_bar.open_graph", "打开图…", "Open Graph…"),
     ("title_bar.new_graph", "新建图…", "New Graph…"),
     ("title_bar.close_graph", "关闭图", "Close Graph"),
@@ -404,7 +405,7 @@ static STRINGS: &[(&str, &str, &str)] = &[
     ("evidence.redacted", "已遮盖疑似机密：{}", "Masked as possible secrets: {}"),
     ("evidence.copy", "复制证据 JSON", "Copy evidence as JSON"),
     ("evidence.copy_path", "复制路径证据 JSON", "Copy path evidence as JSON"),
-    ("investigation.open", "打开调查…", "Open investigation…"),
+    ("investigation.open", "打开调查…", "Open Investigation…"),
     ("investigation.save", "保存调查…", "Save investigation…"),
     ("investigation.saved", "已保存调查：{}", "Investigation saved: {}"),
     ("investigation.save_failed", "无法保存调查：{}", "The investigation could not be saved: {}"),
@@ -632,7 +633,7 @@ static STRINGS: &[(&str, &str, &str)] = &[
     ("presence.waiting", "{} 条评论在等你回复", "{} thread(s) waiting on you"),
     ("presence.working", "工作中", "Working"),
     ("results.running", "正在运行查询…", "Running query…"),
-    ("workspace.open_dashboard", "打开 Dashboard", "Open dashboard"),
+    ("workspace.open_dashboard", "打开 Dashboard…", "Open Dashboard…"),
 
     // ── dashboards (KhonsuGraph) ──────────────────────────────────────────
     ("workspace.tabs_kept", "已保存 {} 的 {} 个标签页，再次打开它时会恢复", "{}'s {} tabs are saved and come back when you open it again"),

@@ -172,7 +172,7 @@ impl Dashboard {
         v_flex()
             .size_full()
             .px(px(CARD_INSET))
-            .pt_4()
+            .pt_3()
             .pb(px(CARD_INSET))
             .gap_2()
             .child(
@@ -421,8 +421,8 @@ impl Dashboard {
                     .w_full()
                     .flex_none()
                     .px(px(CARD_INSET))
-                    .pt_4()
-                    .pb_2()
+                    .pt_3()
+                    .pb_1()
                     .gap_1()
                     .child(
                         h_flex()
