@@ -90,7 +90,7 @@ impl Render for StatusBarView {
 /// once one is found, the way to it instead. As in DuckLocal.
 fn update_status(cx: &App) -> AnyElement {
     use crate::ui::update::{self, Status, CURRENT};
-    let version = format!("KhonsuGraph {CURRENT} · HawDB {}", khonsu_core::HAWDB_VERSION);
+    let version = format!("KhonsuGraph {CURRENT}");
     let tooltip = |text: String| {
         move |window: &mut Window, cx: &mut App| gpui_kit::component::tooltip::Tooltip::new(text.clone()).build(window, cx)
     };
