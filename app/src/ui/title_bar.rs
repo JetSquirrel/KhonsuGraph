@@ -1,5 +1,6 @@
-//! Title bar, after DuckLocal's: sidebar toggle and the Graph menu on the
-//! left, the open graph in the middle, language, size and theme on the right.
+//! Title bar, after DuckLocal's: sidebar toggle, Home and the Open menu on
+//! the left, the open graph in the middle, and the New menu, language, size
+//! and theme on the right.
 
 use gpui_kit::component::button::{Button, ButtonVariants};
 use gpui_kit::component::menu::{DropdownMenu, PopupMenuItem};
@@ -55,39 +56,46 @@ impl TitleBarView {
         cx.refresh_windows();
     }
 
-    fn render_graph_menu(&self, opening: bool, has_graph: bool, read_only: bool) -> impl IntoElement {
+    /// Everything that opens or works on what is open, on the left: graphs,
+    /// dashboards and investigations, then the open graph's own actions.
+    /// Items carry no icons, so their text lines up.
+    fn render_open_menu(&self, opening: bool, has_graph: bool, read_only: bool) -> impl IntoElement {
         let state = self.state.clone();
         let workspace = self.workspace.clone();
-        Button::new("graph-menu")
+        Button::new("open-menu")
             .ghost()
             .compact()
             .xsmall()
             .icon(IconName::FolderOpen)
-            .label(tr("title_bar.graph"))
+            .label(tr("title_bar.open"))
             .loading(opening)
             .dropdown_menu(move |menu, _, _| {
                 let open_state = state.clone();
-                let new_state = state.clone();
                 let ro_state = state.clone();
                 let source_state = state.clone();
                 let close_state = state.clone();
                 let investigation_state = state.clone();
                 let investigation_workspace = workspace.clone();
+                let dashboard_workspace = workspace.clone();
                 menu.item(
                     PopupMenuItem::new(tr("title_bar.open_graph"))
-                        .icon(IconName::FolderOpen)
                         .on_click(move |_, window, cx| crate::ui::pick_graph(open_state.clone(), false, window, cx)),
                 )
-                .item(
-                    PopupMenuItem::new(tr("title_bar.new_graph"))
-                        .icon(IconName::Plus)
-                        .on_click(move |_, window, cx| crate::ui::pick_graph(new_state.clone(), true, window, cx)),
-                )
+                .when(has_graph, |menu| {
+                    menu.item(PopupMenuItem::new(tr("workspace.open_dashboard")).on_click(move |_, window, cx| {
+                        dashboard_workspace.update(cx, |this, cx| this.pick_dashboard_file(window, cx));
+                    }))
+                })
                 .item(PopupMenuItem::new(tr("investigation.open")).on_click(move |_, window, cx| {
                     crate::ui::pick_investigation(investigation_state.clone(), investigation_workspace.clone(), window, cx)
                 }))
                 .when(has_graph, |menu| {
                     menu.separator()
+                        .when(!read_only, |menu| {
+                            menu.item(PopupMenuItem::new(tr("sources.add")).on_click(move |_, window, cx| {
+                                crate::ui::sources::open_add(source_state.clone(), window, cx)
+                            }))
+                        })
                         .item(
                             PopupMenuItem::new(tr(if read_only {
                                 "title_bar.reopen_writable"
@@ -101,20 +109,42 @@ impl TitleBarView {
                                 crate::ui::open_graph_at(ro_state.clone(), info.path, false, !read_only, window, cx);
                             }),
                         )
-                        .when(!read_only, |menu| {
-                            menu.item(
-                                PopupMenuItem::new(tr("sources.add"))
-                                    .icon(IconName::Plus)
-                                    .on_click(move |_, window, cx| {
-                                        crate::ui::sources::open_add(source_state.clone(), window, cx)
-                                    }),
-                            )
-                        })
                         .separator()
                         .item(
                             PopupMenuItem::new(tr("title_bar.close_graph"))
                                 .on_click(move |_, _, cx| crate::ui::close_graph(close_state.clone(), cx)),
                         )
+                })
+            })
+    }
+
+    /// Everything that makes something new, on the right: a graph, and with
+    /// one open, a query of either language.
+    fn render_new_menu(&self, has_graph: bool) -> impl IntoElement {
+        let state = self.state.clone();
+        let workspace = self.workspace.clone();
+        Button::new("new-menu")
+            .ghost()
+            .compact()
+            .xsmall()
+            .icon(IconName::Plus)
+            .tooltip(tr("title_bar.new"))
+            .dropdown_menu(move |menu, _, _| {
+                let new_state = state.clone();
+                let cypher = workspace.clone();
+                let sql = workspace.clone();
+                menu.item(
+                    PopupMenuItem::new(tr("title_bar.new_graph"))
+                        .on_click(move |_, window, cx| crate::ui::pick_graph(new_state.clone(), true, window, cx)),
+                )
+                .when(has_graph, |menu| {
+                    menu.separator()
+                        .item(PopupMenuItem::new(tr("workspace.new_cypher")).on_click(move |_, window, cx| {
+                            cypher.update(cx, |this, cx| this.add_tab(khonsu_core::Language::Cypher, None, window, cx));
+                        }))
+                        .item(PopupMenuItem::new(tr("workspace.new_sql")).on_click(move |_, window, cx| {
+                            sql.update(cx, |this, cx| this.add_tab(khonsu_core::Language::Sql, None, window, cx));
+                        }))
                 })
             })
     }
@@ -167,7 +197,7 @@ impl Render for TitleBarView {
                                     this.state.update(cx, |state, cx| state.set_home(true, cx));
                                 })),
                         )
-                        .content(caption_exempt(self.render_graph_menu(opening, graph.is_some(), read_only))),
+                        .content(caption_exempt(self.render_open_menu(opening, graph.is_some(), read_only))),
                 )
                 .content(div().flex_1())
                 .content(
@@ -213,6 +243,7 @@ impl Render for TitleBarView {
                 .child(
                     ToolbarGroup::new("title-bar-window")
                         .gap_1()
+                        .content(caption_exempt(self.render_new_menu(graph.is_some())))
                         .child(
                             Button::new("setup")
                                 .icon(IconName::Bot)

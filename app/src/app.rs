@@ -237,8 +237,8 @@ impl Render for KhonsuApp {
                         h_resizable("main-split")
                             .child(
                                 resizable_panel()
-                                    .size(crate::ui::scale::design(280.))
-                                    .size_range(crate::ui::scale::design(220.)..crate::ui::scale::design(460.))
+                                    .size(crate::ui::scale::design(240.))
+                                    .size_range(crate::ui::scale::design(200.)..crate::ui::scale::design(460.))
                                     .child(self.sidebar.clone()),
                             )
                             .child(resizable_panel().child(self.workspace.clone())),

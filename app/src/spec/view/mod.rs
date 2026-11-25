@@ -112,11 +112,11 @@ const PLOT_MAX: f32 = 800.;
 /// A row with a graph starts taller: a force layout spreads about as far
 /// down as across, so a chart's short, wide row drew it small, with the
 /// sides of the panel empty.
-const GRAPH_DEFAULT: f32 = 440.;
+const GRAPH_DEFAULT: f32 = 380.;
 /// A row of nothing but cards holds one number each: it starts short.
-const CARD_DEFAULT: f32 = 104.;
+const CARD_DEFAULT: f32 = 92.;
 /// A card with a note under its value needs a line more.
-const CARD_NOTED: f32 = 124.;
+const CARD_NOTED: f32 = 112.;
 const CARD_MIN: f32 = 80.;
 const CARD_MAX: f32 = 400.;
 /// A row of nothing but text panels heads what follows: a title and a line.
@@ -142,7 +142,7 @@ const SORT_ICON_WIDTH: f32 = 20.;
 
 /// A table plot's chrome around its rows — title, header row, padding — and
 /// one row's height, for sizing a row of tables to its content.
-const TABLE_CHROME: f32 = 84.;
+const TABLE_CHROME: f32 = 76.;
 const TABLE_ROW: f32 = 30.;
 const TABLE_MIN: f32 = 120.;
 
